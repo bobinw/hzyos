@@ -1407,7 +1407,9 @@
                     loadSettingFromDB('customProductFields'),
                     loadSettingFromDB('customSupplierFields'),
                     loadSettingFromDB('deletedSystemProductFields'),
-                    loadSettingFromDB('deletedSystemSupplierFields')
+                    loadSettingFromDB('deletedSystemSupplierFields'),
+                    loadSettingFromDB('productFieldOrder'),
+                    loadSettingFromDB('supplierFieldOrder')
                 ]);
 
                 // 转换模板数组为对象
@@ -1429,7 +1431,9 @@
                     customProductFields: savedCustomProductFields || [],
                     customSupplierFields: savedCustomSupplierFields || [],
                     deletedSystemProductFields: savedDeletedProductFields || [],
-                    deletedSystemSupplierFields: savedDeletedSupplierFields || []
+                    deletedSystemSupplierFields: savedDeletedSupplierFields || [],
+                    productFieldOrder: savedProductFieldOrder || [],
+                    supplierFieldOrder: savedSupplierFieldOrder || []
                 };
             } catch (e) {
                 console.error('加载数据失败:', e);
@@ -1453,7 +1457,9 @@
                     saveSettingToDB('customProductFields', customProductFields),
                     saveSettingToDB('customSupplierFields', customSupplierFields),
                     saveSettingToDB('deletedSystemProductFields', deletedSystemProductFields),
-                    saveSettingToDB('deletedSystemSupplierFields', deletedSystemSupplierFields)
+                    saveSettingToDB('deletedSystemSupplierFields', deletedSystemSupplierFields),
+                    saveSettingToDB('productFieldOrder', productFieldOrder),
+                    saveSettingToDB('supplierFieldOrder', supplierFieldOrder)
                 ]);
 
                 console.log('数据保存成功');
@@ -1884,6 +1890,8 @@
         let customSupplierFields = [];
         let deletedSystemProductFields = [];
         let deletedSystemSupplierFields = [];
+        let productFieldOrder = [];
+        let supplierFieldOrder = [];
         let parsedData = null;
         let currentMappings = {};
         let selectedSupplierId = '';
@@ -1923,6 +1931,8 @@
                 customSupplierFields = savedData.customSupplierFields || [];
                 deletedSystemProductFields = savedData.deletedSystemProductFields || [];
                 deletedSystemSupplierFields = savedData.deletedSystemSupplierFields || [];
+                productFieldOrder = savedData.productFieldOrder || [];
+                supplierFieldOrder = savedData.supplierFieldOrder || [];
 
                 // 修复空ID的供应商数据
                 let needSave = false;
@@ -5680,12 +5690,14 @@
             };
 
             const hasProducts = products && products.length > 0;
-            document.getElementById('product-fields-list').innerHTML = allFields.map(f => `
+            document.getElementById('product-fields-list').innerHTML = allFields.map((f, index) => `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-2 font-medium">${f.name}</td>
                     <td class="px-3 py-2 text-gray-500">${groupNames[f.group] || f.group}</td>
                     <td class="px-3 py-2 text-gray-400 text-xs">${f.keywords ? f.keywords.join(', ') : '-'}</td>
                     <td class="px-3 py-2 text-center">
+                        <button onclick="moveProductField('${f.name}', -1)" class="text-gray-500 hover:text-gray-700 text-xs mr-1" ${index === 0 ? 'disabled style="opacity:0.3"' : ''}>↑</button>
+                        <button onclick="moveProductField('${f.name}', 1)" class="text-gray-500 hover:text-gray-700 text-xs mr-2" ${index === allFields.length - 1 ? 'disabled style="opacity:0.3"' : ''}>↓</button>
                         <button onclick="editProductField('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
                         ${(f.isCustom || !hasProducts) ? `<button onclick="deleteProductField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
                     </td>
@@ -5716,7 +5728,42 @@
             customProductFields.filter(f => !f.isSystemOverride).forEach(f => {
                 fields.push({ ...f, isCustom: true });
             });
-            return fields.sort((a, b) => a.name.localeCompare(b.name));
+
+            // 按自定义顺序排序
+            if (productFieldOrder && productFieldOrder.length > 0) {
+                fields.sort((a, b) => {
+                    const aIndex = productFieldOrder.indexOf(a.name);
+                    const bIndex = productFieldOrder.indexOf(b.name);
+                    if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
+                    if (aIndex === -1) return 1;
+                    if (bIndex === -1) return -1;
+                    return aIndex - bIndex;
+                });
+            } else {
+                fields.sort((a, b) => a.name.localeCompare(b.name));
+            }
+            return fields;
+        }
+
+        function moveProductField(name, direction) {
+            const allFields = getAllProductFields();
+            const currentIndex = allFields.findIndex(f => f.name === name);
+            const newIndex = currentIndex + direction;
+
+            if (newIndex < 0 || newIndex >= allFields.length) return;
+
+            // 更新排序数组
+            if (!productFieldOrder || productFieldOrder.length === 0) {
+                productFieldOrder = allFields.map(f => f.name);
+            }
+
+            // 交换位置
+            const temp = productFieldOrder[currentIndex];
+            productFieldOrder[currentIndex] = productFieldOrder[newIndex];
+            productFieldOrder[newIndex] = temp;
+
+            saveData();
+            renderProductFieldsList();
         }
 
         function showAddProductFieldModal() {
@@ -5838,12 +5885,14 @@
             };
 
             const hasSuppliers = suppliers && suppliers.length > 0;
-            document.getElementById('supplier-fields-list').innerHTML = allFields.map(f => `
+            document.getElementById('supplier-fields-list').innerHTML = allFields.map((f, index) => `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-2 font-medium">${f.name}</td>
                     <td class="px-3 py-2 text-gray-500">${typeNames[f.type] || f.type}</td>
                     <td class="px-3 py-2 text-gray-400 text-xs">${f.options ? f.options.join(', ') : '-'}</td>
                     <td class="px-3 py-2 text-center">
+                        <button onclick="moveSupplierField('${f.name}', -1)" class="text-gray-500 hover:text-gray-700 text-xs mr-1" ${index === 0 ? 'disabled style="opacity:0.3"' : ''}>↑</button>
+                        <button onclick="moveSupplierField('${f.name}', 1)" class="text-gray-500 hover:text-gray-700 text-xs mr-2" ${index === allFields.length - 1 ? 'disabled style="opacity:0.3"' : ''}>↓</button>
                         <button onclick="editSupplierFieldModal('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
                         ${(f.isCustom || !hasSuppliers) ? `<button onclick="deleteSupplierField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
                     </td>
@@ -5876,7 +5925,40 @@
                 result.push({ ...f, isCustom: true });
             });
 
+            // 按自定义顺序排序
+            if (supplierFieldOrder && supplierFieldOrder.length > 0) {
+                result.sort((a, b) => {
+                    const aIndex = supplierFieldOrder.indexOf(a.name);
+                    const bIndex = supplierFieldOrder.indexOf(b.name);
+                    if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
+                    if (aIndex === -1) return 1;
+                    if (bIndex === -1) return -1;
+                    return aIndex - bIndex;
+                });
+            }
+
             return result;
+        }
+
+        function moveSupplierField(name, direction) {
+            const allFields = getAllSupplierFields();
+            const currentIndex = allFields.findIndex(f => f.name === name);
+            const newIndex = currentIndex + direction;
+
+            if (newIndex < 0 || newIndex >= allFields.length) return;
+
+            // 更新排序数组
+            if (!supplierFieldOrder || supplierFieldOrder.length === 0) {
+                supplierFieldOrder = allFields.map(f => f.name);
+            }
+
+            // 交换位置
+            const temp = supplierFieldOrder[currentIndex];
+            supplierFieldOrder[currentIndex] = supplierFieldOrder[newIndex];
+            supplierFieldOrder[newIndex] = temp;
+
+            saveData();
+            renderSupplierFieldsList();
         }
 
         function toggleSupplierFieldOptions() {
