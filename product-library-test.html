@@ -1397,7 +1397,7 @@
         // 异步加载数据（从 IndexedDB）
         async function loadDataAsync() {
             try {
-                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields] = await Promise.all([
+                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder] = await Promise.all([
                     loadFromDB('products'),
                     loadFromDB('suppliers'),
                     loadFromDB('templates'),
@@ -5707,16 +5707,20 @@
 
         function getAllProductFields() {
             const fields = [];
+            const fieldMap = new Map(); // 用于去重
+
             // 合并系统字段和自定义字段的覆盖配置
             const systemFieldOverrides = customProductFields.filter(f => f.isSystemOverride);
 
+            // 1. 添加系统字段
             Object.entries(SYSTEM_FIELDS).forEach(([group, names]) => {
                 names.forEach(name => {
                     // 跳过已删除的系统字段
                     if (deletedSystemProductFields.includes(name)) return;
                     const override = systemFieldOverrides.find(o => o.originalName === name);
-                    fields.push({
-                        name: override ? override.name : name,
+                    const fieldName = override ? override.name : name;
+                    fieldMap.set(fieldName, {
+                        name: fieldName,
                         group: override ? override.group : group,
                         keywords: override ? override.keywords : [],
                         originalName: name,
@@ -5724,14 +5728,19 @@
                     });
                 });
             });
-            // 添加真正的自定义字段
+
+            // 2. 添加自定义字段（非系统字段覆盖）
             customProductFields.filter(f => !f.isSystemOverride).forEach(f => {
-                fields.push({ ...f, isCustom: true });
+                if (!fieldMap.has(f.name)) {
+                    fieldMap.set(f.name, { ...f, isCustom: true });
+                }
             });
+
+            const result = Array.from(fieldMap.values());
 
             // 按自定义顺序排序
             if (productFieldOrder && productFieldOrder.length > 0) {
-                fields.sort((a, b) => {
+                result.sort((a, b) => {
                     const aIndex = productFieldOrder.indexOf(a.name);
                     const bIndex = productFieldOrder.indexOf(b.name);
                     if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
@@ -5740,9 +5749,9 @@
                     return aIndex - bIndex;
                 });
             } else {
-                fields.sort((a, b) => a.name.localeCompare(b.name));
+                result.sort((a, b) => a.name.localeCompare(b.name));
             }
-            return fields;
+            return result;
         }
 
         function moveProductField(name, direction) {
@@ -5821,7 +5830,7 @@
             }
 
             // 检查是否是系统字段
-            const isSystemField = originalName !== oldName || SYSTEM_FIELDS.core.concat(SYSTEM_FIELDS.spec, SYSTEM_FIELDS.product, SYSTEM_FIELDS.price, SYSTEM_FIELDS.delivery, SYSTEM_FIELDS.ecommerce, SYSTEM_FIELDS.media, SYSTEM_FIELDS.other).includes(originalName);
+            const isSystemField = originalName !== oldName || SYSTEM_FIELDS.core.concat(SYSTEM_FIELDS.spec, SYSTEM_FIELDS.product, SYSTEM_FIELDS.price, SYSTEM_FIELDS.delivery, SYSTEM_FIELDS.supply, SYSTEM_FIELDS.ecommerce, SYSTEM_FIELDS.media, SYSTEM_FIELDS.other, SYSTEM_FIELDS.status).includes(originalName);
 
             if (name !== oldName) {
                 const allFields = getAllProductFields();
@@ -5840,11 +5849,24 @@
                     customProductFields.push({ name, group, keywords, originalName, isSystemOverride: true });
                 }
             } else {
-                // 更新自定义字段
+                // 更新或创建自定义字段
                 const fieldIndex = customProductFields.findIndex(f => f.name === oldName && !f.isSystemOverride);
                 if (fieldIndex >= 0) {
                     customProductFields[fieldIndex] = { name, group, keywords, isCustom: true };
+                } else {
+                    // 字段不在自定义列表中，添加为新自定义字段
+                    customProductFields.push({ name, group, keywords, isCustom: true });
                 }
+            }
+
+            // 如果字段名称改变，更新商品数据中的字段名
+            if (name !== oldName) {
+                products.forEach(p => {
+                    if (p.hasOwnProperty(oldName)) {
+                        p[name] = p[oldName];
+                        delete p[oldName];
+                    }
+                });
             }
 
             // 同步更新排序数组中的字段名称
@@ -6179,6 +6201,7 @@
             } else {
                 requiredFields = requiredFields.filter(f => f !== field);
             }
+            saveData();
             updateCurrentRequiredDisplay();
         }
 
