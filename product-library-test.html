@@ -5847,6 +5847,14 @@
                 }
             }
 
+            // 同步更新排序数组中的字段名称
+            if (name !== oldName && productFieldOrder && productFieldOrder.length > 0) {
+                const orderIndex = productFieldOrder.indexOf(oldName);
+                if (orderIndex >= 0) {
+                    productFieldOrder[orderIndex] = name;
+                }
+            }
+
             saveData();
             closeModal('modal-edit-product-field');
             renderProductFieldsList();
@@ -6052,6 +6060,14 @@
                 const fieldIndex = customSupplierFields.findIndex(f => f.name === oldName && !f.isSystemOverride);
                 if (fieldIndex >= 0) {
                     customSupplierFields[fieldIndex] = { name, type, options, isCustom: true };
+                }
+            }
+
+            // 同步更新排序数组中的字段名称
+            if (name !== oldName && supplierFieldOrder && supplierFieldOrder.length > 0) {
+                const orderIndex = supplierFieldOrder.indexOf(oldName);
+                if (orderIndex >= 0) {
+                    supplierFieldOrder[orderIndex] = name;
                 }
             }
 
