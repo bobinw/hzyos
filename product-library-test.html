@@ -363,12 +363,11 @@
                     <div class="grid grid-cols-2 gap-4">
                         <div>
                             <label class="block text-sm text-gray-500 mb-1">供应商 <span class="text-red-500">*</span></label>
-                            <select id="importSupplier" class="w-full border rounded-lg px-3 py-2 text-sm">
-                                <option value="">请选择供应商</option>
-                            </select>
+                            <input type="text" id="importSupplier" class="w-full border rounded-lg px-3 py-2 text-sm" list="supplierDatalist" placeholder="选择或输入供应商名称" autocomplete="off">
+                            <datalist id="supplierDatalist"></datalist>
                         </div>
                         <div class="flex items-end">
-                            <div id="templateHint" class="text-sm text-gray-400">请先选择供应商</div>
+                            <div id="templateHint" class="text-sm text-gray-400">选择已有供应商或输入新名称</div>
                         </div>
                     </div>
                 </div>
@@ -502,33 +501,120 @@
                         <div class="text-sm text-gray-500">已配置模板</div>
                     </div>
                     <div class="bg-white rounded-lg shadow p-4">
-                        <div class="text-2xl font-bold text-purple-600" id="supplier-supply">0</div>
-                        <div class="text-sm text-gray-500">供应链公司</div>
+                        <div class="text-2xl font-bold text-purple-600" id="supplier-deep">0</div>
+                        <div class="text-sm text-gray-500">深度合作</div>
                     </div>
                     <div class="bg-white rounded-lg shadow p-4">
-                        <div class="text-2xl font-bold text-orange-600" id="supplier-brand">0</div>
-                        <div class="text-sm text-gray-500">品牌方</div>
+                        <div class="text-2xl font-bold text-orange-600" id="supplier-pending">0</div>
+                        <div class="text-sm text-gray-500">待开发</div>
                     </div>
                 </div>
 
-                <!-- 批量操作栏 -->
-                <div id="supplier-batch-actions" class="hidden bg-blue-50 border border-blue-200 rounded-lg p-3 mb-4 flex items-center justify-between">
-                    <div class="flex items-center gap-2">
-                        <span class="text-sm text-blue-700">已选择 <span id="supplier-selected-count">0</span> 项</span>
-                        <button onclick="clearSupplierSelection()" class="text-xs text-blue-600 hover:underline">取消选择</button>
-                    </div>
-                    <div class="flex gap-2">
-                        <button onclick="batchDeleteSuppliers()" class="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600">批量删除</button>
+                <!-- 筛选栏 -->
+                <div class="bg-white rounded-lg shadow p-4 mb-4">
+                    <div class="flex flex-wrap gap-3 items-center">
+                        <input type="text" id="supplier-search" placeholder="搜索供应商名称/联系人" class="border rounded-lg px-3 py-2 text-sm flex-1 min-w-[200px]" onkeyup="renderSupplierPage()">
+                        <select id="filterSupplierType" class="border rounded-lg px-3 py-2 text-sm" onchange="renderSupplierPage()">
+                            <option value="">全部类型</option>
+                            <option value="厂家">厂家</option>
+                            <option value="礼品公司">礼品公司</option>
+                            <option value="供应链公司">供应链公司</option>
+                            <option value="贸易公司">贸易公司</option>
+                            <option value="临采">临采</option>
+                        </select>
+                        <select id="filterSupplierCooperation" class="border rounded-lg px-3 py-2 text-sm" onchange="renderSupplierPage()">
+                            <option value="">全部合作程度</option>
+                            <option value="战略合作">战略合作</option>
+                            <option value="深度合作">深度合作</option>
+                            <option value="一般合作">一般合作</option>
+                            <option value="待开发">待开发</option>
+                        </select>
+                        <select id="filterSupplierTemplate" class="border rounded-lg px-3 py-2 text-sm" onchange="renderSupplierPage()">
+                            <option value="">模板状态</option>
+                            <option value="yes">已配置模板</option>
+                            <option value="no">未配置模板</option>
+                        </select>
                     </div>
                 </div>
 
-                <!-- 供应商列表 -->
-                <div class="bg-white rounded-lg shadow">
-                    <div class="p-4 border-b flex items-center gap-4">
-                        <input type="checkbox" id="supplier-select-all" onchange="toggleSupplierSelectAll()" class="w-4 h-4 rounded">
-                        <input type="text" id="supplier-search" placeholder="搜索供应商名称/联系人" class="border rounded-lg px-3 py-2 text-sm flex-1" onkeyup="renderSupplierPage()">
+                <!-- 供应商列表表格 -->
+                <div class="bg-white rounded-lg shadow overflow-hidden">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 text-gray-500">
+                            <tr>
+                                <th class="px-4 py-3 text-left">供应商名称</th>
+                                <th class="px-4 py-3 text-left">类型</th>
+                                <th class="px-4 py-3 text-left">联系人/电话</th>
+                                <th class="px-4 py-3 text-left">地址</th>
+                                <th class="px-4 py-3 text-left">合作程度</th>
+                                <th class="px-4 py-3 text-center">商品数</th>
+                                <th class="px-4 py-3 text-center">模板</th>
+                                <th class="px-4 py-3 text-center">操作</th>
+                            </tr>
+                        </thead>
+                        <tbody id="supplierList" class="divide-y">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 模态框：新增供应商 -->
+            <div id="modal-supplier" class="modal">
+                <div class="modal-content w-lg">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">新增供应商</h3>
+                        <button onclick="closeModal('modal-supplier')" class="text-gray-400 hover:text-gray-600">✕</button>
                     </div>
-                    <div id="supplierList" class="divide-y">
+                    <div class="space-y-4 max-h-[70vh] overflow-y-auto">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">供应商名称 <span class="text-red-500">*</span></label>
+                                <input type="text" id="newSupplierName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="请输入供应商名称">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">公司类型</label>
+                                <select id="newSupplierType" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                    <option value="">请选择</option>
+                                    <option value="厂家">厂家</option>
+                                    <option value="礼品公司">礼品公司</option>
+                                    <option value="供应链公司">供应链公司</option>
+                                    <option value="贸易公司">贸易公司</option>
+                                    <option value="临采">临采</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">联系人</label>
+                                <input type="text" id="newSupplierContact" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="联系人姓名">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">联系方式</label>
+                                <input type="text" id="newSupplierPhone" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="电话/微信">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">公司地址</label>
+                            <input type="text" id="newSupplierAddress" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="省/市/区/详细地址">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">合作程度</label>
+                            <select id="newSupplierCooperation" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="">请选择</option>
+                                <option value="战略合作">战略合作</option>
+                                <option value="深度合作">深度合作</option>
+                                <option value="一般合作">一般合作</option>
+                                <option value="待开发">待开发</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">备注</label>
+                            <textarea id="newSupplierRemark" class="w-full border rounded-lg px-3 py-2 text-sm" rows="2" placeholder="其他备注信息"></textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4 border-t">
+                            <button onclick="closeModal('modal-supplier')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="addSupplier()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -542,22 +628,14 @@
                     </div>
                     <div class="space-y-3">
                         <div class="text-sm text-gray-600 mb-4 p-3 bg-gray-50 rounded-lg">
-                            <div class="flex justify-between mb-1">
+                            <div class="flex justify-between">
                                 <span>供应商总数：</span>
                                 <span id="supplier-export-total" class="font-medium">0</span>
                             </div>
-                            <div class="flex justify-between">
-                                <span>已选择：</span>
-                                <span id="supplier-export-selected" class="font-medium">0</span>
-                            </div>
                         </div>
                         <button onclick="doSupplierExport('all')" class="w-full px-4 py-3 bg-purple-50 border border-purple-200 rounded-lg text-left hover:bg-purple-100 transition-colors">
-                            <div class="font-medium text-purple-700">📦 全部导出</div>
-                            <div class="text-xs text-purple-500 mt-1">导出所有供应商</div>
-                        </button>
-                        <button onclick="doSupplierExport('selected')" id="btn-supplier-export-selected" class="w-full px-4 py-3 bg-green-50 border border-green-200 rounded-lg text-left hover:bg-green-100 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
-                            <div class="font-medium text-green-700">✅ 导出选中供应商</div>
-                            <div class="text-xs text-green-500 mt-1">仅导出勾选的供应商</div>
+                            <div class="font-medium text-purple-700">📦 导出全部供应商</div>
+                            <div class="text-xs text-purple-500 mt-1">导出所有供应商列表</div>
                         </button>
                     </div>
                 </div>
@@ -571,6 +649,210 @@
                         <button onclick="closeModal('modal-supplier-detail')" class="text-gray-400 hover:text-gray-600">✕</button>
                     </div>
                     <div id="supplier-detail-content">
+                    </div>
+                </div>
+            </div>
+
+            <!-- 编辑供应商弹窗 -->
+            <div id="modal-edit-supplier" class="modal">
+                <div class="modal-content w-lg">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">编辑供应商</h3>
+                        <button onclick="closeModal('modal-edit-supplier')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <div class="space-y-4 max-h-[70vh] overflow-y-auto">
+                        <input type="hidden" id="editSupplierOriginalName">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">供应商名称 <span class="text-red-500">*</span></label>
+                                <input type="text" id="editSupplierName" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">公司类型</label>
+                                <select id="editSupplierType" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                    <option value="">请选择</option>
+                                    <option value="厂家">厂家</option>
+                                    <option value="礼品公司">礼品公司</option>
+                                    <option value="供应链公司">供应链公司</option>
+                                    <option value="贸易公司">贸易公司</option>
+                                    <option value="临采">临采</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">联系人</label>
+                                <input type="text" id="editSupplierContact" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">联系方式</label>
+                                <input type="text" id="editSupplierPhone" class="w-full border rounded-lg px-3 py-2 text-sm">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">公司地址</label>
+                            <input type="text" id="editSupplierAddress" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">合作程度</label>
+                            <select id="editSupplierCooperation" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="">请选择</option>
+                                <option value="战略合作">战略合作</option>
+                                <option value="深度合作">深度合作</option>
+                                <option value="一般合作">一般合作</option>
+                                <option value="待开发">待开发</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">备注</label>
+                            <textarea id="editSupplierRemark" class="w-full border rounded-lg px-3 py-2 text-sm" rows="2" placeholder="其他备注信息"></textarea>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4 border-t">
+                            <button onclick="closeModal('modal-edit-supplier')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="saveEditSupplier()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 新增商品字段弹窗 -->
+            <div id="modal-add-product-field" class="modal">
+                <div class="modal-content w-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">新增商品字段</h3>
+                        <button onclick="closeModal('modal-add-product-field')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">字段名称 <span class="text-red-500">*</span></label>
+                            <input type="text" id="newProductFieldName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="如：产地">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">字段分组</label>
+                            <select id="newProductFieldGroup" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="core">核心字段</option>
+                                <option value="spec">规格包装</option>
+                                <option value="product">产品属性</option>
+                                <option value="price">价格体系</option>
+                                <option value="delivery">物流供应链</option>
+                                <option value="ecommerce">电商参考</option>
+                                <option value="media">图片媒体</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">导入映射关键词</label>
+                            <input type="text" id="newProductFieldKeywords" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="用逗号分隔，如：产地,生产地,manufacture">
+                            <p class="text-xs text-gray-400 mt-1">导入Excel时，包含这些关键词的列名会自动映射到此字段</p>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4 border-t">
+                            <button onclick="closeModal('modal-add-product-field')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="addProductField()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 编辑商品字段弹窗 -->
+            <div id="modal-edit-product-field" class="modal">
+                <div class="modal-content w-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">编辑商品字段</h3>
+                        <button onclick="closeModal('modal-edit-product-field')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <div class="space-y-4">
+                        <input type="hidden" id="editProductFieldOldName">
+                        <div>
+                            <input type="hidden" id="editProductFieldOriginalName">
+                            <label class="block text-sm text-gray-500 mb-1">字段名称 <span class="text-red-500">*</span></label>
+                            <input type="text" id="editProductFieldName" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">字段分组</label>
+                            <select id="editProductFieldGroup" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="core">核心字段</option>
+                                <option value="spec">规格包装</option>
+                                <option value="product">产品属性</option>
+                                <option value="price">价格体系</option>
+                                <option value="delivery">物流供应链</option>
+                                <option value="ecommerce">电商参考</option>
+                                <option value="media">图片媒体</option>
+                                <option value="other">其他</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">导入映射关键词</label>
+                            <input type="text" id="editProductFieldKeywords" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="用逗号分隔">
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4 border-t">
+                            <button onclick="closeModal('modal-edit-product-field')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="saveProductField()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 新增供应商字段弹窗 -->
+            <div id="modal-add-supplier-field" class="modal">
+                <div class="modal-content w-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">新增供应商字段</h3>
+                        <button onclick="closeModal('modal-add-supplier-field')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">字段名称 <span class="text-red-500">*</span></label>
+                            <input type="text" id="newSupplierFieldName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="如：开票信息">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">字段类型</label>
+                            <select id="newSupplierFieldType" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="toggleSupplierFieldOptions()">
+                                <option value="text">文本</option>
+                                <option value="select">下拉选择</option>
+                                <option value="textarea">多行文本</option>
+                            </select>
+                        </div>
+                        <div id="supplierFieldOptionsDiv" class="hidden">
+                            <label class="block text-sm text-gray-500 mb-1">选项值</label>
+                            <input type="text" id="newSupplierFieldOptions" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="用逗号分隔，如：厂家,贸易商,代理">
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4 border-t">
+                            <button onclick="closeModal('modal-add-supplier-field')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="addSupplierField()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 编辑供应商字段弹窗 -->
+            <div id="modal-edit-supplier-field" class="modal">
+                <div class="modal-content w-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">编辑供应商字段</h3>
+                        <button onclick="closeModal('modal-edit-supplier-field')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <div class="space-y-4">
+                        <input type="hidden" id="editSupplierFieldOldName">
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">字段名称 <span class="text-red-500">*</span></label>
+                            <input type="text" id="editSupplierFieldName" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">字段类型</label>
+                            <select id="editSupplierFieldType" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="toggleEditSupplierFieldOptions()">
+                                <option value="text">文本</option>
+                                <option value="select">下拉选择</option>
+                                <option value="textarea">多行文本</option>
+                            </select>
+                        </div>
+                        <div id="editSupplierFieldOptionsDiv" class="hidden">
+                            <label class="block text-sm text-gray-500 mb-1">选项值</label>
+                            <input type="text" id="editSupplierFieldOptions" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="用逗号分隔">
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4 border-t">
+                            <button onclick="closeModal('modal-edit-supplier-field')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="saveSupplierField()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -639,6 +921,62 @@
                 <div class="bg-white rounded-lg shadow p-6 mb-6">
                     <h3 class="font-medium mb-4">当前必填项</h3>
                     <div id="currentRequiredFields" class="text-sm">
+                    </div>
+                </div>
+
+                <!-- 字段管理 -->
+                <div class="bg-white rounded-lg shadow p-6 mb-6">
+                    <h3 class="font-medium mb-4">字段管理</h3>
+                    <p class="text-sm text-gray-500 mb-4">管理商品库和供应商的字段定义，支持新增、修改、删除</p>
+
+                    <!-- Tab切换 -->
+                    <div class="flex gap-2 mb-4 border-b">
+                        <button onclick="showFieldTab('product')" id="tab-product-fields" class="px-4 py-2 text-sm border-b-2 border-blue-600 text-blue-600">商品库字段</button>
+                        <button onclick="showFieldTab('supplier')" id="tab-supplier-fields" class="px-4 py-2 text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700">供应商字段</button>
+                    </div>
+
+                    <!-- 商品库字段 -->
+                    <div id="product-fields-panel">
+                        <div class="flex justify-between items-center mb-3">
+                            <div class="text-sm text-gray-500">共 <span id="product-field-count">0</span> 个字段</div>
+                            <button onclick="showAddProductFieldModal()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">+ 新增字段</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left">字段名称</th>
+                                        <th class="px-3 py-2 text-left">字段分组</th>
+                                        <th class="px-3 py-2 text-left">导入映射</th>
+                                        <th class="px-3 py-2 text-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="product-fields-list" class="divide-y">
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+
+                    <!-- 供应商字段 -->
+                    <div id="supplier-fields-panel" class="hidden">
+                        <div class="flex justify-between items-center mb-3">
+                            <div class="text-sm text-gray-500">共 <span id="supplier-field-count">0</span> 个字段</div>
+                            <button onclick="showAddSupplierFieldModal()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">+ 新增字段</button>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-sm">
+                                <thead class="bg-gray-50">
+                                    <tr>
+                                        <th class="px-3 py-2 text-left">字段名称</th>
+                                        <th class="px-3 py-2 text-left">字段类型</th>
+                                        <th class="px-3 py-2 text-left">选项值</th>
+                                        <th class="px-3 py-2 text-center">操作</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="supplier-fields-list" class="divide-y">
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
 
@@ -736,95 +1074,6 @@
                     <button onclick="closeModal('modal-product')" class="text-gray-400 hover:text-gray-600">✕</button>
                 </div>
                 <div id="modal-content"></div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 模态框：新增供应商 -->
-    <div id="modal-supplier" class="modal">
-        <div class="modal-content w-md">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">新增供应商</h3>
-                <button onclick="closeModal('modal-supplier')" class="text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-            <div class="space-y-4">
-                <div>
-                    <label class="block text-sm text-gray-500 mb-1">供应商名称 <span class="text-red-500">*</span></label>
-                    <input type="text" id="newSupplierName" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="请输入供应商名称">
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm text-gray-500 mb-1">联系人</label>
-                        <input type="text" id="newSupplierContact" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="联系人姓名">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-500 mb-1">联系方式</label>
-                        <input type="text" id="newSupplierPhone" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="电话/微信">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-500 mb-1">公司地址</label>
-                    <input type="text" id="newSupplierAddress" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="省/市/区/详细地址">
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-500 mb-1">公司性质</label>
-                    <select id="newSupplierType" class="w-full border rounded-lg px-3 py-2 text-sm">
-                        <option value="">请选择</option>
-                        <option value="供应链公司">供应链公司</option>
-                        <option value="品牌方">品牌方</option>
-                        <option value="工厂">工厂</option>
-                        <option value="贸易商">贸易商</option>
-                    </select>
-                </div>
-                <div class="flex justify-end gap-2 pt-4">
-                    <button onclick="closeModal('modal-supplier')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-                    <button onclick="addSupplier()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <!-- 模态框：编辑供应商 -->
-    <div id="modal-edit-supplier" class="modal">
-        <div class="modal-content w-md">
-            <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">编辑供应商</h3>
-                <button onclick="closeModal('modal-edit-supplier')" class="text-gray-400 hover:text-gray-600">✕</button>
-            </div>
-            <div class="space-y-4">
-                <input type="hidden" id="editSupplierId">
-                <div>
-                    <label class="block text-sm text-gray-500 mb-1">供应商名称 <span class="text-red-500">*</span></label>
-                    <input type="text" id="editSupplierName" class="w-full border rounded-lg px-3 py-2 text-sm">
-                </div>
-                <div class="grid grid-cols-2 gap-4">
-                    <div>
-                        <label class="block text-sm text-gray-500 mb-1">联系人</label>
-                        <input type="text" id="editSupplierContact" class="w-full border rounded-lg px-3 py-2 text-sm">
-                    </div>
-                    <div>
-                        <label class="block text-sm text-gray-500 mb-1">联系方式</label>
-                        <input type="text" id="editSupplierPhone" class="w-full border rounded-lg px-3 py-2 text-sm">
-                    </div>
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-500 mb-1">公司地址</label>
-                    <input type="text" id="editSupplierAddress" class="w-full border rounded-lg px-3 py-2 text-sm">
-                </div>
-                <div>
-                    <label class="block text-sm text-gray-500 mb-1">公司性质</label>
-                    <select id="editSupplierType" class="w-full border rounded-lg px-3 py-2 text-sm">
-                        <option value="">请选择</option>
-                        <option value="供应链公司">供应链公司</option>
-                        <option value="品牌方">品牌方</option>
-                        <option value="工厂">工厂</option>
-                        <option value="贸易商">贸易商</option>
-                    </select>
-                </div>
-                <div class="flex justify-end gap-2 pt-4">
-                    <button onclick="closeModal('modal-edit-supplier')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-                    <button onclick="saveEditSupplier()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
-                </div>
             </div>
         </div>
     </div>
@@ -1192,7 +1441,9 @@
                     saveToDB('templates', templatesArray),
                     saveSettingToDB('nextProductId', nextProductId),
                     saveSettingToDB('requiredFields', requiredFields),
-                    saveSettingToDB('requiredGroups', requiredGroups)
+                    saveSettingToDB('requiredGroups', requiredGroups),
+                    saveSettingToDB('customProductFields', customProductFields),
+                    saveSettingToDB('customSupplierFields', customSupplierFields)
                 ]);
 
                 console.log('数据保存成功');
@@ -1619,6 +1870,8 @@
         let nextProductId = 1;
         let requiredFields = [...DEFAULT_REQUIRED_FIELDS];
         let requiredGroups = JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
+        let customProductFields = [];
+        let customSupplierFields = [];
         let parsedData = null;
         let currentMappings = {};
         let selectedSupplierId = '';
@@ -1654,6 +1907,8 @@
                 nextProductId = savedData.nextId || 5;
                 requiredFields = savedData.requiredFields || [...DEFAULT_REQUIRED_FIELDS];
                 requiredGroups = savedData.requiredGroups || JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
+                customProductFields = savedData.customProductFields || [];
+                customSupplierFields = savedData.customSupplierFields || [];
 
                 // 修复空ID的供应商数据
                 let needSave = false;
@@ -1834,12 +2089,10 @@
             // 添加数据行
             for (let i = 0; i < filtered.length; i++) {
                 const p = filtered[i];
-                const supplier = suppliers.find(s => s.id === p.supplierId);
                 const rowNumber = i + 2; // Excel 行号（第1行是表头）
 
                 const rowData = {
-                    '供应商': supplier ? supplier.name : '',
-                    '供应商ID': p.supplierId || '',
+                    '供应商': p.supplierId || '',
                     '供应商SKU': p.sku || '',
                     '商品名称': p.name || '',
                     '分类': p.category || '',
@@ -2012,13 +2265,14 @@
             const filterFreightIncluded = document.getElementById('filterFreightIncluded')?.value || '';
             const filterDefaultExpress = document.getElementById('filterDefaultExpress')?.value || '';
 
-            // 填充供应商筛选
+            // 填充供应商筛选（从商品数据中提取）
             const supplierSelect = document.getElementById('filterSupplier');
             if (supplierSelect && supplierSelect.options.length <= 1) {
-                suppliers.forEach(s => {
+                const supplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))].sort();
+                supplierNames.forEach(name => {
                     const opt = document.createElement('option');
-                    opt.value = s.id;
-                    opt.textContent = s.name;
+                    opt.value = name;
+                    opt.textContent = name;
                     supplierSelect.appendChild(opt);
                 });
             }
@@ -2093,7 +2347,6 @@
             // 渲染表格
             const tbody = document.getElementById('productList');
             tbody.innerHTML = filtered.map(p => {
-                const supplier = suppliers.find(s => s.id === p.supplierId);
                 const statusClass = p.status === '上架中' ? 'bg-green-100 text-green-800' :
                                    p.status === '待审核' ? 'bg-yellow-100 text-yellow-800' :
                                    p.status === '已过期' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-800';
@@ -2135,7 +2388,7 @@
                         <div class="text-xs text-gray-400">${p.brandLevel || ''}</div>
                     </td>
                     <td class="px-4 py-3">
-                        <div class="text-xs">${supplier ? supplier.name : '-'}</div>
+                        <div class="text-xs">${p.supplierId || '-'}</div>
                     </td>
                     <td class="px-4 py-3">
                         <span class="tag ${statusClass}">${p.status}</span>
@@ -2306,8 +2559,6 @@
         function editProduct(id) {
             const p = products.find(pr => pr.id === id);
             if (!p) return;
-
-            const supplier = suppliers.find(s => s.id === p.supplierId);
 
             document.getElementById('edit-title').textContent = '编辑商品 - ' + p.name;
             document.getElementById('edit-content').innerHTML = `
@@ -2547,8 +2798,6 @@
             const p = products.find(pr => pr.id === id);
             if (!p) return;
 
-            const supplier = suppliers.find(s => s.id === p.supplierId);
-
             document.getElementById('modal-title').textContent = p.name;
             document.getElementById('modal-content').innerHTML = `
                 <div class="space-y-4 text-sm max-h-[60vh] overflow-y-auto">
@@ -2588,7 +2837,7 @@
                     <div class="bg-gray-50 rounded-lg p-3">
                         <h4 class="font-medium text-gray-700 mb-2">核心信息</h4>
                         <div class="grid grid-cols-3 gap-2">
-                            <div><span class="text-gray-500">供应商：</span>${supplier ? supplier.name : '-'}</div>
+                            <div><span class="text-gray-500">供应商：</span>${p.supplierId || '-'}</div>
                             <div><span class="text-gray-500">SKU：</span>${p.sku}</div>
                             <div><span class="text-gray-500">分类：</span>${p.category || '-'}</div>
                             <div><span class="text-gray-500">单位：</span>${p.unit || '-'}</div>
@@ -2784,91 +3033,36 @@
             parsedData = null;
             currentMappings = {};
 
-            // 保存当前选择的供应商（如果下拉框已存在且有值）
-            const existingSelect = document.getElementById('importSupplier');
-            if (existingSelect && existingSelect.value) {
-                selectedSupplierId = existingSelect.value;
+            // 保存当前选择的供应商
+            const existingInput = document.getElementById('importSupplier');
+            if (existingInput && existingInput.value) {
+                selectedSupplierId = existingInput.value;
             }
 
-            // 填充供应商下拉
-            const select = document.getElementById('importSupplier');
-            select.innerHTML = '<option value="">请选择供应商</option>' +
-                suppliers.map(s => `<option value="${s.id}">${s.name}${s.hasTemplate ? ' ✓' : ''}</option>`).join('');
-
-            // 使用 addEventListener 绑定事件（比 inline onchange 更可靠）
-            // 先移除旧的监听器，再添加新的
-            select.removeEventListener('change', onSupplierChange);
-            select.addEventListener('change', onSupplierChange);
+            // 填充供应商列表（从商品数据中提取）
+            const datalist = document.getElementById('supplierDatalist');
+            const supplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))].sort();
+            datalist.innerHTML = supplierNames.map(name => `<option value="${name}">`).join('');
 
             // 恢复之前选择的供应商
             if (selectedSupplierId) {
-                select.value = selectedSupplierId;
-                // 手动触发更新提示
-                const supplier = suppliers.find(s => s.id === selectedSupplierId);
+                existingInput.value = selectedSupplierId;
+                // 检查是否有模板
+                const hasTemplate = templates[selectedSupplierId] && Object.keys(templates[selectedSupplierId].mappings || {}).length > 0;
                 const hint = document.getElementById('templateHint');
-                if (supplier) {
-                    if (supplier.hasTemplate) {
-                        hint.innerHTML = `<span class="text-green-600">✓ 已配置映射模板</span>`;
-                    } else {
-                        hint.innerHTML = `<span class="text-yellow-600">⚠ 未配置模板，将智能推断</span>`;
-                    }
-                    document.getElementById('step2').classList.remove('opacity-50');
-                }
-            }
-        }
-
-        // 获取当前选择的供应商ID（统一函数）
-        function getCurrentSupplierId() {
-            const select = document.getElementById('importSupplier');
-
-            // 方法1：直接从下拉框获取
-            let result = select ? select.value : '';
-
-            // 方法2：如果下拉框值为空但选中了选项，尝试通过名称匹配
-            if (!result && select && select.selectedIndex > 0) {
-                const selectedText = select.options[select.selectedIndex].text;
-                // 尝试通过名称找到对应的供应商
-                const supplier = suppliers.find(s => s.name === selectedText);
-                if (supplier && supplier.id) {
-                    result = supplier.id;
-                }
-            }
-
-            // 方法3：从全局变量获取
-            if (!result) {
-                result = selectedSupplierId;
-            }
-
-            return result;
-        }
-
-        function onSupplierChange() {
-            const select = document.getElementById('importSupplier');
-            // 获取选中值（多种方式确保可靠性）
-            let supplierId = select ? select.value : '';
-            if (!supplierId && select && select.selectedIndex > 0) {
-                supplierId = select.options[select.selectedIndex].value;
-            }
-
-            selectedSupplierId = supplierId; // 保存选择的供应商ID
-
-            const supplier = suppliers.find(s => s.id === supplierId);
-            const hint = document.getElementById('templateHint');
-
-            if (supplier) {
-                if (supplier.hasTemplate) {
+                if (hasTemplate) {
                     hint.innerHTML = `<span class="text-green-600">✓ 已配置映射模板</span>`;
                 } else {
-                    hint.innerHTML = `<span class="text-yellow-600">⚠ 未配置模板，将智能推断</span>`;
+                    hint.innerHTML = `<span class="text-gray-400">选择已有供应商或输入新名称</span>`;
                 }
                 document.getElementById('step2').classList.remove('opacity-50');
-            } else {
-                hint.textContent = '请先选择供应商';
-                document.getElementById('step2').classList.add('opacity-50');
             }
+        }
 
-            document.getElementById('step3').classList.add('opacity-50');
-            parsedData = null;
+        // 获取当前选择的供应商名称（直接从输入框获取）
+        function getCurrentSupplierId() {
+            const input = document.getElementById('importSupplier');
+            return input ? input.value.trim() : '';
         }
 
         function switchImportMode(mode) {
@@ -3903,14 +4097,13 @@
             // 获取模板映射
             const supplierId = getCurrentSupplierId();
             if (!supplierId) {
-                alert('请先选择供应商');
+                alert('请先输入供应商名称');
                 return;
             }
             // 同步全局变量
             selectedSupplierId = supplierId;
 
             const template = templates[supplierId];
-            const supplier = suppliers.find(s => s.id === supplierId);
 
             // 智能匹配字段
             currentMappings = {};
@@ -3951,7 +4144,7 @@
             if (h.includes('规格型号') || h === '规格' || h.includes('型号')) return '规格型号';
             if (h.includes('箱规') || h.includes('装箱数') || h.includes('箱入数') || h.includes('每箱')) return '箱规';
             if (h.includes('内配') || h.includes('包装配置')) return '内配';
-            if (h.includes('产品尺寸') || h.includes('单品尺寸')) return '产品尺寸';
+            if (h.includes('产品尺寸') || h.includes('单品尺寸') || h.includes('礼盒尺寸') || h.includes('尺寸')) return '产品尺寸';
             if (h.includes('整箱尺寸') || h.includes('外箱尺寸')) return '整箱尺寸';
             if (h.includes('净含量') || h === '重量' || h.includes('克重')) return '净含量';
             if (h.includes('产品毛重') || h === '毛重') return '产品毛重';
@@ -3971,7 +4164,8 @@
             if (h.includes('集采价') || h.includes('采购价') || h.includes('进货价')) return '集采价';
             if (h.includes('零售价') || h.includes('市场价') || h.includes('指导价') || h.includes('建议零售')) return '标准零售价';
             if (h.includes('含税')) return '含税标识';
-            if (h.includes('一件代发') || h.includes('代发价')) return '一件代发价';
+            if (h.includes('一件代发') || h.includes('一份代发') || h.includes('代发价')) return '一件代发价';
+            if (h.includes('一件代发运费') || h.includes('一份代发运费') || h.includes('代发运费')) return '一件代发运费';
             if (h.includes('京东代发') || h.includes('顺丰代发')) return '京东/顺丰代发价';
 
             // 通用价格匹配
@@ -4001,6 +4195,9 @@
             // 图片媒体
             if (h.includes('产品图片') || h === '图片' || h === '商品图片' || h === 'productimage' || h === 'mainimage') return '产品图片';
             if (h.includes('详情图') || h.includes('详情图片') || h.includes('详情页') || h === 'detailimage') return '详情图';
+
+            // 备注
+            if (h.includes('备注') || h.includes('说明')) return '备注';
 
             return '(忽略)';
         }
@@ -4644,7 +4841,7 @@
                     // 核心字段
                     else if (field === '供应商ID') {
                         // 如果导入的供应商ID存在，使用它；否则保持当前选择
-                        if (value && suppliers.find(s => s.id === value)) {
+                        if (value) {
                             product.supplierId = value;
                         }
                     }
@@ -4821,18 +5018,19 @@
 
         // ========== 映射模板 ==========
         function renderTemplatePage() {
-            const listHtml = suppliers.map(s => `
-                <div onclick="editTemplate('${s.id}')" class="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${s.hasTemplate ? 'border-green-200 bg-green-50' : ''}">
+            // 从商品数据中提取所有供应商
+            const supplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))].sort();
+
+            const listHtml = supplierNames.map(name => {
+                const hasTemplate = templates[name] && Object.keys(templates[name].mappings || {}).length > 0;
+                return `
+                <div onclick="editTemplate('${name}')" class="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${hasTemplate ? 'border-green-200 bg-green-50' : ''}">
                     <div class="flex justify-between items-center">
-                        <div>
-                            <span class="font-medium">${s.name}</span>
-                            ${s.type ? `<span class="ml-2 text-xs text-gray-400">${s.type}</span>` : ''}
-                        </div>
-                        ${s.hasTemplate ? '<span class="text-green-600 text-xs">✓ 已配置</span>' : '<span class="text-gray-400 text-xs">未配置</span>'}
+                        <span class="font-medium">${name}</span>
+                        ${hasTemplate ? '<span class="text-green-600 text-xs">✓ 已配置</span>' : '<span class="text-gray-400 text-xs">未配置</span>'}
                     </div>
-                    ${s.contact || s.phone ? `<div class="text-xs text-gray-500 mt-1">${s.contact || ''} ${s.phone ? '· ' + s.phone : ''}</div>` : ''}
                 </div>
-            `).join('');
+            `}).join('') || '<div class="text-center text-gray-400 py-8">暂无供应商数据，请先导入商品</div>';
             document.getElementById('templateList').innerHTML = listHtml;
         }
 
@@ -4841,28 +5039,28 @@
 
         function editTemplate(supplierId) {
             currentEditingTemplateId = supplierId;
-            const supplier = suppliers.find(s => s.id === supplierId);
             const template = templates[supplierId] || { mappings: {} };
 
             const allFields = [...SYSTEM_FIELDS.core, ...SYSTEM_FIELDS.spec, ...SYSTEM_FIELDS.price, ...SYSTEM_FIELDS.supply];
 
             // 获取已有模板的供应商列表（排除当前供应商）
-            const templatesWithSupplier = suppliers.filter(s =>
-                s.id !== supplierId && templates[s.id] && Object.keys(templates[s.id].mappings || {}).length > 0
+            const allSupplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))];
+            const templatesWithSupplier = allSupplierNames.filter(name =>
+                name !== supplierId && templates[name] && Object.keys(templates[name].mappings || {}).length > 0
             );
 
             document.getElementById('templateEditor').innerHTML = `
                 <div class="mb-4">
                     <div class="flex justify-between items-start">
                         <div>
-                            <h4 class="font-medium">${supplier.name} - 字段映射模板</h4>
+                            <h4 class="font-medium">${supplierId} - 字段映射模板</h4>
                             <p class="text-xs text-gray-500 mt-1">配置供应商原始字段名与系统标准字段的对应关系</p>
                         </div>
                         ${templatesWithSupplier.length > 0 ? `
                             <div class="flex items-center gap-2">
                                 <select id="copy-template-select" class="border rounded px-2 py-1 text-xs">
                                     <option value="">从已有模板复制...</option>
-                                    ${templatesWithSupplier.map(s => `<option value="${s.id}">${s.name}</option>`).join('')}
+                                    ${templatesWithSupplier.map(name => `<option value="${name}">${name}</option>`).join('')}
                                 </select>
                                 <button onclick="copyFromTemplate()" class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs hover:bg-gray-200">复制</button>
                             </div>
@@ -4977,9 +5175,6 @@
 
             templates[supplierId] = { supplierId, mappings };
 
-            const supplier = suppliers.find(s => s.id === supplierId);
-            if (supplier) supplier.hasTemplate = Object.keys(mappings).length > 0;
-
             saveData();
             alert(`已保存 ${Object.keys(mappings).length} 条映射规则`);
             renderTemplatePage();
@@ -4987,76 +5182,151 @@
         }
 
         // ========== 供应商管理 ==========
-        function renderSupplierPage() {
-            const search = (document.getElementById('supplier-search')?.value || '').toLowerCase();
-            const filtered = suppliers.filter(s =>
-                s.name.toLowerCase().includes(search) ||
-                (s.contact && s.contact.toLowerCase().includes(search))
-            );
+        // 获取所有供应商（合并手动新增的 + 从商品提取的）
+        function getAllSuppliers() {
+            const supplierMap = new Map();
 
-            // 更新统计
-            document.getElementById('supplier-count').textContent = suppliers.length;
-            document.getElementById('supplier-with-template').textContent = suppliers.filter(s => s.hasTemplate).length;
-            document.getElementById('supplier-supply').textContent = suppliers.filter(s => s.type === '供应链公司').length;
-            document.getElementById('supplier-brand').textContent = suppliers.filter(s => s.type === '品牌方').length;
+            // 1. 从手动新增的供应商中获取
+            suppliers.forEach(s => {
+                if (s.name) {
+                    supplierMap.set(s.name, {
+                        name: s.name,
+                        contact: s.contact || '',
+                        phone: s.phone || '',
+                        address: s.address || '',
+                        type: s.type || '',
+                        cooperation: s.cooperation || '',
+                        remark: s.remark || '',
+                        productCount: 0,
+                        isManual: true
+                    });
+                }
+            });
 
-            // 更新选择状态
-            updateSupplierSelection();
+            // 2. 从商品数据中提取
+            products.forEach(p => {
+                if (p.supplierId) {
+                    if (supplierMap.has(p.supplierId)) {
+                        supplierMap.get(p.supplierId).productCount++;
+                    } else {
+                        supplierMap.set(p.supplierId, {
+                            name: p.supplierId,
+                            contact: '',
+                            phone: '',
+                            address: '',
+                            type: '',
+                            cooperation: '',
+                            remark: '',
+                            productCount: 1,
+                            isManual: false
+                        });
+                    }
+                }
+            });
 
-            document.getElementById('supplierList').innerHTML = filtered.map(s => {
-                const productCount = products.filter(p => p.supplierId === s.id).length;
-                const isSelected = selectedSupplierIds.has(s.id);
-                return `
-                <div class="p-4 hover:bg-gray-50 ${isSelected ? 'bg-blue-50' : ''}">
-                    <div class="flex items-center gap-3">
-                        <input type="checkbox" class="supplier-checkbox w-4 h-4 rounded" data-id="${s.id}"
-                            ${isSelected ? 'checked' : ''} onchange="toggleSupplierSelection('${s.id}')">
-                        <div class="w-10 h-10 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 font-bold flex-shrink-0">
-                            ${s.name.charAt(0)}
-                        </div>
-                        <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-2">
-                                <span class="font-medium">${s.name}</span>
-                                ${s.type ? `<span class="inline-block px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">${s.type}</span>` : ''}
-                                ${s.hasTemplate ? '<span class="inline-block px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">✓ 已配置模板</span>' : ''}
-                            </div>
-                            <div class="text-sm text-gray-500 mt-1 flex gap-4">
-                                ${s.contact ? `<span>👤 ${s.contact}</span>` : ''}
-                                ${s.phone ? `<span>📞 ${s.phone}</span>` : ''}
-                                <span class="text-blue-600">${productCount} 个商品</span>
-                            </div>
-                        </div>
-                        <div class="flex gap-2 flex-shrink-0">
-                            <button onclick="showSupplierDetail('${s.id}')" class="text-blue-600 hover:underline text-xs">详情</button>
-                            <button onclick="editSupplier('${s.id}')" class="text-green-600 hover:underline text-xs">编辑</button>
-                            <button onclick="deleteSupplier('${s.id}')" class="text-red-600 hover:underline text-xs">删除</button>
-                        </div>
-                    </div>
-                </div>
-            `}).join('') || '<div class="text-center text-gray-400 py-8">暂无供应商数据</div>';
+            return Array.from(supplierMap.values()).sort((a, b) => a.name.localeCompare(b.name));
         }
 
-        function showSupplierDetail(supplierId) {
-            const s = suppliers.find(s => s.id === supplierId);
-            if (!s) return;
+        function renderSupplierPage() {
+            const search = (document.getElementById('supplier-search')?.value || '').toLowerCase();
+            const filterType = document.getElementById('filterSupplierType')?.value || '';
+            const filterCooperation = document.getElementById('filterSupplierCooperation')?.value || '';
+            const filterTemplate = document.getElementById('filterSupplierTemplate')?.value || '';
 
+            const allSuppliers = getAllSuppliers();
+            const filtered = allSuppliers.filter(s => {
+                if (search && !s.name.toLowerCase().includes(search) && !(s.contact || '').toLowerCase().includes(search)) return false;
+                if (filterType && s.type !== filterType) return false;
+                if (filterCooperation && s.cooperation !== filterCooperation) return false;
+                if (filterTemplate === 'yes' && !(templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0)) return false;
+                if (filterTemplate === 'no' && (templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0)) return false;
+                return true;
+            });
+
+            // 更新统计
+            document.getElementById('supplier-count').textContent = allSuppliers.length;
+            document.getElementById('supplier-with-template').textContent = allSuppliers.filter(s =>
+                templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0
+            ).length;
+            document.getElementById('supplier-deep').textContent = allSuppliers.filter(s =>
+                s.cooperation === '战略合作' || s.cooperation === '深度合作'
+            ).length;
+            document.getElementById('supplier-pending').textContent = allSuppliers.filter(s =>
+                s.cooperation === '待开发'
+            ).length;
+
+            const typeColors = {
+                '厂家': 'bg-blue-100 text-blue-700',
+                '礼品公司': 'bg-purple-100 text-purple-700',
+                '供应链公司': 'bg-green-100 text-green-700',
+                '贸易公司': 'bg-orange-100 text-orange-700',
+                '临采': 'bg-gray-100 text-gray-700'
+            };
+            const coopColors = {
+                '战略合作': 'bg-green-100 text-green-700',
+                '深度合作': 'bg-blue-100 text-blue-700',
+                '一般合作': 'bg-gray-100 text-gray-700',
+                '待开发': 'bg-yellow-100 text-yellow-700'
+            };
+
+            document.getElementById('supplierList').innerHTML = filtered.map(s => {
+                const hasTemplate = templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0;
+                return `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-4 py-3">
+                        <div class="font-medium">${s.name}</div>
+                        ${s.remark ? `<div class="text-xs text-gray-400 truncate max-w-[200px]" title="${s.remark}">${s.remark}</div>` : ''}
+                    </td>
+                    <td class="px-4 py-3">
+                        ${s.type ? `<span class="inline-block px-2 py-0.5 ${typeColors[s.type] || 'bg-gray-100 text-gray-700'} text-xs rounded">${s.type}</span>` : '<span class="text-gray-300">-</span>'}
+                    </td>
+                    <td class="px-4 py-3">
+                        ${s.contact ? `<div>${s.contact}</div>` : ''}
+                        ${s.phone ? `<div class="text-gray-500">${s.phone}</div>` : ''}
+                        ${!s.contact && !s.phone ? '<span class="text-gray-300">-</span>' : ''}
+                    </td>
+                    <td class="px-4 py-3">
+                        <span class="text-gray-600 text-xs">${s.address || '-'}</span>
+                    </td>
+                    <td class="px-4 py-3">
+                        ${s.cooperation ? `<span class="inline-block px-2 py-0.5 ${coopColors[s.cooperation] || 'bg-gray-100 text-gray-700'} text-xs rounded">${s.cooperation}</span>` : '<span class="text-gray-300">-</span>'}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <span class="${s.productCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'}">${s.productCount}</span>
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        ${hasTemplate ? '<span class="text-green-600">✓</span>' : '<span class="text-gray-300">-</span>'}
+                    </td>
+                    <td class="px-4 py-3 text-center">
+                        <button onclick="editSupplierInfo('${s.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
+                        <button onclick="deleteSupplierConfirm('${s.name}')" class="text-red-600 hover:underline text-xs">删除</button>
+                    </td>
+                </tr>
+            `}).join('') || '<tr><td colspan="8" class="text-center text-gray-400 py-8">暂无供应商数据</td></tr>';
+        }
+
+        // 查看供应商详情
+        function showSupplierDetail(supplierId) {
+            const allSuppliers = getAllSuppliers();
+            const s = allSuppliers.find(x => x.name === supplierId);
             const supplierProducts = products.filter(p => p.supplierId === supplierId);
             const template = templates[supplierId];
 
-            document.getElementById('supplier-detail-title').textContent = s.name;
+            document.getElementById('supplier-detail-title').textContent = supplierId;
             document.getElementById('supplier-detail-content').innerHTML = `
                 <div class="space-y-4">
                     <!-- 基本信息 -->
                     <div class="bg-gray-50 rounded-lg p-4">
                         <h4 class="font-medium text-gray-700 mb-3">基本信息</h4>
                         <div class="grid grid-cols-2 gap-3 text-sm">
-                            <div><span class="text-gray-500">供应商名称：</span>${s.name}</div>
-                            <div><span class="text-gray-500">公司类型：</span>${s.type || '-'}</div>
-                            <div><span class="text-gray-500">联系人：</span>${s.contact || '-'}</div>
-                            <div><span class="text-gray-500">联系方式：</span>${s.phone || '-'}</div>
-                            <div class="col-span-2"><span class="text-gray-500">公司地址：</span>${s.address || '-'}</div>
-                            <div><span class="text-gray-500">创建时间：</span>${s.createdAt || '-'}</div>
-                            <div><span class="text-gray-500">模板状态：</span>${s.hasTemplate ? '<span class="text-green-600">已配置</span>' : '<span class="text-gray-400">未配置</span>'}</div>
+                            <div><span class="text-gray-500">供应商名称：</span><span class="font-medium">${supplierId}</span></div>
+                            <div><span class="text-gray-500">公司类型：</span>${s && s.type || '-'}</div>
+                            <div><span class="text-gray-500">联系人：</span>${s && s.contact || '-'}</div>
+                            <div><span class="text-gray-500">联系方式：</span>${s && s.phone || '-'}</div>
+                            <div><span class="text-gray-500">合作程度：</span>${s && s.cooperation || '-'}</div>
+                            <div><span class="text-gray-500">商品数量：</span>${supplierProducts.length}</div>
+                            <div class="col-span-2"><span class="text-gray-500">公司地址：</span>${s && s.address || '-'}</div>
+                            ${s && s.remark ? `<div class="col-span-2"><span class="text-gray-500">备注：</span>${s.remark}</div>` : ''}
                         </div>
                     </div>
 
@@ -5095,248 +5365,201 @@
                     <!-- 操作按钮 -->
                     <div class="flex justify-end gap-2 pt-4 border-t">
                         <button onclick="closeModal('modal-supplier-detail')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">关闭</button>
-                        <button onclick="editSupplier('${s.id}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">编辑</button>
+                        <button onclick="closeModal('modal-supplier-detail');editSupplierInfo('${supplierId}')" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">编辑</button>
+                        <button onclick="closeModal('modal-supplier-detail');editTemplate('${supplierId}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">配置模板</button>
                     </div>
                 </div>
             `;
             document.getElementById('modal-supplier-detail').classList.add('active');
         }
 
-        function editSupplier(supplierId) {
-            const s = suppliers.find(s => s.id === supplierId);
-            if (!s) return;
+        // 编辑供应商信息
+        function editSupplierInfo(supplierId) {
+            const allSuppliers = getAllSuppliers();
+            const s = allSuppliers.find(x => x.name === supplierId);
+            const manualSupplier = suppliers.find(x => x.name === supplierId);
 
-            document.getElementById('editSupplierId').value = s.id;
-            document.getElementById('editSupplierName').value = s.name;
-            document.getElementById('editSupplierContact').value = s.contact || '';
-            document.getElementById('editSupplierPhone').value = s.phone || '';
-            document.getElementById('editSupplierAddress').value = s.address || '';
-            document.getElementById('editSupplierType').value = s.type || '';
+            document.getElementById('editSupplierOriginalName').value = supplierId;
+            document.getElementById('editSupplierName').value = supplierId;
+            document.getElementById('editSupplierType').value = manualSupplier && manualSupplier.type || '';
+            document.getElementById('editSupplierContact').value = s && s.contact || '';
+            document.getElementById('editSupplierPhone').value = s && s.phone || '';
+            document.getElementById('editSupplierAddress').value = s && s.address || '';
+            document.getElementById('editSupplierCooperation').value = manualSupplier && manualSupplier.cooperation || '';
+            document.getElementById('editSupplierRemark').value = manualSupplier && manualSupplier.remark || '';
             document.getElementById('modal-edit-supplier').classList.add('active');
         }
 
+        // 保存编辑的供应商
         function saveEditSupplier() {
-            const id = document.getElementById('editSupplierId').value;
-            const s = suppliers.find(s => s.id === id);
-            if (!s) return;
+            const originalName = document.getElementById('editSupplierOriginalName').value;
+            const newName = document.getElementById('editSupplierName').value.trim();
+            const type = document.getElementById('editSupplierType').value;
+            const contact = document.getElementById('editSupplierContact').value.trim();
+            const phone = document.getElementById('editSupplierPhone').value.trim();
+            const address = document.getElementById('editSupplierAddress').value.trim();
+            const cooperation = document.getElementById('editSupplierCooperation').value;
+            const remark = document.getElementById('editSupplierRemark').value.trim();
 
-            s.name = document.getElementById('editSupplierName').value.trim();
-            s.contact = document.getElementById('editSupplierContact').value.trim();
-            s.phone = document.getElementById('editSupplierPhone').value.trim();
-            s.address = document.getElementById('editSupplierAddress').value.trim();
-            s.type = document.getElementById('editSupplierType').value;
+            if (!newName) {
+                alert('请输入供应商名称');
+                return;
+            }
+
+            // 如果名称改变了，需要检查是否已存在
+            if (newName !== originalName) {
+                const allSuppliers = getAllSuppliers();
+                if (allSuppliers.some(s => s.name === newName)) {
+                    alert('该供应商名称已存在');
+                    return;
+                }
+
+                // 更新商品的供应商ID
+                products.forEach(p => {
+                    if (p.supplierId === originalName) {
+                        p.supplierId = newName;
+                    }
+                });
+
+                // 更新模板
+                if (templates[originalName]) {
+                    templates[newName] = { ...templates[originalName], supplierId: newName };
+                    delete templates[originalName];
+                }
+            }
+
+            // 更新 suppliers 数组中的信息
+            const supplierIndex = suppliers.findIndex(s => s.name === originalName);
+            if (supplierIndex >= 0) {
+                suppliers[supplierIndex].name = newName;
+                suppliers[supplierIndex].type = type;
+                suppliers[supplierIndex].contact = contact;
+                suppliers[supplierIndex].phone = phone;
+                suppliers[supplierIndex].address = address;
+                suppliers[supplierIndex].cooperation = cooperation;
+                suppliers[supplierIndex].remark = remark;
+            } else {
+                // 如果不在 suppliers 数组中，添加一条
+                suppliers.push({
+                    id: 'supplier_' + Date.now(),
+                    name: newName,
+                    type,
+                    contact,
+                    phone,
+                    address,
+                    cooperation,
+                    remark,
+                    hasTemplate: !!templates[newName],
+                    createdAt: new Date().toISOString().split('T')[0]
+                });
+            }
 
             saveData();
             closeModal('modal-edit-supplier');
             renderSupplierPage();
         }
 
-        // ========== 供应商多选与导出 ==========
-        let selectedSupplierIds = new Set();
-
-        function toggleSupplierSelectAll() {
-            const selectAll = document.getElementById('supplier-select-all');
-            const checkboxes = document.querySelectorAll('.supplier-checkbox');
-            checkboxes.forEach(cb => {
-                cb.checked = selectAll.checked;
-                const id = cb.dataset.id;
-                if (selectAll.checked) {
-                    selectedSupplierIds.add(id);
-                } else {
-                    selectedSupplierIds.delete(id);
-                }
-            });
-            updateSupplierSelection();
-        }
-
-        function updateSupplierSelection() {
-            const checkboxes = document.querySelectorAll('.supplier-checkbox');
-            const checkedBoxes = document.querySelectorAll('.supplier-checkbox:checked');
-            const selectAll = document.getElementById('supplier-select-all');
-            const batchActions = document.getElementById('supplier-batch-actions');
-            const selectedCount = document.getElementById('supplier-selected-count');
-
-            // 更新全选框状态
-            if (selectAll) {
-                selectAll.checked = checkboxes.length > 0 && checkboxes.length === checkedBoxes.length;
-                selectAll.indeterminate = checkedBoxes.length > 0 && checkedBoxes.length < checkboxes.length;
-            }
-
-            // 更新选中计数
-            if (selectedCount) {
-                selectedCount.textContent = selectedSupplierIds.size;
-            }
-
-            // 显示/隐藏批量操作栏
-            if (batchActions) {
-                batchActions.classList.toggle('hidden', selectedSupplierIds.size === 0);
-            }
-        }
-
-        function toggleSupplierSelection(id) {
-            if (selectedSupplierIds.has(id)) {
-                selectedSupplierIds.delete(id);
-            } else {
-                selectedSupplierIds.add(id);
-            }
-            updateSupplierSelection();
-        }
-
-        function clearSupplierSelection() {
-            selectedSupplierIds.clear();
-            document.querySelectorAll('.supplier-checkbox').forEach(cb => cb.checked = false);
-            document.getElementById('supplier-select-all').checked = false;
-            updateSupplierSelection();
-        }
-
-        function showSupplierExportModal() {
-            document.getElementById('supplier-export-total').textContent = suppliers.length;
-            document.getElementById('supplier-export-selected').textContent = selectedSupplierIds.size;
-
-            const btnExportSelected = document.getElementById('btn-supplier-export-selected');
-            btnExportSelected.disabled = selectedSupplierIds.size === 0;
-
-            document.getElementById('modal-supplier-export').classList.add('active');
-        }
-
-        function doSupplierExport(type) {
-            closeModal('modal-supplier-export');
-
-            let exportList;
-            if (type === 'selected') {
-                exportList = suppliers.filter(s => selectedSupplierIds.has(s.id));
-            } else {
-                exportList = suppliers;
-            }
-
-            if (exportList.length === 0) {
-                alert('没有可导出的供应商');
-                return;
-            }
-
-            exportSuppliersList(exportList);
-        }
-
-        function exportSuppliersList(list) {
-            const headers = ['供应商名称', '供应商ID', '公司类型', '联系人', '联系方式', '公司地址', '商品数量', '模板状态', '创建时间'];
-            const rows = list.map(s => [
-                s.name,
-                s.id,
-                s.type || '',
-                s.contact || '',
-                s.phone || '',
-                s.address || '',
-                products.filter(p => p.supplierId === s.id).length,
-                s.hasTemplate ? '已配置' : '未配置',
-                s.createdAt || ''
-            ]);
-
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-            XLSX.utils.book_append_sheet(wb, ws, '供应商列表');
-            XLSX.writeFile(wb, `供应商列表_${new Date().toISOString().split('T')[0]}.xlsx`);
-        }
-
-        function batchDeleteSuppliers() {
-            if (selectedSupplierIds.size === 0) return;
-
-            // 检查是否有商品关联
-            const selectedList = Array.from(selectedSupplierIds);
-            const hasRelated = selectedList.some(id => products.some(p => p.supplierId === id));
-            if (hasRelated) {
-                alert('选中的供应商中有商品关联，无法删除');
-                return;
-            }
-
-            if (!confirm(`确定要删除选中的 ${selectedSupplierIds.size} 个供应商吗？`)) return;
-
-            suppliers = suppliers.filter(s => !selectedSupplierIds.has(s.id));
-            selectedList.forEach(id => delete templates[id]);
-            saveData();
-            selectedSupplierIds.clear();
-            renderSupplierPage();
-        }
-
-        function exportSuppliers() {
-            if (suppliers.length === 0) {
-                alert('没有可导出的供应商');
-                return;
-            }
-
-            const headers = ['供应商名称', '公司类型', '联系人', '联系方式', '公司地址', '商品数量', '模板状态', '创建时间'];
-            const rows = suppliers.map(s => [
-                s.name,
-                s.type || '',
-                s.contact || '',
-                s.phone || '',
-                s.address || '',
-                products.filter(p => p.supplierId === s.id).length,
-                s.hasTemplate ? '已配置' : '未配置',
-                s.createdAt || ''
-            ]);
-
-            const wb = XLSX.utils.book_new();
-            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
-            XLSX.utils.book_append_sheet(wb, ws, '供应商列表');
-            XLSX.writeFile(wb, `供应商列表_${new Date().toISOString().split('T')[0]}.xlsx`);
-        }
-
+        // 新增供应商弹窗
         function showAddSupplierModal() {
             document.getElementById('newSupplierName').value = '';
+            document.getElementById('newSupplierType').value = '';
             document.getElementById('newSupplierContact').value = '';
             document.getElementById('newSupplierPhone').value = '';
             document.getElementById('newSupplierAddress').value = '';
-            document.getElementById('newSupplierType').value = '';
+            document.getElementById('newSupplierCooperation').value = '';
+            document.getElementById('newSupplierRemark').value = '';
             document.getElementById('modal-supplier').classList.add('active');
         }
 
+        // 新增供应商
         function addSupplier() {
             const name = document.getElementById('newSupplierName').value.trim();
+            const type = document.getElementById('newSupplierType').value;
             const contact = document.getElementById('newSupplierContact').value.trim();
             const phone = document.getElementById('newSupplierPhone').value.trim();
             const address = document.getElementById('newSupplierAddress').value.trim();
-            const type = document.getElementById('newSupplierType').value;
+            const cooperation = document.getElementById('newSupplierCooperation').value;
+            const remark = document.getElementById('newSupplierRemark').value.trim();
 
             if (!name) {
                 alert('请输入供应商名称');
                 return;
             }
 
-            // 生成唯一ID：使用时间戳 + 随机数，确保中文供应商名也能正常工作
-            const id = 'supplier_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            // 检查是否已存在
+            const allSuppliers = getAllSuppliers();
+            if (allSuppliers.some(s => s.name === name)) {
+                alert('该供应商已存在');
+                return;
+            }
+
+            // 添加到 suppliers 数组
             suppliers.push({
-                id,
+                id: 'supplier_' + Date.now(),
                 name,
+                type,
                 contact,
                 phone,
                 address,
-                type,
+                cooperation,
+                remark,
                 hasTemplate: false,
                 createdAt: new Date().toISOString().split('T')[0]
             });
-            saveData();
 
+            saveData();
             closeModal('modal-supplier');
             renderSupplierPage();
         }
 
-        function deleteSupplier(supplierId) {
-            const supplier = suppliers.find(s => s.id === supplierId);
-            if (!supplier) return;
-
-            // 检查是否有关联商品
-            const relatedProducts = products.filter(p => p.supplierId === supplierId);
-            if (relatedProducts.length > 0) {
-                alert(`该供应商下有 ${relatedProducts.length} 个商品，无法删除`);
+        // 删除供应商（确认）
+        function deleteSupplierConfirm(name) {
+            const supplierProducts = products.filter(p => p.supplierId === name);
+            if (supplierProducts.length > 0) {
+                alert(`该供应商有 ${supplierProducts.length} 个关联商品，无法删除。请先删除或修改相关商品的供应商。`);
                 return;
             }
 
-            if (confirm(`确定删除供应商「${supplier.name}」？\n删除后其映射模板也将被清除。`)) {
-                suppliers = suppliers.filter(s => s.id !== supplierId);
-                delete templates[supplierId];
+            if (confirm(`确定删除供应商「${name}」？\n删除后其映射模板也将被清除。`)) {
+                suppliers = suppliers.filter(s => s.name !== name);
+                delete templates[name];
                 saveData();
                 renderSupplierPage();
             }
+        }
+
+        function showSupplierExportModal() {
+            const allSuppliers = getAllSuppliers();
+            document.getElementById('supplier-export-total').textContent = allSuppliers.length;
+            document.getElementById('modal-supplier-export').classList.add('active');
+        }
+
+        function doSupplierExport(type) {
+            closeModal('modal-supplier-export');
+            const allSuppliers = getAllSuppliers();
+
+            if (allSuppliers.length === 0) {
+                alert('没有可导出的供应商');
+                return;
+            }
+
+            const headers = ['供应商名称', '公司类型', '联系人', '联系方式', '公司地址', '合作程度', '备注', '商品数量', '模板状态'];
+            const rows = allSuppliers.map(s => [
+                s.name,
+                s.type || '',
+                s.contact || '',
+                s.phone || '',
+                s.address || '',
+                s.cooperation || '',
+                s.remark || '',
+                s.productCount,
+                templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0 ? '已配置' : '未配置'
+            ]);
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+            XLSX.utils.book_append_sheet(wb, ws, '供应商列表');
+            XLSX.writeFile(wb, `供应商列表_${new Date().toISOString().split('T')[0]}.xlsx`);
         }
 
         // ========== 保存映射模板 ==========
@@ -5346,17 +5569,15 @@
                 return;
             }
 
-            // 获取供应商ID
+            // 获取供应商名称
             const supplierId = getCurrentSupplierId();
             if (!supplierId) {
-                alert('请先选择供应商');
+                alert('请先输入供应商名称');
                 return;
             }
 
             // 同步更新全局变量
             selectedSupplierId = supplierId;
-
-            const supplier = suppliers.find(s => s.id === supplierId);
 
             // 构建映射对象：原始列名 -> 系统字段名
             const mappings = {};
@@ -5380,14 +5601,9 @@
                 mappings: mappings
             };
 
-            // 更新供应商状态
-            if (supplier) {
-                supplier.hasTemplate = true;
-            }
-
             saveData();
 
-            alert(`已保存为「${supplier ? supplier.name : supplierId}」的映射模板`);
+            alert(`已保存为「${supplierId}」的映射模板`);
         }
 
         // ========== 系统设置 ==========
@@ -5414,11 +5630,324 @@
             // 渲染当前必填项列表
             updateCurrentRequiredDisplay();
 
+            // 渲染字段管理
+            renderProductFieldsList();
+            renderSupplierFieldsList();
+
             // 更新存储空间显示
             updateStorageDisplay();
 
             // 更新本地文件存储状态
             updateLocalFileStorageUI();
+        }
+
+        // ========== 字段管理 ==========
+        function showFieldTab(type) {
+            document.getElementById('tab-product-fields').className = type === 'product' ? 'px-4 py-2 text-sm border-b-2 border-blue-600 text-blue-600' : 'px-4 py-2 text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+            document.getElementById('tab-supplier-fields').className = type === 'supplier' ? 'px-4 py-2 text-sm border-b-2 border-blue-600 text-blue-600' : 'px-4 py-2 text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+            document.getElementById('product-fields-panel').classList.toggle('hidden', type !== 'product');
+            document.getElementById('supplier-fields-panel').classList.toggle('hidden', type !== 'supplier');
+        }
+
+        // 商品库字段
+        function renderProductFieldsList() {
+            const allFields = getAllProductFields();
+            document.getElementById('product-field-count').textContent = allFields.length;
+
+            const groupNames = {
+                'core': '核心字段',
+                'spec': '规格包装',
+                'product': '产品属性',
+                'price': '价格体系',
+                'delivery': '物流供应链',
+                'ecommerce': '电商参考',
+                'media': '图片媒体',
+                'other': '其他'
+            };
+
+            document.getElementById('product-fields-list').innerHTML = allFields.map(f => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 font-medium">${f.name}</td>
+                    <td class="px-3 py-2 text-gray-500">${groupNames[f.group] || f.group}</td>
+                    <td class="px-3 py-2 text-gray-400 text-xs">${f.keywords ? f.keywords.join(', ') : '-'}</td>
+                    <td class="px-3 py-2 text-center">
+                        <button onclick="editProductField('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
+                        ${f.isCustom ? `<button onclick="deleteProductField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getAllProductFields() {
+            const fields = [];
+            // 合并系统字段和自定义字段的覆盖配置
+            const systemFieldOverrides = customProductFields.filter(f => f.isSystemOverride);
+
+            Object.entries(SYSTEM_FIELDS).forEach(([group, names]) => {
+                names.forEach(name => {
+                    const override = systemFieldOverrides.find(o => o.originalName === name);
+                    fields.push({
+                        name: override ? override.name : name,
+                        group: override ? override.group : group,
+                        keywords: override ? override.keywords : [],
+                        originalName: name,
+                        isCustom: false
+                    });
+                });
+            });
+            // 添加真正的自定义字段
+            customProductFields.filter(f => !f.isSystemOverride).forEach(f => {
+                fields.push({ ...f, isCustom: true });
+            });
+            return fields.sort((a, b) => a.name.localeCompare(b.name));
+        }
+
+        function showAddProductFieldModal() {
+            document.getElementById('newProductFieldName').value = '';
+            document.getElementById('newProductFieldGroup').value = 'other';
+            document.getElementById('newProductFieldKeywords').value = '';
+            document.getElementById('modal-add-product-field').classList.add('active');
+        }
+
+        function addProductField() {
+            const name = document.getElementById('newProductFieldName').value.trim();
+            const group = document.getElementById('newProductFieldGroup').value;
+            const keywords = document.getElementById('newProductFieldKeywords').value.split(',').map(k => k.trim()).filter(k => k);
+
+            if (!name) {
+                alert('请输入字段名称');
+                return;
+            }
+
+            const allFields = getAllProductFields();
+            if (allFields.some(f => f.name === name)) {
+                alert('该字段名称已存在');
+                return;
+            }
+
+            customProductFields.push({ name, group, keywords, isCustom: true });
+            saveData();
+            closeModal('modal-add-product-field');
+            renderProductFieldsList();
+        }
+
+        function editProductField(name) {
+            const allFields = getAllProductFields();
+            const field = allFields.find(f => f.name === name);
+            if (!field) return;
+
+            document.getElementById('editProductFieldOldName').value = name;
+            document.getElementById('editProductFieldOriginalName').value = field.originalName || name;
+            document.getElementById('editProductFieldName').value = name;
+            document.getElementById('editProductFieldGroup').value = field.group;
+            document.getElementById('editProductFieldKeywords').value = field.keywords ? field.keywords.join(', ') : '';
+            document.getElementById('modal-edit-product-field').classList.add('active');
+        }
+
+        function saveProductField() {
+            const oldName = document.getElementById('editProductFieldOldName').value;
+            const originalName = document.getElementById('editProductFieldOriginalName').value;
+            const name = document.getElementById('editProductFieldName').value.trim();
+            const group = document.getElementById('editProductFieldGroup').value;
+            const keywords = document.getElementById('editProductFieldKeywords').value.split(',').map(k => k.trim()).filter(k => k);
+
+            if (!name) {
+                alert('请输入字段名称');
+                return;
+            }
+
+            // 检查是否是系统字段
+            const isSystemField = originalName !== oldName || SYSTEM_FIELDS.core.concat(SYSTEM_FIELDS.spec, SYSTEM_FIELDS.product, SYSTEM_FIELDS.price, SYSTEM_FIELDS.delivery, SYSTEM_FIELDS.ecommerce, SYSTEM_FIELDS.media, SYSTEM_FIELDS.other).includes(originalName);
+
+            if (name !== oldName) {
+                const allFields = getAllProductFields();
+                if (allFields.some(f => f.name === name)) {
+                    alert('该字段名称已存在');
+                    return;
+                }
+            }
+
+            if (isSystemField) {
+                // 更新或创建系统字段覆盖配置
+                const existingIndex = customProductFields.findIndex(f => f.originalName === originalName && f.isSystemOverride);
+                if (existingIndex >= 0) {
+                    customProductFields[existingIndex] = { name, group, keywords, originalName, isSystemOverride: true };
+                } else {
+                    customProductFields.push({ name, group, keywords, originalName, isSystemOverride: true });
+                }
+            } else {
+                // 更新自定义字段
+                const fieldIndex = customProductFields.findIndex(f => f.name === oldName && !f.isSystemOverride);
+                if (fieldIndex >= 0) {
+                    customProductFields[fieldIndex] = { name, group, keywords, isCustom: true };
+                }
+            }
+
+            saveData();
+            closeModal('modal-edit-product-field');
+            renderProductFieldsList();
+        }
+
+        function deleteProductField(name) {
+            if (!confirm(`确定删除字段「${name}」？`)) return;
+            customProductFields = customProductFields.filter(f => f.name !== name || f.isSystemOverride);
+            saveData();
+            renderProductFieldsList();
+        }
+
+        // 供应商字段
+        function renderSupplierFieldsList() {
+            const allFields = getAllSupplierFields();
+            document.getElementById('supplier-field-count').textContent = allFields.length;
+
+            const typeNames = {
+                'text': '文本',
+                'select': '下拉选择',
+                'textarea': '多行文本'
+            };
+
+            document.getElementById('supplier-fields-list').innerHTML = allFields.map(f => `
+                <tr class="hover:bg-gray-50">
+                    <td class="px-3 py-2 font-medium">${f.name}</td>
+                    <td class="px-3 py-2 text-gray-500">${typeNames[f.type] || f.type}</td>
+                    <td class="px-3 py-2 text-gray-400 text-xs">${f.options ? f.options.join(', ') : '-'}</td>
+                    <td class="px-3 py-2 text-center">
+                        <button onclick="editSupplierFieldModal('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
+                        ${f.isCustom ? `<button onclick="deleteSupplierField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function getAllSupplierFields() {
+            const defaultSystemFields = [
+                { name: '供应商名称', type: 'text', originalName: '供应商名称' },
+                { name: '公司类型', type: 'select', options: ['厂家', '礼品公司', '供应链公司', '贸易公司', '临采'], originalName: '公司类型' },
+                { name: '联系人', type: 'text', originalName: '联系人' },
+                { name: '联系方式', type: 'text', originalName: '联系方式' },
+                { name: '公司地址', type: 'text', originalName: '公司地址' },
+                { name: '合作程度', type: 'select', options: ['战略合作', '深度合作', '一般合作', '待开发'], originalName: '合作程度' },
+                { name: '备注', type: 'textarea', originalName: '备注' }
+            ];
+
+            // 应用覆盖配置
+            const result = defaultSystemFields.map(f => {
+                const override = customSupplierFields.find(o => o.originalName === f.originalName && o.isSystemOverride);
+                return override ? { ...f, name: override.name, type: override.type, options: override.options || f.options } : { ...f, isCustom: false };
+            });
+
+            // 添加自定义字段
+            customSupplierFields.filter(f => !f.isSystemOverride).forEach(f => {
+                result.push({ ...f, isCustom: true });
+            });
+
+            return result;
+        }
+
+        function toggleSupplierFieldOptions() {
+            const type = document.getElementById('newSupplierFieldType').value;
+            document.getElementById('supplierFieldOptionsDiv').classList.toggle('hidden', type !== 'select');
+        }
+
+        function toggleEditSupplierFieldOptions() {
+            const type = document.getElementById('editSupplierFieldType').value;
+            document.getElementById('editSupplierFieldOptionsDiv').classList.toggle('hidden', type !== 'select');
+        }
+
+        function showAddSupplierFieldModal() {
+            document.getElementById('newSupplierFieldName').value = '';
+            document.getElementById('newSupplierFieldType').value = 'text';
+            document.getElementById('newSupplierFieldOptions').value = '';
+            document.getElementById('supplierFieldOptionsDiv').classList.add('hidden');
+            document.getElementById('modal-add-supplier-field').classList.add('active');
+        }
+
+        function addSupplierField() {
+            const name = document.getElementById('newSupplierFieldName').value.trim();
+            const type = document.getElementById('newSupplierFieldType').value;
+            const options = type === 'select' ? document.getElementById('newSupplierFieldOptions').value.split(',').map(o => o.trim()).filter(o => o) : [];
+
+            if (!name) {
+                alert('请输入字段名称');
+                return;
+            }
+
+            const allFields = getAllSupplierFields();
+            if (allFields.some(f => f.name === name)) {
+                alert('该字段名称已存在');
+                return;
+            }
+
+            customSupplierFields.push({ name, type, options, isCustom: true });
+            saveData();
+            closeModal('modal-add-supplier-field');
+            renderSupplierFieldsList();
+        }
+
+        function editSupplierFieldModal(name) {
+            const allFields = getAllSupplierFields();
+            const field = allFields.find(f => f.name === name);
+            if (!field) return;
+
+            document.getElementById('editSupplierFieldOldName').value = name;
+            document.getElementById('editSupplierFieldOriginalName').value = field.originalName || name;
+            document.getElementById('editSupplierFieldName').value = name;
+            document.getElementById('editSupplierFieldType').value = field.type;
+            document.getElementById('editSupplierFieldOptions').value = field.options ? field.options.join(', ') : '';
+            document.getElementById('editSupplierFieldOptionsDiv').classList.toggle('hidden', field.type !== 'select');
+            document.getElementById('modal-edit-supplier-field').classList.add('active');
+        }
+
+        function saveSupplierField() {
+            const oldName = document.getElementById('editSupplierFieldOldName').value;
+            const originalName = document.getElementById('editSupplierFieldOriginalName').value;
+            const name = document.getElementById('editSupplierFieldName').value.trim();
+            const type = document.getElementById('editSupplierFieldType').value;
+            const options = type === 'select' ? document.getElementById('editSupplierFieldOptions').value.split(',').map(o => o.trim()).filter(o => o) : [];
+
+            if (!name) {
+                alert('请输入字段名称');
+                return;
+            }
+
+            // 检查是否是系统字段
+            const systemFieldNames = ['供应商名称', '公司类型', '联系人', '联系方式', '公司地址', '合作程度', '备注'];
+            const isSystemField = systemFieldNames.includes(originalName);
+
+            if (name !== oldName) {
+                const allFields = getAllSupplierFields();
+                if (allFields.some(f => f.name === name)) {
+                    alert('该字段名称已存在');
+                    return;
+                }
+            }
+
+            if (isSystemField) {
+                // 更新或创建系统字段覆盖配置
+                const existingIndex = customSupplierFields.findIndex(f => f.originalName === originalName && f.isSystemOverride);
+                if (existingIndex >= 0) {
+                    customSupplierFields[existingIndex] = { name, type, options, originalName, isSystemOverride: true };
+                } else {
+                    customSupplierFields.push({ name, type, options, originalName, isSystemOverride: true });
+                }
+            } else {
+                // 更新自定义字段
+                const fieldIndex = customSupplierFields.findIndex(f => f.name === oldName && !f.isSystemOverride);
+                if (fieldIndex >= 0) {
+                    customSupplierFields[fieldIndex] = { name, type, options, isCustom: true };
+                }
+            }
+
+            saveData();
+            closeModal('modal-edit-supplier-field');
+            renderSupplierFieldsList();
+        }
+
+        function deleteSupplierField(name) {
+            if (!confirm(`确定删除字段「${name}」？`)) return;
+            customSupplierFields = customSupplierFields.filter(f => f.name !== name || f.isSystemOverride);
+            saveData();
+            renderSupplierFieldsList();
         }
 
         // 更新本地文件存储UI状态
