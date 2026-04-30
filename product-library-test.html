@@ -29,6 +29,7 @@
             <nav class="p-2">
                 <a onclick="showPage('page-list')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-list">📦 商品列表</a>
                 <a onclick="showPage('page-import')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-import">📥 智能导入</a>
+                <a onclick="showPage('page-import-records')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-import-records">📋 导入记录</a>
                 <a onclick="showPage('page-template')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-template">⚙️ 映射模板</a>
                 <a onclick="showPage('page-suppliers')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-suppliers">🏢 供应商管理</a>
                 <a onclick="showPage('page-settings')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-settings">🔧 系统设置</a>
@@ -874,6 +875,24 @@
                 </div>
             </div>
 
+            <!-- 页面：导入记录 -->
+            <div id="page-import-records" class="page p-6">
+                <h2 class="text-xl font-bold mb-6">导入记录</h2>
+
+                <div class="bg-white rounded-lg shadow">
+                    <div class="p-4 border-b flex justify-between items-center">
+                        <h3 class="font-medium">导入历史</h3>
+                        <button onclick="clearImportRecords()" class="text-red-600 hover:text-red-700 text-sm">清空记录</button>
+                    </div>
+                    <div id="import-records-list" class="divide-y">
+                        <!-- 动态生成 -->
+                    </div>
+                    <div id="import-records-empty" class="p-8 text-center text-gray-400 hidden">
+                        暂无导入记录
+                    </div>
+                </div>
+            </div>
+
             <!-- 页面：系统设置 -->
             <div id="page-settings" class="page p-6">
                 <h2 class="text-xl font-bold mb-6">系统设置</h2>
@@ -1397,7 +1416,7 @@
         // 异步加载数据（从 IndexedDB）
         async function loadDataAsync() {
             try {
-                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder] = await Promise.all([
+                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords] = await Promise.all([
                     loadFromDB('products'),
                     loadFromDB('suppliers'),
                     loadFromDB('templates'),
@@ -1409,7 +1428,8 @@
                     loadSettingFromDB('deletedSystemProductFields'),
                     loadSettingFromDB('deletedSystemSupplierFields'),
                     loadSettingFromDB('productFieldOrder'),
-                    loadSettingFromDB('supplierFieldOrder')
+                    loadSettingFromDB('supplierFieldOrder'),
+                    loadSettingFromDB('importRecords')
                 ]);
 
                 // 转换模板数组为对象
@@ -1433,7 +1453,8 @@
                     deletedSystemProductFields: savedDeletedProductFields || [],
                     deletedSystemSupplierFields: savedDeletedSupplierFields || [],
                     productFieldOrder: savedProductFieldOrder || [],
-                    supplierFieldOrder: savedSupplierFieldOrder || []
+                    supplierFieldOrder: savedSupplierFieldOrder || [],
+                    importRecords: savedImportRecords || []
                 };
             } catch (e) {
                 console.error('加载数据失败:', e);
@@ -1459,7 +1480,8 @@
                     saveSettingToDB('deletedSystemProductFields', deletedSystemProductFields),
                     saveSettingToDB('deletedSystemSupplierFields', deletedSystemSupplierFields),
                     saveSettingToDB('productFieldOrder', productFieldOrder),
-                    saveSettingToDB('supplierFieldOrder', supplierFieldOrder)
+                    saveSettingToDB('supplierFieldOrder', supplierFieldOrder),
+                    saveSettingToDB('importRecords', importRecords)
                 ]);
 
                 console.log('数据保存成功');
@@ -1892,6 +1914,7 @@
         let deletedSystemSupplierFields = [];
         let productFieldOrder = [];
         let supplierFieldOrder = [];
+        let importRecords = [];
         let parsedData = null;
         let currentMappings = {};
         let selectedSupplierId = '';
@@ -1934,6 +1957,7 @@
                 deletedSystemSupplierFields = savedData.deletedSystemSupplierFields || [];
                 productFieldOrder = savedData.productFieldOrder || [];
                 supplierFieldOrder = savedData.supplierFieldOrder || [];
+                importRecords = savedData.importRecords || [];
 
                 // 修复空ID的供应商数据
                 let needSave = false;
@@ -2264,6 +2288,90 @@
             if (pageId === 'page-template') renderTemplatePage();
             if (pageId === 'page-suppliers') renderSupplierPage();
             if (pageId === 'page-settings') renderSettingsPage();
+            if (pageId === 'page-import-records') renderImportRecordsPage();
+        }
+
+        // ========== 导入记录 ==========
+        function renderImportRecordsPage() {
+            const listEl = document.getElementById('import-records-list');
+            const emptyEl = document.getElementById('import-records-empty');
+
+            if (!importRecords || importRecords.length === 0) {
+                listEl.innerHTML = '';
+                emptyEl.classList.remove('hidden');
+                return;
+            }
+
+            emptyEl.classList.add('hidden');
+
+            // 按文件名分组
+            const groupedRecords = {};
+            importRecords.forEach(record => {
+                if (!groupedRecords[record.fileName]) {
+                    groupedRecords[record.fileName] = {
+                        fileName: record.fileName,
+                        importTime: record.importTime,
+                        sheets: []
+                    };
+                }
+                groupedRecords[record.fileName].sheets.push(record);
+            });
+
+            // 按导入时间倒序排列
+            const sortedFiles = Object.values(groupedRecords).sort((a, b) =>
+                new Date(b.importTime) - new Date(a.importTime)
+            );
+
+            listEl.innerHTML = sortedFiles.map(file => `
+                <div class="p-4">
+                    <div class="flex justify-between items-start mb-2">
+                        <div>
+                            <span class="font-medium">${file.fileName}</span>
+                            <span class="text-xs text-gray-400 ml-2">${formatDateTime(file.importTime)}</span>
+                        </div>
+                    </div>
+                    <div class="mt-2 space-y-1">
+                        ${file.sheets.map(sheet => `
+                            <div class="flex items-center justify-between text-sm py-1 px-2 bg-gray-50 rounded">
+                                <div>
+                                    <span class="text-gray-700">📄 ${sheet.sheetName}</span>
+                                    <span class="text-gray-400 ml-2">${sheet.supplierId || '未指定供应商'}</span>
+                                </div>
+                                <div class="flex items-center gap-3">
+                                    <span class="text-green-600">${sheet.added} 新增</span>
+                                    <span class="text-blue-600">${sheet.updated} 更新</span>
+                                </div>
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            `).join('');
+        }
+
+        function formatDateTime(dateStr) {
+            const date = new Date(dateStr);
+            return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`;
+        }
+
+        function addImportRecord(fileName, sheetName, supplierId, added, updated) {
+            importRecords.unshift({
+                id: Date.now(),
+                fileName,
+                sheetName,
+                supplierId,
+                added,
+                updated,
+                importTime: new Date().toISOString()
+            });
+            saveData();
+        }
+
+        function clearImportRecords() {
+            if (confirm('确定要清空所有导入记录吗？')) {
+                importRecords = [];
+                saveData();
+                renderImportRecordsPage();
+            }
         }
 
         // ========== 商品列表 ==========
@@ -5028,6 +5136,20 @@
                     : `导入完成，成功导入 ${added} 条商品`;
             }
             alert(msg);
+
+            // 记录导入信息
+            const sheetNames = window.excelData?.rowIndexToSheet
+                ? [...new Set(window.excelData.rowIndexToSheet.filter(Boolean))]
+                : ['单工作表'];
+            const sheetNameStr = sheetNames.join(', ');
+
+            addImportRecord(
+                pendingFileName || '手动输入',
+                sheetNameStr,
+                supplierId,
+                added,
+                updated
+            );
 
             // 保存数据
             saveData();
