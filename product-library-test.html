@@ -89,15 +89,13 @@
                             <option value="true">包销产品</option>
                             <option value="false">非包销</option>
                         </select>
-                        <select id="filterBrandLevel" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部品牌级别</option>
-                            <option value="全国品牌">全国品牌</option>
-                            <option value="地方品牌">地方品牌</option>
-                        </select>
                         <select id="filterLogistics" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部物流方式</option>
-                            <option value="集采">集采</option>
-                            <option value="代发">代发</option>
+                            <option value="">全部一件代发</option>
+                            <option value="代发">支持一件代发</option>
+                            <option value="集采">仅集采</option>
+                        </select>
+                        <select id="filterShipFrom" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                            <option value="">全部发货地</option>
                         </select>
                         <select id="filterStockStatus" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
                             <option value="">全部备货状态</option>
@@ -105,31 +103,39 @@
                             <option value="紧张">紧张</option>
                             <option value="需提前">需提前</option>
                         </select>
-                        <select id="filterSupplier" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部供应商</option>
-                        </select>
-                        <select id="filterShipFrom" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部发货地</option>
-                        </select>
-                        <select id="filterStockType" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部库存类型</option>
-                            <option value="现货">现货</option>
-                            <option value="需预订">需预订</option>
-                        </select>
                         <input type="text" id="filterSearch" placeholder="搜索商品名称/SKU/条码" class="border rounded-lg px-3 py-2 text-sm w-48" onkeyup="renderList()">
                         <button onclick="toggleMoreFilters()" class="text-blue-600 text-sm hover:underline" id="btn-more-filters">更多筛选 ▼</button>
                         <button onclick="resetFilters()" class="text-gray-500 text-sm hover:underline">重置</button>
                     </div>
                     <!-- 更多筛选（默认隐藏） -->
                     <div id="more-filters" class="hidden border-t pt-3">
-                        <div class="text-xs text-gray-500 mb-2">全部字段筛选</div>
+                        <div class="text-xs text-gray-500 mb-2">更多字段筛选</div>
                         <div class="flex flex-wrap gap-3 items-center">
-                            <!-- 核心字段 -->
+                            <select id="filterSupplier" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                                <option value="">全部供应商</option>
+                            </select>
+                            <select id="filterBrand" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                                <option value="">全部品牌</option>
+                            </select>
                             <select id="filterCategory" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
                                 <option value="">全部分类</option>
                                 <option value="食品礼盒">食品礼盒</option>
                                 <option value="日用品">日用品</option>
                                 <option value="数码电器">数码电器</option>
+                            </select>
+                            <select id="filterBrandLevel" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                                <option value="">全部品牌级别</option>
+                                <option value="全国品牌">全国品牌</option>
+                                <option value="地方品牌">地方品牌</option>
+                                <option value="进口品牌">进口品牌</option>
+                            </select>
+                            <select id="filterStockType" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                                <option value="">全部库存类型</option>
+                                <option value="现货">现货</option>
+                                <option value="需预订">需预订</option>
+                            </select>
+                            <select id="filterOrigin" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                                <option value="">全部产地</option>
                             </select>
                             <select id="filterStatus" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
                                 <option value="">全部状态</option>
@@ -138,29 +144,23 @@
                                 <option value="已下架">已下架</option>
                                 <option value="已过期">已过期</option>
                             </select>
-                            <select id="filterBrand" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部品牌</option>
-                            </select>
-                            <select id="filterOrigin" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部产地</option>
-                            </select>
                             <select id="filterTaxIncluded" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
                                 <option value="">全部含税标识</option>
                                 <option value="true">含税</option>
                                 <option value="false">不含税</option>
                             </select>
                             <select id="filterSugarFree" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">无糖筛选</option>
+                                <option value="">全部无糖标识</option>
                                 <option value="true">无糖</option>
                                 <option value="false">含糖</option>
                             </select>
                             <select id="filterOrganic" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">有机筛选</option>
+                                <option value="">全部有机标识</option>
                                 <option value="true">有机</option>
                                 <option value="false">非有机</option>
                             </select>
                             <select id="filterFreightIncluded" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">运费包含</option>
+                                <option value="">全部运费标识</option>
                                 <option value="true">包邮</option>
                                 <option value="false">不包邮</option>
                             </select>
