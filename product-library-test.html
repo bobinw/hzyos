@@ -1764,8 +1764,9 @@
                     // 文件不存在，忽略
                 }
 
-                // 保存目录名称到 IndexedDB
-                saveSettingToDB('lastStorageFolderName', directoryHandle.name);
+                // 保存目录名称到 IndexedDB（等待保存完成）
+                await saveSettingToDB('lastStorageFolderName', directoryHandle.name);
+                console.log('已保存目录名:', directoryHandle.name);
 
                 console.log('已选择存储目录:', directoryHandle.name);
             } catch (e) {
@@ -1816,6 +1817,8 @@
         // 恢复存储文件夹显示（页面刷新后显示提示）
         async function restoreStorageFolderDisplay() {
             const savedFolderName = await loadSettingFromDB('lastStorageFolderName');
+            console.log('读取保存的目录名:', savedFolderName);
+
             if (!savedFolderName) return;
 
             const pathEl = document.getElementById('storage-folder-path');
