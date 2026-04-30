@@ -1397,13 +1397,17 @@
         // 异步加载数据（从 IndexedDB）
         async function loadDataAsync() {
             try {
-                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups] = await Promise.all([
+                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields] = await Promise.all([
                     loadFromDB('products'),
                     loadFromDB('suppliers'),
                     loadFromDB('templates'),
                     loadSettingFromDB('nextProductId'),
                     loadSettingFromDB('requiredFields'),
-                    loadSettingFromDB('requiredGroups')
+                    loadSettingFromDB('requiredGroups'),
+                    loadSettingFromDB('customProductFields'),
+                    loadSettingFromDB('customSupplierFields'),
+                    loadSettingFromDB('deletedSystemProductFields'),
+                    loadSettingFromDB('deletedSystemSupplierFields')
                 ]);
 
                 // 转换模板数组为对象
@@ -1421,7 +1425,11 @@
                     templates: templatesObj,
                     nextId: savedNextId,
                     requiredFields: savedRequiredFields,
-                    requiredGroups: savedRequiredGroups
+                    requiredGroups: savedRequiredGroups,
+                    customProductFields: savedCustomProductFields || [],
+                    customSupplierFields: savedCustomSupplierFields || [],
+                    deletedSystemProductFields: savedDeletedProductFields || [],
+                    deletedSystemSupplierFields: savedDeletedSupplierFields || []
                 };
             } catch (e) {
                 console.error('加载数据失败:', e);
@@ -1443,7 +1451,9 @@
                     saveSettingToDB('requiredFields', requiredFields),
                     saveSettingToDB('requiredGroups', requiredGroups),
                     saveSettingToDB('customProductFields', customProductFields),
-                    saveSettingToDB('customSupplierFields', customSupplierFields)
+                    saveSettingToDB('customSupplierFields', customSupplierFields),
+                    saveSettingToDB('deletedSystemProductFields', deletedSystemProductFields),
+                    saveSettingToDB('deletedSystemSupplierFields', deletedSystemSupplierFields)
                 ]);
 
                 console.log('数据保存成功');
@@ -1872,6 +1882,8 @@
         let requiredGroups = JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
         let customProductFields = [];
         let customSupplierFields = [];
+        let deletedSystemProductFields = [];
+        let deletedSystemSupplierFields = [];
         let parsedData = null;
         let currentMappings = {};
         let selectedSupplierId = '';
@@ -1909,6 +1921,8 @@
                 requiredGroups = savedData.requiredGroups || JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
                 customProductFields = savedData.customProductFields || [];
                 customSupplierFields = savedData.customSupplierFields || [];
+                deletedSystemProductFields = savedData.deletedSystemProductFields || [];
+                deletedSystemSupplierFields = savedData.deletedSystemSupplierFields || [];
 
                 // 修复空ID的供应商数据
                 let needSave = false;
@@ -5665,6 +5679,7 @@
                 'other': '其他'
             };
 
+            const hasProducts = products && products.length > 0;
             document.getElementById('product-fields-list').innerHTML = allFields.map(f => `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-2 font-medium">${f.name}</td>
@@ -5672,7 +5687,7 @@
                     <td class="px-3 py-2 text-gray-400 text-xs">${f.keywords ? f.keywords.join(', ') : '-'}</td>
                     <td class="px-3 py-2 text-center">
                         <button onclick="editProductField('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
-                        ${f.isCustom ? `<button onclick="deleteProductField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
+                        ${(f.isCustom || !hasProducts) ? `<button onclick="deleteProductField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
                     </td>
                 </tr>
             `).join('');
@@ -5685,6 +5700,8 @@
 
             Object.entries(SYSTEM_FIELDS).forEach(([group, names]) => {
                 names.forEach(name => {
+                    // 跳过已删除的系统字段
+                    if (deletedSystemProductFields.includes(name)) return;
                     const override = systemFieldOverrides.find(o => o.originalName === name);
                     fields.push({
                         name: override ? override.name : name,
@@ -5790,7 +5807,21 @@
 
         function deleteProductField(name) {
             if (!confirm(`确定删除字段「${name}」？`)) return;
-            customProductFields = customProductFields.filter(f => f.name !== name || f.isSystemOverride);
+
+            // 检查是否是系统字段
+            const allFields = getAllProductFields();
+            const field = allFields.find(f => f.name === name);
+            if (field && !field.isCustom) {
+                // 是系统字段，添加到删除列表
+                if (!deletedSystemProductFields.includes(field.originalName)) {
+                    deletedSystemProductFields.push(field.originalName);
+                }
+                // 移除覆盖配置
+                customProductFields = customProductFields.filter(f => !(f.originalName === field.originalName && f.isSystemOverride));
+            } else {
+                // 是自定义字段，直接删除
+                customProductFields = customProductFields.filter(f => f.name !== name && !f.isSystemOverride);
+            }
             saveData();
             renderProductFieldsList();
         }
@@ -5806,6 +5837,7 @@
                 'textarea': '多行文本'
             };
 
+            const hasSuppliers = suppliers && suppliers.length > 0;
             document.getElementById('supplier-fields-list').innerHTML = allFields.map(f => `
                 <tr class="hover:bg-gray-50">
                     <td class="px-3 py-2 font-medium">${f.name}</td>
@@ -5813,7 +5845,7 @@
                     <td class="px-3 py-2 text-gray-400 text-xs">${f.options ? f.options.join(', ') : '-'}</td>
                     <td class="px-3 py-2 text-center">
                         <button onclick="editSupplierFieldModal('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
-                        ${f.isCustom ? `<button onclick="deleteSupplierField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
+                        ${(f.isCustom || !hasSuppliers) ? `<button onclick="deleteSupplierField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
                     </td>
                 </tr>
             `).join('');
@@ -5830,8 +5862,11 @@
                 { name: '备注', type: 'textarea', originalName: '备注' }
             ];
 
+            // 过滤掉已删除的系统字段
+            const filteredSystemFields = defaultSystemFields.filter(f => !deletedSystemSupplierFields.includes(f.originalName));
+
             // 应用覆盖配置
-            const result = defaultSystemFields.map(f => {
+            const result = filteredSystemFields.map(f => {
                 const override = customSupplierFields.find(o => o.originalName === f.originalName && o.isSystemOverride);
                 return override ? { ...f, name: override.name, type: override.type, options: override.options || f.options } : { ...f, isCustom: false };
             });
@@ -5945,7 +5980,21 @@
 
         function deleteSupplierField(name) {
             if (!confirm(`确定删除字段「${name}」？`)) return;
-            customSupplierFields = customSupplierFields.filter(f => f.name !== name || f.isSystemOverride);
+
+            // 检查是否是系统字段
+            const allFields = getAllSupplierFields();
+            const field = allFields.find(f => f.name === name);
+            if (field && !field.isCustom) {
+                // 是系统字段，添加到删除列表
+                if (!deletedSystemSupplierFields.includes(field.originalName)) {
+                    deletedSystemSupplierFields.push(field.originalName);
+                }
+                // 移除覆盖配置
+                customSupplierFields = customSupplierFields.filter(f => !(f.originalName === field.originalName && f.isSystemOverride));
+            } else {
+                // 是自定义字段，直接删除
+                customSupplierFields = customSupplierFields.filter(f => f.name !== name && !f.isSystemOverride);
+            }
             saveData();
             renderSupplierFieldsList();
         }
