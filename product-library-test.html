@@ -1763,14 +1763,29 @@
                     // 文件不存在，忽略
                 }
 
-                // 保存目录句柄到 sessionStorage（仅当前会话有效）
-                sessionStorage.setItem('hasDirectoryHandle', 'true');
+                // 保存目录名称到 IndexedDB（用于下次加载时显示提示）
+                saveSettingToDB('lastStorageFolderName', directoryHandle.name);
 
                 console.log('已选择存储目录:', directoryHandle.name);
             } catch (e) {
                 if (e.name !== 'AbortError') {
                     console.error('选择目录失败:', e);
                     alert('选择目录失败: ' + e.message);
+                }
+            }
+        }
+
+        // 恢复存储文件夹显示（页面刷新后）
+        async function restoreStorageFolderDisplay() {
+            const savedFolderName = await loadSettingFromDB('lastStorageFolderName');
+            if (savedFolderName) {
+                const pathEl = document.getElementById('storage-folder-path');
+                const iconEl = document.getElementById('storage-folder-icon');
+                if (pathEl) {
+                    pathEl.innerHTML = `上次选择: <strong>${savedFolderName}</strong> <button onclick="selectStorageFolder()" class="text-blue-600 hover:underline text-xs">重新选择</button>`;
+                }
+                if (iconEl) {
+                    iconEl.textContent = '📁';
                 }
             }
         }
@@ -2153,6 +2168,7 @@
                     renderTableHeader();
                     renderList();
                     updateStats();
+                    restoreStorageFolderDisplay();
                 } catch (e) {
                     console.error('渲染初始化失败:', e);
                 }
