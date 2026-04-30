@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(py *)",
-      "Bash(/c/Program Files/nodejs/node *)"
+      "Bash(/c/Program Files/nodejs/node *)",
+      "Bash(git push *)"
     ]
   }
 }

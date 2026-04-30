@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>商品库模块测试</title>
+    <title>福利团购运营系统（云端版）</title>
     <script src="libs/tailwind.min.js"></script>
     <script src="libs/xlsx.full.min.js"></script>
     <script src="libs/exceljs.min.js"></script>
@@ -36,7 +36,7 @@
         <!-- 侧边栏 -->
         <div class="w-48 bg-white shadow flex-shrink-0">
             <div class="p-4 border-b">
-                <h1 class="font-bold text-lg">商品库测试</h1>
+                <h1 class="font-bold text-lg">福利团购系统</h1>
             </div>
             <nav class="p-2">
                 <a onclick="showPage('page-list')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-list">📦 商品列表</a>
@@ -957,37 +957,22 @@
                     </div>
                 </div>
 
-                <!-- 本地文件存储 -->
+                <!-- 云端存储状态 -->
                 <div class="bg-white rounded-lg shadow p-6 mb-6">
-                    <h3 class="font-medium mb-4">本地文件存储</h3>
-                    <p class="text-sm text-gray-500 mb-4">选择本地文件夹作为数据存储位置，支持自动保存和读取（需要Chrome/Edge浏览器）</p>
+                    <h3 class="font-medium mb-4">云端存储</h3>
+                    <p class="text-sm text-gray-500 mb-4">数据自动保存到云服务器，无需手动操作</p>
 
-                    <div id="storage-folder-status" class="mb-4 p-3 bg-gray-50 rounded-lg">
+                    <div class="mb-4 p-3 bg-green-50 rounded-lg">
                         <div class="flex items-center gap-2">
-                            <span id="storage-folder-icon">📁</span>
-                            <span id="storage-folder-path" class="text-sm text-gray-600">未选择存储位置</span>
+                            <span>☁️</span>
+                            <span class="text-sm text-green-600">已连接云端服务器，数据实时同步</span>
                         </div>
                     </div>
 
-                    <div class="flex gap-3 flex-wrap">
-                        <button onclick="selectStorageFolder()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
-                            📂 选择文件夹
-                        </button>
-                        <button onclick="saveToLocalFile()" id="btn-save-local" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                            💾 保存到本地
-                        </button>
-                        <button onclick="loadFromLocalFile()" id="btn-load-local" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                            📖 从本地读取
-                        </button>
-                        <button onclick="toggleAutoSave()" id="btn-auto-save" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed" disabled>
-                            🔄 自动保存: 关闭
-                        </button>
-                    </div>
-
-                    <div class="mt-4 text-xs text-gray-400">
-                        <p>• 选择文件夹后，数据将保存为 <code class="bg-gray-100 px-1 rounded">product-library-data.json</code></p>
-                        <p>• 开启自动保存后，每次数据变更都会自动写入本地文件</p>
-                        <p>• 浏览器安全限制要求每次打开页面需要重新选择文件夹</p>
+                    <div class="text-xs text-gray-400">
+                        <p>• 数据自动保存到服务器，刷新页面数据不丢失</p>
+                        <p>• 支持多设备访问，数据实时同步</p>
+                        <p>• 建议定期导出备份以防意外</p>
                     </div>
                 </div>
 
@@ -1012,25 +997,24 @@
                     </div>
                 </div>
 
-                <!-- 存储空间使用情况 -->
+                <!-- 数据统计 -->
                 <div class="bg-white rounded-lg shadow p-6 mt-6">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="font-medium">存储空间使用情况</h3>
-                        <button onclick="updateStorageDisplay()" class="text-sm text-blue-600 hover:underline">刷新</button>
+                    <h3 class="font-medium mb-4">数据统计</h3>
+                    <div class="grid grid-cols-3 gap-4 text-center">
+                        <div class="p-3 bg-blue-50 rounded-lg">
+                            <div class="text-2xl font-bold text-blue-600" id="stat-products">-</div>
+                            <div class="text-xs text-gray-500">商品数量</div>
+                        </div>
+                        <div class="p-3 bg-green-50 rounded-lg">
+                            <div class="text-2xl font-bold text-green-600" id="stat-suppliers">-</div>
+                            <div class="text-xs text-gray-500">供应商</div>
+                        </div>
+                        <div class="p-3 bg-purple-50 rounded-lg">
+                            <div class="text-2xl font-bold text-purple-600" id="stat-templates">-</div>
+                            <div class="text-xs text-gray-500">映射模板</div>
+                        </div>
                     </div>
-                    <div id="storage-display" class="space-y-3">
-                        <div class="flex justify-between items-center">
-                            <span class="text-sm text-gray-600">已使用空间</span>
-                            <span id="storage-used" class="text-sm font-medium">计算中...</span>
-                        </div>
-                        <div class="w-full bg-gray-200 rounded-full h-2">
-                            <div id="storage-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
-                        </div>
-                        <div class="text-xs text-gray-400">
-                            IndexedDB 存储空间充足（通常数百MB以上），数据自动保存
-                        </div>
-                        <div id="storage-details" class="mt-4 p-3 bg-gray-50 rounded-lg text-xs">
-                            <div class="font-medium mb-2">详细数据大小：</div>
+                </div>
                             <div id="storage-details-list" class="space-y-1"></div>
                         </div>
                     </div>
@@ -1056,141 +1040,71 @@
     </div>
 
     <script>
-        // ========== IndexedDB 数据库 ==========
-        const DB_NAME = 'ProductLibraryDB';
-        const DB_VERSION = 1;
-        let db = null;
+        // ========== 云端API存储 ==========
+        const API_BASE = '/api';
+        let cachedData = { products: [], suppliers: [], templates: [], settings: {} };
 
-        // 初始化 IndexedDB
+        // 初始化 - 从服务器加载数据
         function initDB() {
-            return new Promise((resolve, reject) => {
-                const request = indexedDB.open(DB_NAME, DB_VERSION);
-
-                request.onerror = () => {
-                    console.error('IndexedDB 打开失败:', request.error);
-                    reject(request.error);
-                };
-
-                request.onsuccess = () => {
-                    db = request.result;
-                    console.log('IndexedDB 连接成功');
-                    resolve(db);
-                };
-
-                request.onupgradeneeded = (event) => {
-                    const database = event.target.result;
-
-                    // 创建数据存储
-                    if (!database.objectStoreNames.contains('products')) {
-                        database.createObjectStore('products', { keyPath: 'id' });
-                    }
-                    if (!database.objectStoreNames.contains('suppliers')) {
-                        database.createObjectStore('suppliers', { keyPath: 'id' });
-                    }
-                    if (!database.objectStoreNames.contains('templates')) {
-                        database.createObjectStore('templates', { keyPath: 'id' });
-                    }
-                    if (!database.objectStoreNames.contains('settings')) {
-                        database.createObjectStore('settings', { keyPath: 'key' });
-                    }
-
-                    console.log('IndexedDB 数据库结构创建完成');
-                };
-            });
+            return fetch(`${API_BASE}/data`)
+                .then(res => res.json())
+                .then(data => {
+                    cachedData = {
+                        products: data.products || [],
+                        suppliers: data.suppliers || [],
+                        templates: data.templates || [],
+                        settings: data.settings || {}
+                    };
+                    console.log('云端数据加载成功');
+                    return cachedData;
+                })
+                .catch(err => {
+                    console.error('云端数据加载失败:', err);
+                    throw err;
+                });
         }
 
-        // 保存数据到 IndexedDB
+        // 保存数据到服务器
+        function saveToServer() {
+            return fetch(`${API_BASE}/data`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(cachedData)
+            }).then(res => res.json());
+        }
+
+        // 保存数据到缓存并同步到服务器
         function saveToDB(storeName, data) {
             return new Promise((resolve, reject) => {
-                if (!db) {
-                    reject('数据库未初始化');
-                    return;
-                }
-
-                const transaction = db.transaction([storeName], 'readwrite');
-                const store = transaction.objectStore(storeName);
-
-                let request;
                 if (Array.isArray(data)) {
-                    // 先清空再批量添加
-                    const clearRequest = store.clear();
-                    clearRequest.onsuccess = () => {
-                        const addPromises = [];
-                        data.forEach(item => {
-                            // 确保item有id属性
-                            if (item && (item.id !== undefined || item.key !== undefined)) {
-                                try {
-                                    addPromises.push(new Promise((resolveAdd, rejectAdd) => {
-                                        const addReq = store.add(item);
-                                        addReq.onsuccess = () => resolveAdd();
-                                        addReq.onerror = () => rejectAdd(addReq.error);
-                                    }));
-                                } catch (e) {
-                                    console.warn('添加数据失败:', e, item);
-                                }
-                            }
-                        });
-                        // 等待所有 add 完成后再 resolve
-                        Promise.all(addPromises).then(() => resolve(addPromises.length)).catch(reject);
-                    };
-                    clearRequest.onerror = () => reject(clearRequest.error);
+                    cachedData[storeName] = data;
                 } else {
-                    request = store.put(data);
-                    request.onsuccess = () => resolve(data);
-                    request.onerror = () => reject(request.error);
+                    if (!cachedData[storeName]) cachedData[storeName] = [];
+                    const index = cachedData[storeName].findIndex(item => item.id === data.id || item.key === data.key);
+                    if (index >= 0) {
+                        cachedData[storeName][index] = data;
+                    } else {
+                        cachedData[storeName].push(data);
+                    }
                 }
+                saveToServer().then(() => resolve(data)).catch(reject);
             });
         }
 
-        // 从 IndexedDB 加载数据
+        // 从缓存加载数据
         function loadFromDB(storeName) {
-            return new Promise((resolve, reject) => {
-                if (!db) {
-                    reject('数据库未初始化');
-                    return;
-                }
-
-                const transaction = db.transaction([storeName], 'readonly');
-                const store = transaction.objectStore(storeName);
-                const request = store.getAll();
-
-                request.onsuccess = () => resolve(request.result);
-                request.onerror = () => reject(request.error);
-            });
+            return Promise.resolve(cachedData[storeName] || []);
         }
 
         // 加载单个设置项
         function loadSettingFromDB(key) {
-            return new Promise((resolve, reject) => {
-                if (!db) {
-                    reject('数据库未初始化');
-                    return;
-                }
-
-                const transaction = db.transaction(['settings'], 'readonly');
-                const store = transaction.objectStore('settings');
-                const request = store.get(key);
-
-                request.onsuccess = () => resolve(request.result ? request.result.value : null);
-                request.onerror = () => reject(request.error);
-            });
+            return Promise.resolve(cachedData.settings[key] || null);
         }
 
         // 保存单个设置项
         function saveSettingToDB(key, value) {
-            return new Promise((resolve, reject) => {
-                if (!db) {
-                    reject('数据库未初始化');
-                    return;
-                }
-
-                const transaction = db.transaction(['settings'], 'readwrite');
-                const store = transaction.objectStore('settings');
-                const request = store.put({ key, value });
-
-                request.onsuccess = () => resolve(value);
-                request.onerror = () => reject(request.error);
-            });
+            cachedData.settings[key] = value;
+            return saveToServer().then(() => value);
         }
 
         // ========== 数据模型 ==========
@@ -1470,74 +1384,19 @@
                 if (!success) {
                     showStorageWarning();
                 } else {
-                    // 保存成功后，如果开启了自动保存到本地文件，则同步保存
-                    if (autoSaveEnabled && directoryHandle) {
-                        autoSaveToFile();
-                    }
+                    // 保存成功后自动同步到服务器
+                    autoSaveToFile();
                 }
             });
             return true;
         }
 
-        // 获取存储使用情况
-        async function getStorageUsageAsync() {
-            try {
-                if (navigator.storage && navigator.storage.estimate) {
-                    const estimate = await navigator.storage.estimate();
-                    const usedMB = (estimate.usage / 1024 / 1024).toFixed(2);
-                    const quotaMB = (estimate.quota / 1024 / 1024).toFixed(2);
-                    return {
-                        total: `${usedMB} / ${quotaMB} MB`,
-                        used: estimate.usage,
-                        quota: estimate.quota
-                    };
-                }
-            } catch (e) {
-                console.error('获取存储信息失败:', e);
-            }
-            return { total: '未知', used: 0, quota: 0 };
+        // 显示保存失败警告
+        function showStorageWarning() {
+            alert('数据保存失败，请检查网络连接');
         }
 
-        // 显示存储空间警告
-        function showStorageWarning() {
-            if (document.getElementById('storage-warning-modal')) return;
-
-            autoBackupOnFailure();
-
-            const modal = document.createElement('div');
-            modal.id = 'storage-warning-modal';
-            modal.className = 'modal active';
-            modal.innerHTML = `
-                <div class="modal-content w-[500px]">
-                    <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-bold text-orange-600">⚠️ 数据已自动备份</h3>
-                        <button onclick="document.getElementById('storage-warning-modal').remove()" class="text-gray-400 hover:text-gray-600">✕</button>
-                    </div>
-                    <div class="space-y-4">
-                        <div class="bg-orange-50 border border-orange-200 rounded-lg p-4">
-                            <p class="text-sm text-orange-700 mb-2">
-                                <strong>数据保存遇到问题，已自动备份到文件</strong>
-                            </p>
-                            <p class="text-sm text-orange-600">
-                                请检查下载的备份文件，妥善保存。
-                            </p>
-                        </div>
-                        <div class="bg-green-50 border border-green-200 rounded-lg p-4">
-                            <p class="text-sm font-medium text-green-700 mb-2">✓ 自动备份已完成</p>
-                            <p class="text-sm text-green-600">
-                                数据已导出到文件，请妥善保存。下次可通过"系统设置→导入全部数据"恢复。
-                            </p>
-                        </div>
-                        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                            <p class="text-sm font-medium text-blue-700 mb-2">后续建议：</p>
-                            <ul class="text-sm text-blue-600 space-y-1">
-                                <li>1. 删除部分商品或图片释放空间</li>
-                                <li>2. 定期使用"导出全部数据"备份</li>
-                                <li>3. 减少导入带图片的商品数量</li>
-                            </ul>
-                        </div>
-                        <div class="flex gap-2">
-                            <button onclick="exportAllData(); document.getElementById('storage-warning-modal').remove();" class="flex-1 px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+        // 重置为默认数据
                                 📥 再次导出备份
                             </button>
                             <button onclick="document.getElementById('storage-warning-modal').remove()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">
@@ -1567,65 +1426,6 @@
             };
         }
 
-        // 存储失败时自动备份
-        function autoBackupOnFailure() {
-            try {
-                const allData = {
-                    products,
-                    suppliers,
-                    templates,
-                    nextProductId,
-                    requiredFields,
-                    requiredGroups,
-                    exportTime: new Date().toISOString(),
-                    version: '1.0',
-                    note: '自动备份（存储空间不足）'
-                };
-
-                const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
-                const url = URL.createObjectURL(blob);
-                const a = document.createElement('a');
-                a.href = url;
-                a.download = `商品库自动备份_${new Date().toISOString().replace(/[:.]/g, '-')}.json`;
-                document.body.appendChild(a);
-                a.click();
-                document.body.removeChild(a);
-                URL.revokeObjectURL(url);
-            } catch (e) {
-                console.error('自动备份失败:', e);
-            }
-        }
-
-        // 页面加载时检查存储空间
-        async function checkStorageOnLoad() {
-            const usage = await getStorageUsageAsync();
-            const usedMB = usage.used / 1024 / 1024;
-
-            // 如果存储空间使用超过 100MB，显示提示
-            if (usedMB > 100) {
-                const modal = document.createElement('div');
-                modal.className = 'fixed top-4 right-4 bg-blue-100 border border-blue-400 rounded-lg p-3 shadow-lg z-50 max-w-xs';
-                modal.innerHTML = `
-                    <div class="flex items-start gap-2">
-                        <span class="text-blue-600">ℹ️</span>
-                        <div class="text-sm">
-                            <p class="font-medium text-blue-800">存储使用情况</p>
-                            <p class="text-blue-700 text-xs mt-1">已使用 ${usage.total}</p>
-                            <p class="text-blue-600 text-xs mt-1">IndexedDB 存储空间充足，无需担心</p>
-                            <div class="flex gap-2 mt-2">
-                                <button onclick="this.parentElement.parentElement.parentElement.remove(); exportAllData();" class="text-xs text-blue-600 hover:underline">导出备份</button>
-                                <button onclick="this.parentElement.parentElement.parentElement.remove();" class="text-xs text-gray-500 hover:underline">关闭</button>
-                            </div>
-                        </div>
-                    </div>
-                `;
-                document.body.appendChild(modal);
-
-                // 10秒后自动消失
-                setTimeout(() => modal.remove(), 10000);
-            }
-        }
-
         // 重置为默认数据
         function resetToDefault() {
             if (confirm('确定要重置为默认示例数据吗？所有已录入的数据将被清除。')) {
@@ -1640,29 +1440,15 @@
         }
 
         // ========== 数据导入导出 ==========
-        // 通用文件保存函数：优先使用本地存储目录
+        // 通用文件保存函数：下载文件
         async function saveFile(fileName, blob, successMessage) {
-            if (directoryHandle) {
-                try {
-                    const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
-                    const writable = await fileHandle.createWritable();
-                    await writable.write(blob);
-                    await writable.close();
-                    alert(successMessage || `文件已保存到: ${directoryHandle.name}/${fileName}`);
-                    return true;
-                } catch (e) {
-                    console.error('保存到本地目录失败:', e);
-                    // 失败时回退到下载方式
-                }
-            }
-            // 回退到传统下载方式
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
             a.href = url;
             a.download = fileName;
             a.click();
             URL.revokeObjectURL(url);
-            return false;
+            if (successMessage) alert(successMessage);
         }
 
         async function exportAllData() {
@@ -1679,7 +1465,7 @@
 
             const fileName = `商品库全部数据_${new Date().toISOString().split('T')[0]}.json`;
             const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
-            await saveFile(fileName, blob, `数据已导出到: ${directoryHandle ? directoryHandle.name : 'Downloads'}/${fileName}`);
+            await saveFile(fileName, blob, '数据已导出');
         }
 
         function importAllData(event) {
@@ -1732,223 +1518,13 @@
             }
         }
 
-        // ========== 本地文件存储（File System Access API） ==========
-        let directoryHandle = null;
-        let autoSaveEnabled = false;
-        const DATA_FILENAME = 'product-library-data.json';
-
-        // 检查浏览器是否支持 File System Access API
-        function isFileSystemAccessSupported() {
-            return 'showDirectoryPicker' in window;
-        }
-
-        // 选择存储文件夹
-        async function selectStorageFolder() {
-            if (!isFileSystemAccessSupported()) {
-                alert('您的浏览器不支持本地文件存储功能。\n请使用 Chrome 或 Edge 浏览器。');
-                return;
-            }
-
-            try {
-                // 请求用户选择目录，使用id参数以便浏览器记住选择
-                directoryHandle = await window.showDirectoryPicker({
-                    mode: 'readwrite',
-                    startIn: 'documents',
-                    id: 'product-library-storage'  // 固定ID，用于恢复访问
-                });
-
-                // 更新UI显示
-                document.getElementById('storage-folder-path').textContent = `已选择: ${directoryHandle.name}`;
-                document.getElementById('storage-folder-icon').textContent = '✅';
-
-                // 启用按钮
-                document.getElementById('btn-save-local').disabled = false;
-                document.getElementById('btn-load-local').disabled = false;
-                document.getElementById('btn-auto-save').disabled = false;
-
-                // 尝试读取现有文件
-                try {
-                    const fileHandle = await directoryHandle.getFileHandle(DATA_FILENAME);
-                    const file = await fileHandle.getFile();
-                    const lastModified = new Date(file.lastModified).toLocaleString();
-                    document.getElementById('storage-folder-path').textContent =
-                        `已选择: ${directoryHandle.name}（最后保存: ${lastModified}）`;
-                } catch (e) {
-                    // 文件不存在，忽略
-                }
-
-                // 保存目录名称到 IndexedDB（等待保存完成）
-                await saveSettingToDB('lastStorageFolderName', directoryHandle.name);
-                console.log('已保存目录名:', directoryHandle.name);
-
-                console.log('已选择存储目录:', directoryHandle.name);
-            } catch (e) {
-                if (e.name !== 'AbortError') {
-                    console.error('选择目录失败:', e);
-                    alert('选择目录失败: ' + e.message);
-                }
-            }
-        }
-
-        // 恢复存储文件夹访问（页面刷新后，需要用户点击）
-        async function restoreStorageFolder() {
-            if (!isFileSystemAccessSupported()) return;
-
-            try {
-                directoryHandle = await window.showDirectoryPicker({
-                    mode: 'readwrite',
-                    id: 'product-library-storage'
-                });
-
-                // 成功恢复
-                document.getElementById('storage-folder-path').textContent = `已选择: ${directoryHandle.name}`;
-                document.getElementById('storage-folder-icon').textContent = '✅';
-
-                // 启用按钮
-                document.getElementById('btn-save-local').disabled = false;
-                document.getElementById('btn-load-local').disabled = false;
-                document.getElementById('btn-auto-save').disabled = false;
-
-                // 尝试读取最后保存时间
-                try {
-                    const fileHandle = await directoryHandle.getFileHandle(DATA_FILENAME);
-                    const file = await fileHandle.getFile();
-                    const lastModified = new Date(file.lastModified).toLocaleString();
-                    document.getElementById('storage-folder-path').textContent = `已选择: ${directoryHandle.name}（最后保存: ${lastModified}）`;
-                } catch (e) {
-                    // 文件不存在，忽略
-                }
-
-                console.log('恢复存储目录:', directoryHandle.name);
-            } catch (e) {
-                if (e.name !== 'AbortError') {
-                    console.error('恢复目录失败:', e);
-                }
-            }
-        }
-
-        // 恢复存储文件夹显示（页面刷新后显示提示）
-        async function restoreStorageFolderDisplay() {
-            const savedFolderName = await loadSettingFromDB('lastStorageFolderName');
-            console.log('读取保存的目录名:', savedFolderName);
-
-            if (!savedFolderName) return;
-
-            const pathEl = document.getElementById('storage-folder-path');
-            const iconEl = document.getElementById('storage-folder-icon');
-
-            // 显示恢复按钮，用户点击后恢复访问
-            if (pathEl) {
-                pathEl.innerHTML = `上次选择: <strong>${savedFolderName}</strong> <button onclick="restoreStorageFolder()" class="text-blue-600 hover:underline text-xs ml-2">📍 点击恢复访问</button>`;
-            }
-            if (iconEl) {
-                iconEl.textContent = '📁';
-            }
-        }
-
-        // 保存数据到本地文件
-        async function saveToLocalFile() {
-            if (!directoryHandle) {
-                alert('请先选择存储文件夹');
-                return;
-            }
-
-            try {
-                // 获取或创建文件
-                const fileHandle = await directoryHandle.getFileHandle(DATA_FILENAME, { create: true });
-                const writable = await fileHandle.createWritable();
-
-                // 准备数据
-                const allData = {
-                    products,
-                    suppliers,
-                    templates,
-                    nextProductId,
-                    requiredFields,
-                    requiredGroups,
-                    exportTime: new Date().toISOString(),
-                    version: '2.0',
-                    source: '本地文件存储'
-                };
-
-                // 写入文件
-                await writable.write(JSON.stringify(allData, null, 2));
-                await writable.close();
-
-                // 更新显示
-                const lastModified = new Date().toLocaleString();
-                document.getElementById('storage-folder-path').textContent =
-                    `已选择: ${directoryHandle.name}（最后保存: ${lastModified}）`;
-
-                console.log('数据已保存到本地文件');
-            } catch (e) {
-                console.error('保存文件失败:', e);
-                alert('保存失败: ' + e.message);
-            }
-        }
-
-        // 从本地文件读取数据
-        async function loadFromLocalFile() {
-            if (!directoryHandle) {
-                alert('请先选择存储文件夹');
-                return;
-            }
-
-            try {
-                const fileHandle = await directoryHandle.getFileHandle(DATA_FILENAME);
-                const file = await fileHandle.getFile();
-                const content = await file.text();
-                const data = JSON.parse(content);
-
-                if (!data.products || !data.suppliers) {
-                    alert('无效的数据文件格式');
-                    return;
-                }
-
-                if (!confirm(`确定要从本地文件加载数据吗？\n这将覆盖当前数据：\n- 商品：${data.products.length} 条\n- 供应商：${data.suppliers.length} 条`)) {
-                    return;
-                }
-
-                products = data.products;
-                suppliers = data.suppliers;
-                templates = data.templates || {};
-                nextProductId = data.nextProductId || products.length + 1;
-                requiredFields = data.requiredFields || [...DEFAULT_REQUIRED_FIELDS];
-                requiredGroups = data.requiredGroups || JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
-
-                // 同时保存到 IndexedDB
-                saveData();
-                renderList();
-
-                alert('数据已从本地文件加载成功！');
-            } catch (e) {
-                if (e.name === 'NotFoundError') {
-                    alert('未找到数据文件，请先保存数据到本地');
-                } else {
-                    console.error('读取文件失败:', e);
-                    alert('读取失败: ' + e.message);
-                }
-            }
-        }
-
-        // 切换自动保存
-        function toggleAutoSave() {
-            autoSaveEnabled = !autoSaveEnabled;
-            const btn = document.getElementById('btn-auto-save');
-            btn.textContent = autoSaveEnabled ? '🔄 自动保存: 开启' : '🔄 自动保存: 关闭';
-            btn.className = autoSaveEnabled
-                ? 'px-4 py-2 bg-green-100 text-green-700 rounded-lg text-sm hover:bg-green-200'
-                : 'px-4 py-2 border rounded-lg text-sm hover:bg-gray-50';
-        }
-
-        // 自动保存包装函数
+        // ========== 云端自动保存 ==========
         async function autoSaveToFile() {
-            if (autoSaveEnabled && directoryHandle) {
-                try {
-                    await saveToLocalFile();
-                } catch (e) {
-                    console.warn('自动保存失败:', e);
-                }
+            // 云端版本自动保存到服务器
+            try {
+                await saveToServer();
+            } catch (e) {
+                console.warn('自动保存失败:', e);
             }
         }
 
@@ -2224,7 +1800,7 @@
                     renderTableHeader();
                     renderList();
                     updateStats();
-                    await restoreStorageFolderDisplay();
+                    updateDataStats();
                 } catch (e) {
                     console.error('渲染初始化失败:', e);
                 }
@@ -2519,7 +2095,7 @@
             const fileName = `商品库导出_${new Date().toISOString().split('T')[0]}.xlsx`;
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            await saveFile(fileName, blob, `Excel已导出到: ${directoryHandle ? directoryHandle.name : 'Downloads'}/${fileName}`);
+            await saveFile(fileName, blob, 'Excel已导出');
         }
 
         // ========== 页面切换 ==========
@@ -7727,11 +7303,11 @@
             const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
             XLSX.utils.book_append_sheet(wb, ws, '供应商列表');
 
-            // 使用本地存储目录或传统下载
+            // 下载文件
             const fileName = `供应商列表_${new Date().toISOString().split('T')[0]}.xlsx`;
             const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            await saveFile(fileName, blob, `Excel已导出到: ${directoryHandle ? directoryHandle.name : 'Downloads'}/${fileName}`);
+            await saveFile(fileName, blob, 'Excel已导出');
         }
 
         // ========== 保存映射模板 ==========
@@ -7806,11 +7382,8 @@
             renderProductFieldsList();
             renderSupplierFieldsList();
 
-            // 更新存储空间显示
-            updateStorageDisplay();
-
-            // 更新本地文件存储状态
-            updateLocalFileStorageUI();
+            // 更新数据统计
+            updateDataStats();
         }
 
         // ========== 字段管理 ==========
@@ -7851,9 +7424,6 @@
                     </td>
                 </tr>
             `).join('');
-
-            // 恢复存储文件夹显示
-            restoreStorageFolderDisplay();
         }
 
         function getAllProductFields() {
@@ -8277,78 +7847,14 @@
             renderSupplierFieldsList();
         }
 
-        // 更新本地文件存储UI状态
-        function updateLocalFileStorageUI() {
-            const supported = isFileSystemAccessSupported();
-            const pathEl = document.getElementById('storage-folder-path');
-            const iconEl = document.getElementById('storage-folder-icon');
-
-            if (!supported) {
-                pathEl.textContent = '浏览器不支持，请使用 Chrome 或 Edge';
-                iconEl.textContent = '⚠️';
-                document.getElementById('btn-save-local').disabled = true;
-                document.getElementById('btn-load-local').disabled = true;
-                document.getElementById('btn-auto-save').disabled = true;
-            } else if (directoryHandle) {
-                pathEl.textContent = `已选择: ${directoryHandle.name}`;
-                iconEl.textContent = '✅';
-                document.getElementById('btn-save-local').disabled = false;
-                document.getElementById('btn-load-local').disabled = false;
-                document.getElementById('btn-auto-save').disabled = false;
-            } else {
-                pathEl.textContent = '未选择存储位置';
-                iconEl.textContent = '📁';
-                document.getElementById('btn-save-local').disabled = true;
-                document.getElementById('btn-load-local').disabled = true;
-                document.getElementById('btn-auto-save').disabled = true;
-            }
-
-            // 更新自动保存按钮状态
-            const autoBtn = document.getElementById('btn-auto-save');
-            if (autoBtn) {
-                autoBtn.textContent = autoSaveEnabled ? '🔄 自动保存: 开启' : '🔄 自动保存: 关闭';
-                autoBtn.className = autoSaveEnabled
-                    ? 'px-4 py-2 bg-green-100 text-green-700 rounded-lg text-sm hover:bg-green-200'
-                    : 'px-4 py-2 border rounded-lg text-sm hover:bg-gray-50';
-            }
-        }
-
-        // 更新存储空间显示
-        async function updateStorageDisplay() {
-            const usage = await getStorageUsageAsync();
-            const usedMB = usage.used / 1024 / 1024;
-            const quotaMB = usage.quota / 1024 / 1024;
-            const percent = quotaMB > 0 ? Math.min(100, (usedMB / quotaMB) * 100) : 0;
-
-            // 更新进度条
-            const bar = document.getElementById('storage-bar');
-            if (bar) {
-                bar.style.width = percent + '%';
-                bar.className = 'h-2 rounded-full transition-all ' + (percent > 80 ? 'bg-red-500' : percent > 50 ? 'bg-yellow-500' : 'bg-blue-600');
-            }
-
-            // 更新使用量文字
-            const usedEl = document.getElementById('storage-used');
-            if (usedEl) {
-                usedEl.textContent = usage.total;
-                usedEl.className = 'text-sm font-medium ' + (percent > 80 ? 'text-red-600' : percent > 50 ? 'text-yellow-600' : 'text-green-600');
-            }
-
-            // 更新详细列表 - 显示数据统计而非localStorage键
-            const detailsEl = document.getElementById('storage-details-list');
-            if (detailsEl) {
-                const productsSize = JSON.stringify(products).length / 1024;
-                const suppliersSize = JSON.stringify(suppliers).length / 1024;
-                const templatesSize = JSON.stringify(templates).length / 1024;
-
-                let html = `
-                    <div class="flex justify-between"><span>商品数据</span><span>${productsSize.toFixed(2)} KB</span></div>
-                    <div class="flex justify-between"><span>供应商数据</span><span>${suppliersSize.toFixed(2)} KB</span></div>
-                    <div class="flex justify-between"><span>模板数据</span><span>${templatesSize.toFixed(2)} KB</span></div>
-                    <div class="flex justify-between font-medium mt-2 pt-2 border-t"><span>商品总数</span><span>${products.length} 个</span></div>
-                `;
-                detailsEl.innerHTML = html;
-            }
+        // 更新数据统计显示
+        function updateDataStats() {
+            const statProducts = document.getElementById('stat-products');
+            const statSuppliers = document.getElementById('stat-suppliers');
+            const statTemplates = document.getElementById('stat-templates');
+            if (statProducts) statProducts.textContent = products.length;
+            if (statSuppliers) statSuppliers.textContent = suppliers.length;
+            if (statTemplates) statTemplates.textContent = Object.keys(templates).length;
         }
 
         function toggleRequiredField(field, checked) {
