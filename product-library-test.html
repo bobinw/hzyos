@@ -11,12 +11,24 @@
         .tag { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; }
         .page { display: none; }
         .page.active { display: block; }
+        #page-list.active { display: flex; flex-direction: column; height: 100%; }
         .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; }
         .modal.active { display: flex; align-items: center; justify-content: center; }
         .modal-content { background: white; border-radius: 0.5rem; padding: 1.5rem; max-width: 90vw; max-height: 90vh; overflow-y: auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25); }
         .confidence-high { color: #16a34a; }
         .confidence-medium { color: #ca8a04; }
         .confidence-low { color: #dc2626; }
+
+        /* 固定表头样式 */
+        thead.sticky tr {
+            position: sticky;
+            top: 0;
+            background: #f9fafb;
+        }
+        thead.sticky th {
+            background: #f9fafb;
+            box-shadow: 0 1px 2px rgba(0,0,0,0.1);
+        }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -50,8 +62,8 @@
         <!-- 主内容区 -->
         <div class="flex-1 overflow-auto">
             <!-- 页面：商品列表 -->
-            <div id="page-list" class="page active p-6">
-                <div class="flex justify-between items-center mb-6">
+            <div id="page-list" class="page active p-6 flex flex-col h-full">
+                <div class="flex justify-between items-center mb-4 flex-shrink-0">
                     <h2 class="text-xl font-bold">商品列表</h2>
                     <div class="flex gap-2">
                         <button onclick="showExportModal()" class="border rounded-lg px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-1">
@@ -62,8 +74,8 @@
                     </div>
                 </div>
 
-                <!-- 筛选栏 -->
-                <div class="bg-white rounded-lg shadow p-4 mb-4">
+                <!-- 筛选栏 - 固定区域 -->
+                <div class="sticky-filter bg-white rounded-lg shadow p-4 mb-4 flex-shrink-0 z-10">
                     <!-- 常用筛选 -->
                     <div class="flex flex-wrap gap-3 items-center mb-3">
                         <select id="filterMargin" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
@@ -187,36 +199,38 @@
                     </div>
                 </div>
 
-                <!-- 商品表格 -->
-                <div class="bg-white rounded-lg shadow overflow-hidden">
-                    <table class="w-full text-sm">
-                        <thead class="bg-gray-50">
-                            <tr>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500 w-10">
-                                    <input type="checkbox" id="select-all" onchange="toggleSelectAll()" class="w-4 h-4 rounded">
-                                </th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">供应商</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">品牌</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">商品名称</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">规格</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">零售价</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">
-                                    <select id="priceTypeSelect" onchange="renderList()" class="border rounded px-1 py-0.5 text-xs font-medium">
-                                        <option value="jc">集采价</option>
-                                        <option value="df">代发价</option>
-                                    </select>
-                                </th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">毛利率</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">操作</th>
-                            </tr>
-                        </thead>
-                        <tbody id="productList" class="divide-y">
-                        </tbody>
-                    </table>
+                <!-- 商品表格 - 可滚动区域 -->
+                <div class="bg-white rounded-lg shadow overflow-hidden flex-1 min-h-0">
+                    <div class="h-full overflow-auto">
+                        <table class="w-full text-sm">
+                            <thead class="bg-gray-50 sticky top-0 z-10">
+                                <tr>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-10">
+                                        <input type="checkbox" id="select-all" onchange="toggleSelectAll()" class="w-4 h-4 rounded">
+                                    </th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">供应商</th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">品牌</th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">商品名称</th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">规格</th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">零售价</th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">
+                                        <select id="priceTypeSelect" onchange="renderList()" class="border rounded px-1 py-0.5 text-xs font-medium">
+                                            <option value="jc">集采价</option>
+                                            <option value="df">代发价</option>
+                                        </select>
+                                    </th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">毛利率</th>
+                                    <th class="px-4 py-3 text-left font-medium text-gray-500">操作</th>
+                                </tr>
+                            </thead>
+                            <tbody id="productList" class="divide-y">
+                            </tbody>
+                        </table>
+                    </div>
                 </div>
 
-                <!-- 分页 -->
-                <div class="flex justify-between items-center mt-4 text-sm text-gray-500">
+                <!-- 分页 - 固定底部 -->
+                <div class="flex justify-between items-center py-3 text-sm text-gray-500 flex-shrink-0 border-t bg-white mt-2 rounded-lg">
                     <div>共 <span id="listCount">0</span> 条记录</div>
                 </div>
             </div>
