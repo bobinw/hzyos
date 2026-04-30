@@ -1422,8 +1422,8 @@
                 }
 
                 return {
-                    products: savedProducts && savedProducts.length > 0 ? savedProducts : null,
-                    suppliers: savedSuppliers && savedSuppliers.length > 0 ? savedSuppliers : null,
+                    products: savedProducts || null,
+                    suppliers: savedSuppliers || null,
                     templates: templatesObj,
                     nextId: savedNextId,
                     requiredFields: savedRequiredFields,
@@ -1906,19 +1906,20 @@
                 // 加载数据
                 const savedData = await loadDataAsync();
 
-                if (savedData.products && savedData.products.length > 0) {
+                // 检查是否有保存过数据（包括空数组）
+                if (savedData.products !== null && savedData.products !== undefined) {
                     products = savedData.products;
                 } else {
                     products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
                 }
 
-                if (savedData.suppliers && savedData.suppliers.length > 0) {
+                if (savedData.suppliers !== null && savedData.suppliers !== undefined) {
                     suppliers = savedData.suppliers;
                 } else {
                     suppliers = JSON.parse(JSON.stringify(DEFAULT_SUPPLIERS));
                 }
 
-                if (savedData.templates) {
+                if (savedData.templates !== null && savedData.templates !== undefined) {
                     templates = savedData.templates;
                 } else {
                     templates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
@@ -3063,10 +3064,12 @@
                 selectedSupplierId = existingInput.value;
             }
 
-            // 填充供应商列表（从商品数据中提取）
+            // 填充供应商列表（合并供应商数组和商品数据中的供应商）
             const datalist = document.getElementById('supplierDatalist');
-            const supplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))].sort();
-            datalist.innerHTML = supplierNames.map(name => `<option value="${name}">`).join('');
+            const productSuppliers = products.map(p => p.supplierId).filter(Boolean);
+            const manualSuppliers = suppliers.map(s => s.name).filter(Boolean);
+            const allSuppliers = [...new Set([...manualSuppliers, ...productSuppliers])].sort();
+            datalist.innerHTML = allSuppliers.map(name => `<option value="${name}">`).join('');
 
             // 恢复之前选择的供应商
             if (selectedSupplierId) {
