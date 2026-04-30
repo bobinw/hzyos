@@ -1714,7 +1714,32 @@
         }
 
         // ========== 数据导入导出 ==========
-        function exportAllData() {
+        // 通用文件保存函数：优先使用本地存储目录
+        async function saveFile(fileName, blob, successMessage) {
+            if (directoryHandle) {
+                try {
+                    const fileHandle = await directoryHandle.getFileHandle(fileName, { create: true });
+                    const writable = await fileHandle.createWritable();
+                    await writable.write(blob);
+                    await writable.close();
+                    alert(successMessage || `文件已保存到: ${directoryHandle.name}/${fileName}`);
+                    return true;
+                } catch (e) {
+                    console.error('保存到本地目录失败:', e);
+                    // 失败时回退到下载方式
+                }
+            }
+            // 回退到传统下载方式
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = fileName;
+            a.click();
+            URL.revokeObjectURL(url);
+            return false;
+        }
+
+        async function exportAllData() {
             const allData = {
                 products,
                 suppliers,
@@ -1726,13 +1751,9 @@
                 version: '1.0'
             };
 
+            const fileName = `商品库全部数据_${new Date().toISOString().split('T')[0]}.json`;
             const blob = new Blob([JSON.stringify(allData, null, 2)], { type: 'application/json' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = `商品库全部数据_${new Date().toISOString().split('T')[0]}.json`;
-            a.click();
-            URL.revokeObjectURL(url);
+            await saveFile(fileName, blob, `数据已导出到: ${directoryHandle ? directoryHandle.name : 'Downloads'}/${fileName}`);
         }
 
         function importAllData(event) {
@@ -2304,16 +2325,11 @@
                 fgColor: { argb: 'FFE0E0E0' }
             };
 
-            // 下载文件
+            // 保存文件
             const fileName = `商品库导出_${new Date().toISOString().split('T')[0]}.xlsx`;
             const buffer = await workbook.xlsx.writeBuffer();
             const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = fileName;
-            a.click();
-            URL.revokeObjectURL(url);
+            await saveFile(fileName, blob, `Excel已导出到: ${directoryHandle ? directoryHandle.name : 'Downloads'}/${fileName}`);
         }
 
         // ========== 页面切换 ==========
@@ -6711,7 +6727,7 @@
             document.getElementById('modal-supplier-export').classList.add('active');
         }
 
-        function doSupplierExport(type) {
+        async function doSupplierExport(type) {
             closeModal('modal-supplier-export');
             const allSuppliers = getAllSuppliers();
 
@@ -6736,7 +6752,12 @@
             const wb = XLSX.utils.book_new();
             const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
             XLSX.utils.book_append_sheet(wb, ws, '供应商列表');
-            XLSX.writeFile(wb, `供应商列表_${new Date().toISOString().split('T')[0]}.xlsx`);
+
+            // 使用本地存储目录或传统下载
+            const fileName = `供应商列表_${new Date().toISOString().split('T')[0]}.xlsx`;
+            const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            await saveFile(fileName, blob, `Excel已导出到: ${directoryHandle ? directoryHandle.name : 'Downloads'}/${fileName}`);
         }
 
         // ========== 保存映射模板 ==========
