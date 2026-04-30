@@ -76,102 +76,15 @@
 
                 <!-- 筛选栏 - 固定区域 -->
                 <div class="sticky-filter bg-white rounded-lg shadow p-4 mb-4 flex-shrink-0 z-10">
-                    <!-- 常用筛选 -->
-                    <div class="flex flex-wrap gap-3 items-center mb-3">
-                        <select id="filterMargin" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部毛利率</option>
-                            <option value="low"><25% (低)</option>
-                            <option value="mid">25%-35%</option>
-                            <option value="high">≥35% (高)</option>
-                        </select>
-                        <select id="filterExclusive" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部包销</option>
-                            <option value="true">包销产品</option>
-                            <option value="false">非包销</option>
-                        </select>
-                        <select id="filterLogistics" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部一件代发</option>
-                            <option value="代发">支持一件代发</option>
-                            <option value="集采">仅集采</option>
-                        </select>
-                        <select id="filterShipFrom" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部发货地</option>
-                        </select>
-                        <select id="filterStockStatus" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                            <option value="">全部备货状态</option>
-                            <option value="充足">充足</option>
-                            <option value="紧张">紧张</option>
-                            <option value="需提前">需提前</option>
-                        </select>
-                        <input type="text" id="filterSearch" placeholder="搜索商品名称/SKU/条码" class="border rounded-lg px-3 py-2 text-sm w-48" onkeyup="renderList()">
-                        <button onclick="toggleMoreFilters()" class="text-blue-600 text-sm hover:underline" id="btn-more-filters">更多筛选 ▼</button>
-                        <button onclick="resetFilters()" class="text-gray-500 text-sm hover:underline">重置</button>
+                    <!-- 常用筛选 - 动态渲染 -->
+                    <div id="priority-filters" class="flex flex-wrap gap-3 items-center mb-3">
+                        <!-- 由 renderFilterBar() 动态生成 -->
                     </div>
                     <!-- 更多筛选（默认隐藏） -->
                     <div id="more-filters" class="hidden border-t pt-3">
                         <div class="text-xs text-gray-500 mb-2">更多字段筛选</div>
-                        <div class="flex flex-wrap gap-3 items-center">
-                            <select id="filterSupplier" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部供应商</option>
-                            </select>
-                            <select id="filterBrand" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部品牌</option>
-                            </select>
-                            <select id="filterCategory" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部分类</option>
-                                <option value="食品礼盒">食品礼盒</option>
-                                <option value="日用品">日用品</option>
-                                <option value="数码电器">数码电器</option>
-                            </select>
-                            <select id="filterBrandLevel" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部品牌级别</option>
-                                <option value="全国品牌">全国品牌</option>
-                                <option value="地方品牌">地方品牌</option>
-                                <option value="进口品牌">进口品牌</option>
-                            </select>
-                            <select id="filterStockType" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部库存类型</option>
-                                <option value="现货">现货</option>
-                                <option value="需预订">需预订</option>
-                            </select>
-                            <select id="filterOrigin" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部产地</option>
-                            </select>
-                            <select id="filterStatus" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部状态</option>
-                                <option value="上架中">上架中</option>
-                                <option value="待审核">待审核</option>
-                                <option value="已下架">已下架</option>
-                                <option value="已过期">已过期</option>
-                            </select>
-                            <select id="filterTaxIncluded" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部含税标识</option>
-                                <option value="true">含税</option>
-                                <option value="false">不含税</option>
-                            </select>
-                            <select id="filterSugarFree" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部无糖标识</option>
-                                <option value="true">无糖</option>
-                                <option value="false">含糖</option>
-                            </select>
-                            <select id="filterOrganic" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部有机标识</option>
-                                <option value="true">有机</option>
-                                <option value="false">非有机</option>
-                            </select>
-                            <select id="filterFreightIncluded" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部运费标识</option>
-                                <option value="true">包邮</option>
-                                <option value="false">不包邮</option>
-                            </select>
-                            <select id="filterDefaultExpress" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
-                                <option value="">全部快递公司</option>
-                                <option value="中通">中通</option>
-                                <option value="圆通">圆通</option>
-                                <option value="韵达">韵达</option>
-                                <option value="申通">申通</option>
-                                <option value="顺丰">顺丰</option>
-                            </select>
+                        <div id="more-filters-content" class="flex flex-wrap gap-3 items-center">
+                            <!-- 由 renderFilterBar() 动态生成 -->
                         </div>
                     </div>
                 </div>
@@ -204,23 +117,8 @@
                     <div class="h-full overflow-auto">
                         <table class="w-full text-sm">
                             <thead class="bg-gray-50 sticky top-0 z-10">
-                                <tr>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500 w-10">
-                                        <input type="checkbox" id="select-all" onchange="toggleSelectAll()" class="w-4 h-4 rounded">
-                                    </th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">供应商</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">品牌</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">商品名称</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">规格</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">零售价</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">
-                                        <select id="priceTypeSelect" onchange="renderList()" class="border rounded px-1 py-0.5 text-xs font-medium">
-                                            <option value="jc">集采价</option>
-                                            <option value="df">代发价</option>
-                                        </select>
-                                    </th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">毛利率</th>
-                                    <th class="px-4 py-3 text-left font-medium text-gray-500">操作</th>
+                                <tr id="table-header">
+                                    <!-- 由 renderTableHeader() 动态生成 -->
                                 </tr>
                             </thead>
                             <tbody id="productList" class="divide-y">
@@ -1540,7 +1438,9 @@
                     saveSettingToDB('deletedSystemSupplierFields', deletedSystemSupplierFields),
                     saveSettingToDB('productFieldOrder', productFieldOrder),
                     saveSettingToDB('supplierFieldOrder', supplierFieldOrder),
-                    saveSettingToDB('importRecords', importRecords)
+                    saveSettingToDB('importRecords', importRecords),
+                    saveSettingToDB('userFilterConfig', userFilterConfig),
+                    saveSettingToDB('userColumnConfig', userColumnConfig)
                 ]);
 
                 console.log('数据保存成功');
@@ -1981,6 +1881,192 @@
             }
         }
 
+        // ========== 筛选条件和表格列配置 ==========
+        const FILTER_DEFINITIONS = {
+            margin: {
+                id: 'margin', label: '毛利率', type: 'select', group: 'price',
+                options: [
+                    { value: '', label: '全部毛利率' },
+                    { value: 'low', label: '<25% (低)' },
+                    { value: 'mid', label: '25%-35%' },
+                    { value: 'high', label: '≥35% (高)' }
+                ],
+                filterField: 'margin'
+            },
+            exclusive: {
+                id: 'exclusive', label: '是否包销', type: 'select', group: 'supply',
+                options: [
+                    { value: '', label: '全部包销' },
+                    { value: 'true', label: '包销产品' },
+                    { value: 'false', label: '非包销' }
+                ],
+                filterField: 'isExclusive'
+            },
+            logistics: {
+                id: 'logistics', label: '一件代发', type: 'select', group: 'supply',
+                options: [
+                    { value: '', label: '全部一件代发' },
+                    { value: '代发', label: '支持一件代发' },
+                    { value: '集采', label: '仅集采' }
+                ],
+                filterField: 'logisticsMode'
+            },
+            shipFrom: {
+                id: 'shipFrom', label: '发货地', type: 'dynamicSelect', group: 'supply',
+                filterField: 'shipFrom'
+            },
+            stockStatus: {
+                id: 'stockStatus', label: '备货状态', type: 'select', group: 'supply',
+                options: [
+                    { value: '', label: '全部备货状态' },
+                    { value: '充足', label: '充足' },
+                    { value: '紧张', label: '紧张' },
+                    { value: '需提前', label: '需提前' }
+                ],
+                filterField: 'stockStatus'
+            },
+            search: {
+                id: 'search', label: '搜索', type: 'text', group: 'core',
+                placeholder: '搜索商品名称/SKU/条码'
+            },
+            supplier: {
+                id: 'supplier', label: '供应商', type: 'dynamicSelect', group: 'core',
+                filterField: 'supplierId'
+            },
+            brand: {
+                id: 'brand', label: '品牌', type: 'dynamicSelect', group: 'product',
+                filterField: 'brand'
+            },
+            category: {
+                id: 'category', label: '分类', type: 'select', group: 'product',
+                options: [
+                    { value: '', label: '全部分类' },
+                    { value: '食品礼盒', label: '食品礼盒' },
+                    { value: '日用品', label: '日用品' },
+                    { value: '数码电器', label: '数码电器' }
+                ],
+                filterField: 'category'
+            },
+            brandLevel: {
+                id: 'brandLevel', label: '品牌级别', type: 'select', group: 'product',
+                options: [
+                    { value: '', label: '全部品牌级别' },
+                    { value: '全国品牌', label: '全国品牌' },
+                    { value: '地方品牌', label: '地方品牌' },
+                    { value: '进口品牌', label: '进口品牌' }
+                ],
+                filterField: 'brandLevel'
+            },
+            stockType: {
+                id: 'stockType', label: '库存类型', type: 'select', group: 'supply',
+                options: [
+                    { value: '', label: '全部库存类型' },
+                    { value: '现货', label: '现货' },
+                    { value: '需预订', label: '需预订' }
+                ],
+                filterField: 'stockType'
+            },
+            origin: {
+                id: 'origin', label: '产地', type: 'dynamicSelect', group: 'product',
+                filterField: 'origin'
+            },
+            status: {
+                id: 'status', label: '状态', type: 'select', group: 'status',
+                options: [
+                    { value: '', label: '全部状态' },
+                    { value: '上架中', label: '上架中' },
+                    { value: '待审核', label: '待审核' },
+                    { value: '已下架', label: '已下架' },
+                    { value: '已过期', label: '已过期' }
+                ],
+                filterField: 'status'
+            },
+            taxIncluded: {
+                id: 'taxIncluded', label: '含税标识', type: 'select', group: 'price',
+                options: [
+                    { value: '', label: '全部含税标识' },
+                    { value: 'true', label: '含税' },
+                    { value: 'false', label: '不含税' }
+                ],
+                filterField: 'taxIncluded'
+            },
+            sugarFree: {
+                id: 'sugarFree', label: '无糖标识', type: 'select', group: 'product',
+                options: [
+                    { value: '', label: '全部无糖标识' },
+                    { value: 'true', label: '无糖' },
+                    { value: 'false', label: '含糖' }
+                ],
+                filterField: 'isSugarFree'
+            },
+            organic: {
+                id: 'organic', label: '有机标识', type: 'select', group: 'product',
+                options: [
+                    { value: '', label: '全部有机标识' },
+                    { value: 'true', label: '有机' },
+                    { value: 'false', label: '非有机' }
+                ],
+                filterField: 'isOrganic'
+            },
+            freightIncluded: {
+                id: 'freightIncluded', label: '运费包含', type: 'select', group: 'supply',
+                options: [
+                    { value: '', label: '全部运费标识' },
+                    { value: 'true', label: '包邮' },
+                    { value: 'false', label: '不包邮' }
+                ],
+                filterField: 'freightIncluded'
+            },
+            defaultExpress: {
+                id: 'defaultExpress', label: '快递公司', type: 'select', group: 'supply',
+                options: [
+                    { value: '', label: '全部快递公司' },
+                    { value: '中通', label: '中通' },
+                    { value: '圆通', label: '圆通' },
+                    { value: '韵达', label: '韵达' },
+                    { value: '申通', label: '申通' },
+                    { value: '顺丰', label: '顺丰' }
+                ],
+                filterField: 'defaultExpress'
+            }
+        };
+
+        const COLUMN_DEFINITIONS = {
+            checkbox: { id: 'checkbox', label: '选择', type: 'system', required: true, width: '40px' },
+            supplierId: { id: 'supplierId', label: '供应商', type: 'field', field: 'supplierId', width: '100px' },
+            brand: { id: 'brand', label: '品牌', type: 'field', field: 'brand', width: '100px' },
+            name: { id: 'name', label: '商品名称', type: 'product', field: 'name', required: true, width: '200px' },
+            spec: { id: 'spec', label: '规格', type: 'field', field: 'spec', subField: 'boxSpec', width: '120px' },
+            retailPrice: { id: 'retailPrice', label: '零售价', type: 'price', field: 'retailPrice', width: '80px' },
+            costPrice: { id: 'costPrice', label: '成本价', type: 'priceToggle', width: '80px' },
+            margin: { id: 'margin', label: '毛利率', type: 'margin', width: '80px' },
+            actions: { id: 'actions', label: '操作', type: 'system', required: true, width: '120px' },
+            sku: { id: 'sku', label: 'SKU', type: 'field', field: 'sku', width: '100px' },
+            barcode: { id: 'barcode', label: '条码', type: 'field', field: 'barcode', width: '100px' },
+            category: { id: 'category', label: '分类', type: 'field', field: 'category', width: '80px' },
+            origin: { id: 'origin', label: '产地', type: 'field', field: 'origin', width: '80px' },
+            purchasePrice: { id: 'purchasePrice', label: '集采价', type: 'price', field: 'purchasePrice', width: '80px' },
+            normalExpressPrice: { id: 'normalExpressPrice', label: '代发价', type: 'price', field: 'normalExpressPrice', width: '80px' },
+            stockStatus: { id: 'stockStatus', label: '备货状态', type: 'field', field: 'stockStatus', width: '80px' },
+            status: { id: 'status', label: '状态', type: 'status', field: 'status', width: '80px' },
+            stockType: { id: 'stockType', label: '库存类型', type: 'field', field: 'stockType', width: '80px' },
+            shipFrom: { id: 'shipFrom', label: '发货地', type: 'field', field: 'shipFrom', width: '80px' }
+        };
+
+        // 默认用户配置
+        const DEFAULT_FILTER_CONFIG = {
+            priorityFilters: ['margin', 'exclusive', 'logistics', 'shipFrom', 'stockStatus', 'search'],
+            moreFilters: ['supplier', 'brand', 'category', 'brandLevel', 'stockType', 'origin', 'status', 'taxIncluded', 'sugarFree', 'organic', 'freightIncluded', 'defaultExpress']
+        };
+
+        const DEFAULT_COLUMN_CONFIG = {
+            visibleColumns: ['checkbox', 'supplierId', 'brand', 'name', 'spec', 'retailPrice', 'costPrice', 'margin', 'actions'],
+            hiddenColumns: ['sku', 'barcode', 'category', 'origin', 'purchasePrice', 'normalExpressPrice', 'stockStatus', 'status', 'stockType', 'shipFrom']
+        };
+
+        let userFilterConfig = JSON.parse(JSON.stringify(DEFAULT_FILTER_CONFIG));
+        let userColumnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMN_CONFIG));
+
         // 初始化变量（先用默认值）
         let products = [];
         let suppliers = [];
@@ -2039,6 +2125,14 @@
                 supplierFieldOrder = savedData.supplierFieldOrder || [];
                 importRecords = savedData.importRecords || [];
 
+                // 加载用户自定义显示配置
+                if (savedData.userFilterConfig) {
+                    userFilterConfig = savedData.userFilterConfig;
+                }
+                if (savedData.userColumnConfig) {
+                    userColumnConfig = savedData.userColumnConfig;
+                }
+
                 // 修复空ID的供应商数据
                 let needSave = false;
                 suppliers.forEach((s, index) => {
@@ -2054,6 +2148,8 @@
                 dataLoaded = true;
 
                 // 刷新显示
+                renderFilterBar();
+                renderTableHeader();
                 renderList();
                 updateStats();
 
@@ -2449,77 +2545,110 @@
             }
         }
 
+        // ========== 筛选栏动态渲染 ==========
+        function renderFilterBar() {
+            const priorityContainer = document.getElementById('priority-filters');
+            const moreContainer = document.getElementById('more-filters-content');
+
+            if (!priorityContainer || !moreContainer) return;
+
+            // 渲染优先筛选
+            priorityContainer.innerHTML = userFilterConfig.priorityFilters
+                .map(filterId => renderFilterControl(filterId))
+                .join('') +
+                `<button onclick="toggleMoreFilters()" class="text-blue-600 text-sm hover:underline" id="btn-more-filters">更多筛选 ▼</button>
+                 <button onclick="resetFilters()" class="text-gray-500 text-sm hover:underline">重置</button>
+                 <button onclick="showCustomizeDisplayModal()" class="text-gray-400 text-sm hover:underline" title="自定义显示">⚙️</button>`;
+
+            // 渲染更多筛选
+            moreContainer.innerHTML = userFilterConfig.moreFilters
+                .map(filterId => renderFilterControl(filterId))
+                .join('');
+
+            // 初始化动态选项
+            initFilterOptions();
+        }
+
+        function renderFilterControl(filterId) {
+            const def = FILTER_DEFINITIONS[filterId];
+            if (!def) return '';
+
+            const controlId = 'filter' + filterId.charAt(0).toUpperCase() + filterId.slice(1);
+
+            switch (def.type) {
+                case 'select':
+                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                        ${def.options.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
+                    </select>`;
+
+                case 'dynamicSelect':
+                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                        <option value="">全部${def.label}</option>
+                    </select>`;
+
+                case 'text':
+                    return `<input type="text" id="${controlId}"
+                        placeholder="${def.placeholder || def.label}"
+                        class="border rounded-lg px-3 py-2 text-sm w-48"
+                        onkeyup="renderList()">`;
+
+                default:
+                    return '';
+            }
+        }
+
+        function initFilterOptions() {
+            // 发货地
+            const shipFromValues = [...new Set(products.map(p => p.shipFrom).filter(Boolean))];
+            populateSelectOptions('filterShipFrom', shipFromValues, '全部发货地');
+
+            // 供应商
+            const supplierValues = [...new Set(products.map(p => p.supplierId).filter(Boolean))];
+            populateSelectOptions('filterSupplier', supplierValues, '全部供应商');
+
+            // 品牌
+            const brandValues = [...new Set(products.map(p => p.brand).filter(Boolean))];
+            populateSelectOptions('filterBrand', brandValues, '全部品牌');
+
+            // 产地
+            const originValues = [...new Set(products.map(p => p.origin).filter(Boolean))];
+            populateSelectOptions('filterOrigin', originValues, '全部产地');
+        }
+
+        function populateSelectOptions(selectId, values, defaultLabel) {
+            const select = document.getElementById(selectId);
+            if (!select) return;
+
+            const currentValue = select.value;
+            select.innerHTML = `<option value="">${defaultLabel}</option>` +
+                values.sort().map(v => `<option value="${v}">${v}</option>`).join('');
+            if (values.includes(currentValue)) {
+                select.value = currentValue;
+            }
+        }
+
         // ========== 商品列表 ==========
         function renderList() {
-            // 获取常用筛选值
-            const filterMargin = document.getElementById('filterMargin')?.value || '';
-            const filterExclusive = document.getElementById('filterExclusive')?.value || '';
-            const filterBrandLevel = document.getElementById('filterBrandLevel')?.value || '';
-            const filterLogistics = document.getElementById('filterLogistics')?.value || '';
-            const filterStockStatus = document.getElementById('filterStockStatus')?.value || '';
-            const filterSupplier = document.getElementById('filterSupplier')?.value || '';
-            const filterShipFrom = document.getElementById('filterShipFrom')?.value || '';
-            const filterStockType = document.getElementById('filterStockType')?.value || '';
-            const filterSearch = (document.getElementById('filterSearch')?.value || '').toLowerCase();
-
-            // 获取更多筛选值
-            const filterCategory = document.getElementById('filterCategory')?.value || '';
-            const filterStatus = document.getElementById('filterStatus')?.value || '';
-            const filterBrand = document.getElementById('filterBrand')?.value || '';
-            const filterOrigin = document.getElementById('filterOrigin')?.value || '';
-            const filterTaxIncluded = document.getElementById('filterTaxIncluded')?.value || '';
-            const filterSugarFree = document.getElementById('filterSugarFree')?.value || '';
-            const filterOrganic = document.getElementById('filterOrganic')?.value || '';
-            const filterFreightIncluded = document.getElementById('filterFreightIncluded')?.value || '';
-            const filterDefaultExpress = document.getElementById('filterDefaultExpress')?.value || '';
-
-            // 填充供应商筛选（从商品数据中提取）
-            const supplierSelect = document.getElementById('filterSupplier');
-            if (supplierSelect && supplierSelect.options.length <= 1) {
-                const supplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))].sort();
-                supplierNames.forEach(name => {
-                    const opt = document.createElement('option');
-                    opt.value = name;
-                    opt.textContent = name;
-                    supplierSelect.appendChild(opt);
-                });
-            }
-
-            // 填充发货地筛选
-            const shipFromSelect = document.getElementById('filterShipFrom');
-            if (shipFromSelect && shipFromSelect.options.length <= 1) {
-                const shipFroms = [...new Set(products.map(p => p.shipFrom).filter(s => s))];
-                shipFroms.forEach(s => {
-                    const opt = document.createElement('option');
-                    opt.value = s;
-                    opt.textContent = s;
-                    shipFromSelect.appendChild(opt);
-                });
-            }
-
-            // 填充品牌筛选
-            const brandSelect = document.getElementById('filterBrand');
-            if (brandSelect && brandSelect.options.length <= 1) {
-                const brands = [...new Set(products.map(p => p.brand).filter(b => b))];
-                brands.forEach(b => {
-                    const opt = document.createElement('option');
-                    opt.value = b;
-                    opt.textContent = b;
-                    brandSelect.appendChild(opt);
-                });
-            }
-
-            // 填充产地筛选
-            const originSelect = document.getElementById('filterOrigin');
-            if (originSelect && originSelect.options.length <= 1) {
-                const origins = [...new Set(products.map(p => p.origin).filter(o => o))];
-                origins.forEach(o => {
-                    const opt = document.createElement('option');
-                    opt.value = o;
-                    opt.textContent = o;
-                    originSelect.appendChild(opt);
-                });
-            }
+            // 获取所有筛选值
+            const getFilterVal = (id) => document.getElementById(id)?.value || '';
+            const filterMargin = getFilterVal('filterMargin');
+            const filterExclusive = getFilterVal('filterExclusive');
+            const filterBrandLevel = getFilterVal('filterBrandLevel');
+            const filterLogistics = getFilterVal('filterLogistics');
+            const filterStockStatus = getFilterVal('filterStockStatus');
+            const filterSupplier = getFilterVal('filterSupplier');
+            const filterShipFrom = getFilterVal('filterShipFrom');
+            const filterStockType = getFilterVal('filterStockType');
+            const filterSearch = (getFilterVal('filterSearch')).toLowerCase();
+            const filterCategory = getFilterVal('filterCategory');
+            const filterStatus = getFilterVal('filterStatus');
+            const filterBrand = getFilterVal('filterBrand');
+            const filterOrigin = getFilterVal('filterOrigin');
+            const filterTaxIncluded = getFilterVal('filterTaxIncluded');
+            const filterSugarFree = getFilterVal('filterSugarFree');
+            const filterOrganic = getFilterVal('filterOrganic');
+            const filterFreightIncluded = getFilterVal('filterFreightIncluded');
+            const filterDefaultExpress = getFilterVal('filterDefaultExpress');
 
             // 筛选
             let filtered = products.filter(p => {
@@ -2556,61 +2685,7 @@
             const tbody = document.getElementById('productList');
             const priceType = document.getElementById('priceTypeSelect')?.value || 'jc';
 
-            tbody.innerHTML = filtered.map(p => {
-                const jcMargin = calculateMargin(p.retailPrice, p.purchasePrice);
-                const dfMargin = calculateMargin(p.retailPrice, p.normalExpressPrice);
-
-                // 根据选择显示对应价格
-                let costPrice, margin;
-                if (priceType === 'df') {
-                    costPrice = p.normalExpressPrice || '-';
-                    margin = dfMargin;
-                } else {
-                    costPrice = p.purchasePrice || '-';
-                    margin = jcMargin;
-                }
-
-                return `<tr class="hover:bg-gray-50" data-id="${p.id}">
-                    <td class="px-4 py-3">
-                        <input type="checkbox" class="product-checkbox w-4 h-4 rounded" data-id="${p.id}" onchange="updateSelection()">
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-xs">${p.supplierId || '-'}</div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-xs">${p.brand || '-'}</div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="flex items-center gap-2">
-                            <div class="w-10 h-10 bg-gray-200 rounded flex-shrink-0 overflow-hidden">
-                                ${p.mainImage ? `<img src="${p.mainImage}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-gray-400 text-xs\\'>图</div>'">` : '<div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">图</div>'}
-                            </div>
-                            <div>
-                                <div class="font-medium">${p.name || '-'}</div>
-                                <div class="text-xs text-gray-500">SKU: ${p.sku || '-'}</div>
-                            </div>
-                        </div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-xs">${p.spec || '-'}</div>
-                        <div class="text-xs text-gray-400">${p.boxSpec || ''}</div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-sm font-medium text-gray-600">¥${p.retailPrice || '-'}</div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-sm font-medium text-green-600">¥${costPrice}</div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <span class="text-sm font-medium ${getMarginColor(parseFloat(margin))}">${margin || '-'}</span>
-                    </td>
-                    <td class="px-4 py-3">
-                        <button onclick="viewProduct(${p.id})" class="text-blue-600 hover:underline text-sm">查看</button>
-                        <button onclick="editProduct(${p.id})" class="text-green-600 hover:underline text-sm ml-2">编辑</button>
-                        <button onclick="deleteProduct(${p.id})" class="text-red-600 hover:underline text-sm ml-2">删除</button>
-                    </td>
-                </tr>`;
-            }).join('');
+            tbody.innerHTML = filtered.map(p => renderTableRow(p, priceType)).join('');
 
             // 更新统计
             document.getElementById('listCount').textContent = filtered.length;
@@ -2620,6 +2695,109 @@
 
             // 重置选择状态
             updateSelection();
+        }
+
+        function renderTableRow(p, priceType) {
+            const jcMargin = calculateMargin(p.retailPrice, p.purchasePrice);
+            const dfMargin = calculateMargin(p.retailPrice, p.normalExpressPrice);
+            const margin = priceType === 'df' ? dfMargin : jcMargin;
+            const costPrice = priceType === 'df' ? (p.normalExpressPrice || '-') : (p.purchasePrice || '-');
+
+            return `<tr class="hover:bg-gray-50" data-id="${p.id}">
+                ${userColumnConfig.visibleColumns.map(colId => renderTableCell(p, colId, costPrice, margin, priceType)).join('')}
+            </tr>`;
+        }
+
+        function renderTableCell(p, colId, costPrice, margin, priceType) {
+            const def = COLUMN_DEFINITIONS[colId];
+            if (!def) return '<td class="px-4 py-3">-</td>';
+
+            switch (def.type) {
+                case 'system':
+                    if (colId === 'checkbox') {
+                        return `<td class="px-4 py-3">
+                            <input type="checkbox" class="product-checkbox w-4 h-4 rounded" data-id="${p.id}" onchange="updateSelection()">
+                        </td>`;
+                    }
+                    if (colId === 'actions') {
+                        return `<td class="px-4 py-3">
+                            <button onclick="viewProduct(${p.id})" class="text-blue-600 hover:underline text-sm">查看</button>
+                            <button onclick="editProduct(${p.id})" class="text-green-600 hover:underline text-sm ml-2">编辑</button>
+                            <button onclick="deleteProduct(${p.id})" class="text-red-600 hover:underline text-sm ml-2">删除</button>
+                        </td>`;
+                    }
+                    break;
+
+                case 'product':
+                    return `<td class="px-4 py-3">
+                        <div class="flex items-center gap-2">
+                            <div class="w-10 h-10 bg-gray-200 rounded flex-shrink-0 overflow-hidden">
+                                ${p.mainImage ? `<img src="${p.mainImage}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-gray-400 text-xs\\'>图</div>'">` : '<div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">图</div>'}
+                            </div>
+                            <div>
+                                <div class="font-medium">${p.name || '-'}</div>
+                                <div class="text-xs text-gray-500">SKU: ${p.sku || '-'}</div>
+                            </div>
+                        </div>
+                    </td>`;
+
+                case 'price':
+                    return `<td class="px-4 py-3">
+                        <div class="text-sm font-medium text-gray-600">¥${p[def.field] || '-'}</div>
+                    </td>`;
+
+                case 'priceToggle':
+                    return `<td class="px-4 py-3">
+                        <div class="text-sm font-medium text-green-600">¥${costPrice}</div>
+                    </td>`;
+
+                case 'margin':
+                    return `<td class="px-4 py-3">
+                        <span class="text-sm font-medium ${getMarginColor(parseFloat(margin))}">${margin || '-'}</span>
+                    </td>`;
+
+                case 'status':
+                    const statusColors = { '上架中': 'text-green-600', '待审核': 'text-yellow-600', '已下架': 'text-gray-500', '已过期': 'text-red-600' };
+                    return `<td class="px-4 py-3">
+                        <span class="text-sm ${statusColors[p[def.field]] || ''}">${p[def.field] || '-'}</span>
+                    </td>`;
+
+                case 'field':
+                default:
+                    let content = p[def.field] || '-';
+                    if (def.subField && p[def.subField]) {
+                        return `<td class="px-4 py-3">
+                            <div class="text-xs">${content}</div>
+                            <div class="text-xs text-gray-400">${p[def.subField]}</div>
+                        </td>`;
+                    }
+                    return `<td class="px-4 py-3"><div class="text-xs">${content}</div></td>`;
+            }
+        }
+
+        function renderTableHeader() {
+            const thead = document.getElementById('table-header');
+            if (!thead) return;
+
+            thead.innerHTML = userColumnConfig.visibleColumns.map(colId => {
+                const def = COLUMN_DEFINITIONS[colId];
+                if (!def) return '';
+
+                if (colId === 'checkbox') {
+                    return `<th class="px-4 py-3 text-left font-medium text-gray-500 w-10">
+                        <input type="checkbox" id="select-all" onchange="toggleSelectAll()" class="w-4 h-4 rounded">
+                    </th>`;
+                }
+                if (colId === 'costPrice') {
+                    return `<th class="px-4 py-3 text-left font-medium text-gray-500">
+                        <select id="priceTypeSelect" onchange="renderList()" class="border rounded px-1 py-0.5 text-xs font-medium">
+                            <option value="jc">集采价</option>
+                            <option value="df">代发价</option>
+                        </select>
+                    </th>`;
+                }
+                return `<th class="px-4 py-3 text-left font-medium text-gray-500" data-col="${colId}">${def.label}</th>`;
+            }).join('');
         }
 
         // ========== 多选与批量操作 ==========
@@ -3218,28 +3396,351 @@
         }
 
         function resetFilters() {
-            // 常用筛选
-            document.getElementById('filterMargin').value = '';
-            document.getElementById('filterExclusive').value = '';
-            document.getElementById('filterBrandLevel').value = '';
-            document.getElementById('filterLogistics').value = '';
-            document.getElementById('filterStockStatus').value = '';
-            document.getElementById('filterSupplier').value = '';
-            document.getElementById('filterShipFrom').value = '';
-            document.getElementById('filterStockType').value = '';
-            // 更多筛选
-            document.getElementById('filterCategory').value = '';
-            document.getElementById('filterStatus').value = '';
-            document.getElementById('filterBrand').value = '';
-            document.getElementById('filterOrigin').value = '';
-            document.getElementById('filterTaxIncluded').value = '';
-            document.getElementById('filterSugarFree').value = '';
-            document.getElementById('filterOrganic').value = '';
-            document.getElementById('filterFreightIncluded').value = '';
-            document.getElementById('filterDefaultExpress').value = '';
-            // 搜索
-            document.getElementById('filterSearch').value = '';
+            // 重置所有筛选条件
+            Object.keys(FILTER_DEFINITIONS).forEach(filterId => {
+                const controlId = 'filter' + filterId.charAt(0).toUpperCase() + filterId.slice(1);
+                const el = document.getElementById(controlId);
+                if (el) el.value = '';
+            });
             renderList();
+        }
+
+        // ========== 自定义显示设置面板 ==========
+        let currentCustomizeTab = 'filters';
+
+        function showCustomizeDisplayModal() {
+            const modal = document.createElement('div');
+            modal.id = 'modal-customize-display';
+            modal.className = 'modal active';
+
+            modal.innerHTML = `
+                <div class="modal-content w-full max-w-3xl">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">自定义显示设置</h3>
+                        <button onclick="closeCustomizeModal()" class="text-gray-400 hover:text-gray-600 text-xl">&times;</button>
+                    </div>
+
+                    <!-- Tab切换 -->
+                    <div class="flex gap-2 mb-4 border-b">
+                        <button onclick="showCustomizeTab('filters')" id="tab-customize-filters"
+                                class="px-4 py-2 text-sm border-b-2 border-blue-600 text-blue-600">
+                            筛选条件配置
+                        </button>
+                        <button onclick="showCustomizeTab('columns')" id="tab-customize-columns"
+                                class="px-4 py-2 text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+                            表格列配置
+                        </button>
+                    </div>
+
+                    <!-- 筛选条件配置面板 -->
+                    <div id="panel-customize-filters">
+                        ${renderFilterConfigPanel()}
+                    </div>
+
+                    <!-- 表格列配置面板 -->
+                    <div id="panel-customize-columns" class="hidden">
+                        ${renderColumnConfigPanel()}
+                    </div>
+
+                    <!-- 操作按钮 -->
+                    <div class="flex justify-end gap-3 mt-6 pt-4 border-t">
+                        <button onclick="resetToDefaultDisplay()" class="px-4 py-2 text-sm text-gray-600 hover:text-gray-800">
+                            恢复默认
+                        </button>
+                        <button onclick="saveCustomizeDisplay()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                            保存设置
+                        </button>
+                    </div>
+                </div>
+            `;
+
+            document.body.appendChild(modal);
+            initCustomizeDrag();
+        }
+
+        function closeCustomizeModal() {
+            const modal = document.getElementById('modal-customize-display');
+            if (modal) modal.remove();
+        }
+
+        function showCustomizeTab(tab) {
+            currentCustomizeTab = tab;
+            const filterTab = document.getElementById('tab-customize-filters');
+            const columnTab = document.getElementById('tab-customize-columns');
+            const filterPanel = document.getElementById('panel-customize-filters');
+            const columnPanel = document.getElementById('panel-customize-columns');
+
+            if (tab === 'filters') {
+                filterTab.className = 'px-4 py-2 text-sm border-b-2 border-blue-600 text-blue-600';
+                columnTab.className = 'px-4 py-2 text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+                filterPanel.classList.remove('hidden');
+                columnPanel.classList.add('hidden');
+            } else {
+                columnTab.className = 'px-4 py-2 text-sm border-b-2 border-blue-600 text-blue-600';
+                filterTab.className = 'px-4 py-2 text-sm border-b-2 border-transparent text-gray-500 hover:text-gray-700';
+                columnPanel.classList.remove('hidden');
+                filterPanel.classList.add('hidden');
+            }
+        }
+
+        function renderFilterConfigPanel() {
+            return `
+                <div class="mb-4 text-sm text-gray-500">
+                    <p><strong>优先筛选</strong>：始终显示在顶部筛选栏</p>
+                    <p><strong>更多筛选</strong>：点击"更多筛选"按钮后显示</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- 优先筛选区 -->
+                    <div class="border rounded-lg p-3">
+                        <h4 class="font-medium mb-2 text-blue-600 text-sm">优先筛选（顶部显示）</h4>
+                        <div id="priority-filters-config" class="space-y-1 min-h-[80px] bg-blue-50 rounded p-2">
+                            ${userFilterConfig.priorityFilters.map(f => renderFilterConfigItem(f, 'priority')).join('')}
+                        </div>
+                    </div>
+
+                    <!-- 更多筛选区 -->
+                    <div class="border rounded-lg p-3">
+                        <h4 class="font-medium mb-2 text-gray-600 text-sm">更多筛选（默认隐藏）</h4>
+                        <div id="more-filters-config" class="space-y-1 min-h-[80px] bg-gray-50 rounded p-2">
+                            ${userFilterConfig.moreFilters.map(f => renderFilterConfigItem(f, 'more')).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderFilterConfigItem(filterId, section) {
+            const def = FILTER_DEFINITIONS[filterId];
+            if (!def) return '';
+
+            return `
+                <div class="flex items-center justify-between bg-white rounded px-2 py-1 shadow-sm text-xs"
+                     data-filter="${filterId}" draggable="true">
+                    <span>${def.label}</span>
+                    <div class="flex items-center gap-1">
+                        ${section === 'priority' ?
+                            `<button onclick="moveFilterToMore('${filterId}')" class="text-gray-400 hover:text-gray-600">↓</button>` :
+                            `<button onclick="moveFilterToPriority('${filterId}')" class="text-gray-400 hover:text-gray-600">↑</button>`
+                        }
+                        <button onclick="removeFilterFromConfig('${filterId}')" class="text-red-400 hover:text-red-600">&times;</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderColumnConfigPanel() {
+            return `
+                <div class="mb-4 text-sm text-gray-500">
+                    <p>拖拽调整列顺序，点击按钮控制显示/隐藏</p>
+                </div>
+
+                <div class="grid grid-cols-2 gap-4">
+                    <!-- 显示的列 -->
+                    <div class="border rounded-lg p-3">
+                        <h4 class="font-medium mb-2 text-blue-600 text-sm">显示的列</h4>
+                        <div id="visible-columns-config" class="space-y-1 min-h-[150px] bg-blue-50 rounded p-2">
+                            ${userColumnConfig.visibleColumns.map(colId => renderColumnConfigItem(colId, true)).join('')}
+                        </div>
+                    </div>
+
+                    <!-- 隐藏的列 -->
+                    <div class="border rounded-lg p-3">
+                        <h4 class="font-medium mb-2 text-gray-600 text-sm">隐藏的列</h4>
+                        <div id="hidden-columns-config" class="space-y-1 min-h-[150px] bg-gray-50 rounded p-2">
+                            ${userColumnConfig.hiddenColumns.map(colId => renderColumnConfigItem(colId, false)).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderColumnConfigItem(colId, visible) {
+            const def = COLUMN_DEFINITIONS[colId];
+            if (!def) return '';
+
+            const isRequired = def.required;
+
+            return `
+                <div class="flex items-center justify-between bg-white rounded px-2 py-1 shadow-sm text-xs ${visible ? 'cursor-move' : ''}"
+                     data-col="${colId}" ${visible && !isRequired ? 'draggable="true"' : ''}>
+                    <div class="flex items-center gap-1">
+                        ${visible && !isRequired ? '<span class="text-gray-300">⋮⋮</span>' : ''}
+                        <span>${def.label}</span>
+                        ${isRequired ? '<span class="text-gray-400">(必需)</span>' : ''}
+                    </div>
+                    <div class="flex items-center">
+                        ${!isRequired ?
+                            (visible ?
+                                `<button onclick="hideColumn('${colId}')" class="text-gray-400 hover:text-gray-600">隐藏</button>` :
+                                `<button onclick="showColumn('${colId}')" class="text-blue-400 hover:text-blue-600">显示</button>`
+                            ) : ''
+                        }
+                    </div>
+                </div>
+            `;
+        }
+
+        function moveFilterToPriority(filterId) {
+            const idx = userFilterConfig.moreFilters.indexOf(filterId);
+            if (idx > -1) {
+                userFilterConfig.moreFilters.splice(idx, 1);
+                userFilterConfig.priorityFilters.push(filterId);
+                refreshFilterConfigPanel();
+            }
+        }
+
+        function moveFilterToMore(filterId) {
+            const idx = userFilterConfig.priorityFilters.indexOf(filterId);
+            if (idx > -1) {
+                userFilterConfig.priorityFilters.splice(idx, 1);
+                userFilterConfig.moreFilters.push(filterId);
+                refreshFilterConfigPanel();
+            }
+        }
+
+        function removeFilterFromConfig(filterId) {
+            let idx = userFilterConfig.priorityFilters.indexOf(filterId);
+            if (idx > -1) userFilterConfig.priorityFilters.splice(idx, 1);
+            idx = userFilterConfig.moreFilters.indexOf(filterId);
+            if (idx > -1) userFilterConfig.moreFilters.splice(idx, 1);
+            refreshFilterConfigPanel();
+        }
+
+        function showColumn(colId) {
+            const idx = userColumnConfig.hiddenColumns.indexOf(colId);
+            if (idx > -1) {
+                userColumnConfig.hiddenColumns.splice(idx, 1);
+                userColumnConfig.visibleColumns.push(colId);
+                refreshColumnConfigPanel();
+            }
+        }
+
+        function hideColumn(colId) {
+            const def = COLUMN_DEFINITIONS[colId];
+            if (def && def.required) return;
+
+            const idx = userColumnConfig.visibleColumns.indexOf(colId);
+            if (idx > -1) {
+                userColumnConfig.visibleColumns.splice(idx, 1);
+                userColumnConfig.hiddenColumns.push(colId);
+                refreshColumnConfigPanel();
+            }
+        }
+
+        function refreshFilterConfigPanel() {
+            const panel = document.getElementById('panel-customize-filters');
+            if (panel) panel.innerHTML = renderFilterConfigPanel();
+            initCustomizeDrag();
+        }
+
+        function refreshColumnConfigPanel() {
+            const panel = document.getElementById('panel-customize-columns');
+            if (panel) panel.innerHTML = renderColumnConfigPanel();
+            initCustomizeDrag();
+        }
+
+        function initCustomizeDrag() {
+            // 筛选条件拖拽
+            const filterContainers = ['priority-filters-config', 'more-filters-config'];
+            filterContainers.forEach(containerId => {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+
+                container.querySelectorAll('[data-filter]').forEach(item => {
+                    item.addEventListener('dragstart', handleFilterDragStart);
+                    item.addEventListener('dragover', handleDragOver);
+                    item.addEventListener('drop', handleFilterDrop);
+                    item.addEventListener('dragend', handleDragEnd);
+                });
+            });
+
+            // 列拖拽
+            const columnContainers = ['visible-columns-config', 'hidden-columns-config'];
+            columnContainers.forEach(containerId => {
+                const container = document.getElementById(containerId);
+                if (!container) return;
+
+                container.querySelectorAll('[data-col]').forEach(item => {
+                    item.addEventListener('dragstart', handleColumnDragStart);
+                    item.addEventListener('dragover', handleDragOver);
+                    item.addEventListener('drop', handleColumnDrop);
+                    item.addEventListener('dragend', handleDragEnd);
+                });
+            });
+        }
+
+        let draggedFilter = null;
+        let draggedColumn = null;
+
+        function handleFilterDragStart(e) {
+            draggedFilter = e.target.dataset.filter;
+            e.target.style.opacity = '0.5';
+        }
+
+        function handleColumnDragStart(e) {
+            draggedColumn = e.target.dataset.col;
+            e.target.style.opacity = '0.5';
+        }
+
+        function handleDragOver(e) {
+            e.preventDefault();
+        }
+
+        function handleFilterDrop(e) {
+            e.preventDefault();
+            const targetFilter = e.target.closest('[data-filter]')?.dataset.filter;
+            if (!targetFilter || targetFilter === draggedFilter) return;
+
+            // 在同一区域内重新排序
+            const isPriority = userFilterConfig.priorityFilters.includes(draggedFilter);
+            const list = isPriority ? userFilterConfig.priorityFilters : userFilterConfig.moreFilters;
+            const fromIdx = list.indexOf(draggedFilter);
+            const toIdx = list.indexOf(targetFilter);
+
+            if (fromIdx > -1 && toIdx > -1) {
+                list.splice(fromIdx, 1);
+                list.splice(toIdx, 0, draggedFilter);
+                refreshFilterConfigPanel();
+            }
+        }
+
+        function handleColumnDrop(e) {
+            e.preventDefault();
+            const targetCol = e.target.closest('[data-col]')?.dataset.col;
+            if (!targetCol || targetCol === draggedColumn) return;
+
+            const fromIdx = userColumnConfig.visibleColumns.indexOf(draggedColumn);
+            const toIdx = userColumnConfig.visibleColumns.indexOf(targetCol);
+
+            if (fromIdx > -1 && toIdx > -1) {
+                userColumnConfig.visibleColumns.splice(fromIdx, 1);
+                userColumnConfig.visibleColumns.splice(toIdx, 0, draggedColumn);
+                refreshColumnConfigPanel();
+            }
+        }
+
+        function handleDragEnd(e) {
+            e.target.style.opacity = '1';
+            draggedFilter = null;
+            draggedColumn = null;
+        }
+
+        async function saveCustomizeDisplay() {
+            await saveData();
+            closeCustomizeModal();
+            renderFilterBar();
+            renderTableHeader();
+            renderList();
+        }
+
+        function resetToDefaultDisplay() {
+            userFilterConfig = JSON.parse(JSON.stringify(DEFAULT_FILTER_CONFIG));
+            userColumnConfig = JSON.parse(JSON.stringify(DEFAULT_COLUMN_CONFIG));
+
+            // 刷新配置面板
+            refreshFilterConfigPanel();
+            refreshColumnConfigPanel();
         }
 
         function viewProduct(id) {
