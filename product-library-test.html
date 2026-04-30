@@ -2148,10 +2148,14 @@
                 dataLoaded = true;
 
                 // 刷新显示
-                renderFilterBar();
-                renderTableHeader();
-                renderList();
-                updateStats();
+                try {
+                    renderFilterBar();
+                    renderTableHeader();
+                    renderList();
+                    updateStats();
+                } catch (e) {
+                    console.error('渲染初始化失败:', e);
+                }
 
                 console.log('数据加载完成，商品数:', products.length);
 
