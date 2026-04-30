@@ -3784,6 +3784,22 @@
                             </div>
                         </div>
 
+                        <!-- 品牌识别 -->
+                        <div id="brandDetectionSection">
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-sm font-medium">品牌识别</label>
+                                <button onclick="detectBrandFromSheetName('${sheetName}')" class="text-xs text-blue-600 hover:underline">从工作表名识别</button>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-3 text-sm">
+                                <div class="flex items-center gap-2">
+                                    <span class="text-gray-500">识别结果：</span>
+                                    <input type="text" id="detectedBrandName" class="flex-1 border rounded px-2 py-1 text-sm" placeholder="输入或确认品牌名称">
+                                    <button onclick="applyBrandToMapping('${sheetName}')" class="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">应用到品牌字段</button>
+                                </div>
+                                <div id="brandHint" class="text-xs text-gray-400 mt-1">点击"从工作表名识别"自动提取品牌名</div>
+                            </div>
+                        </div>
+
                         <!-- 操作按钮 -->
                         <div class="flex gap-2 pt-4 border-t sticky bottom-0 bg-white">
                             <button onclick="document.getElementById('modal-sheet-import').remove()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
@@ -3836,6 +3852,54 @@
                     }
                 });
             }
+
+            // 自动识别品牌名（多sheet时优先从sheet名提取）
+            autoDetectBrand(sheetName);
+        }
+
+        // 自动识别品牌名
+        function autoDetectBrand(sheetName) {
+            // 检查是否已映射品牌字段
+            const brandMapped = [...document.querySelectorAll('.sheet-field-select')].some(s => s.value === '品牌');
+
+            if (!brandMapped) {
+                // 没有品牌字段映射，自动从sheet名识别
+                const detectedBrand = extractBrandFromSheetName(sheetName);
+                const input = document.getElementById('detectedBrandName');
+                if (input && detectedBrand) {
+                    input.value = detectedBrand;
+                    const hint = document.getElementById('brandHint');
+                    if (hint) {
+                        hint.innerHTML = `<span class="text-blue-600">已从工作表名识别品牌：${detectedBrand}，请确认后点击"应用到品牌字段"</span>`;
+                    }
+                }
+            }
+        }
+
+        // 从sheet名提取品牌名
+        function extractBrandFromSheetName(sheetName) {
+            const separators = ['+', '_', '-', ' ', '｜', '|'];
+            const suffixesToRemove = ['产品', '商品', '清单', '目录', '价格表', '报价单', '库存', '东莞', '深圳', '广州', '永尚', '福利', '团购'];
+
+            let brandName = sheetName;
+
+            // 尝试按分隔符分割，取第一部分
+            for (const sep of separators) {
+                if (brandName.includes(sep)) {
+                    const parts = brandName.split(sep);
+                    brandName = parts[0].trim();
+                    break;
+                }
+            }
+
+            // 去除常见后缀
+            for (const suffix of suffixesToRemove) {
+                if (brandName.endsWith(suffix) && brandName.length > suffix.length) {
+                    brandName = brandName.slice(0, -suffix.length).trim();
+                }
+            }
+
+            return brandName || sheetName;
         }
 
         // 自动映射字段
@@ -3868,6 +3932,58 @@
 
             // 触发更新
             document.querySelector('.sheet-field-select')?.dispatchEvent(new Event('change'));
+        }
+
+        // 从工作表名称识别品牌（手动触发）
+        function detectBrandFromSheetName(sheetName) {
+            const brandName = extractBrandFromSheetName(sheetName);
+
+            // 更新输入框
+            const input = document.getElementById('detectedBrandName');
+            if (input) {
+                input.value = brandName;
+            }
+
+            // 更新提示
+            const hint = document.getElementById('brandHint');
+            if (hint) {
+                const brandMapped = [...document.querySelectorAll('.sheet-field-select')].some(s => s.value === '品牌');
+                if (brandMapped) {
+                    hint.innerHTML = `<span class="text-orange-500">注意：品牌字段已映射到Excel列，点击"应用"将覆盖</span>`;
+                } else {
+                    hint.innerHTML = `<span class="text-green-600">识别到品牌名：${brandName}，请确认后点击"应用到品牌字段"</span>`;
+                }
+            }
+        }
+
+        // 应用品牌名到字段映射
+        function applyBrandToMapping(sheetName) {
+            const brandName = document.getElementById('detectedBrandName').value.trim();
+            if (!brandName) {
+                alert('请先输入或识别品牌名称');
+                return;
+            }
+
+            // 检查是否已有品牌字段映射
+            const brandSelect = [...document.querySelectorAll('.sheet-field-select')].find(s => s.value === '品牌');
+
+            if (brandSelect) {
+                // 已有映射，提示用户
+                if (!confirm('品牌字段已映射到Excel列，确定要用识别的品牌名覆盖吗？')) {
+                    return;
+                }
+            }
+
+            // 存储品牌名，在导入时应用
+            window.pendingBrandName = brandName;
+
+            // 更新提示
+            const hint = document.getElementById('brandHint');
+            if (hint) {
+                hint.innerHTML = `<span class="text-green-600">✓ 已设置品牌：${brandName}，导入时将自动填充</span>`;
+            }
+
+            alert(`已设置品牌名：${brandName}\n导入时将为所有商品填充此品牌名`);
         }
 
         // 保存sheet映射模板
@@ -3921,6 +4037,10 @@
                 alert('请至少映射一个字段');
                 return;
             }
+
+            // 获取品牌名（如果有设置）
+            const brandName = window.pendingBrandName || '';
+            window.pendingBrandName = null; // 使用后清空
 
             // 移除选择弹窗
             document.getElementById('modal-sheet-import').remove();
@@ -4083,6 +4203,11 @@
                             }
                         }
 
+                        // 应用品牌名（如果设置了且商品没有品牌）
+                        if (brandName && !existingProduct.brand) {
+                            existingProduct.brand = brandName;
+                        }
+
                         existingProduct.updatedAt = new Date().toISOString().split('T')[0];
                         existingProduct.source = 'Excel更新';
                         updated++;
@@ -4097,6 +4222,7 @@
                             supplierId: supplierId,
                             sku: sku,
                             name: fieldToIndex['商品名称'] !== undefined ? row[fieldToIndex['商品名称']] : '',
+                            brand: brandName || '', // 应用品牌名
                             category: '食品礼盒',
                             unit: '盒',
                             status: '待审核',
@@ -4118,6 +4244,13 @@
                                 product[field] = row[idx];
                             }
                         });
+
+                        // 如果Excel中有品牌值，则覆盖识别的品牌名
+                        if (fieldToIndex['品牌'] !== undefined && row[fieldToIndex['品牌']]) {
+                            product.brand = row[fieldToIndex['品牌']];
+                        } else if (brandName) {
+                            product.brand = brandName;
+                        }
 
                         // 添加图片
                         const excelRow = rowIndexToExcelRow[rowIndex];
