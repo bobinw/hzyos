@@ -2446,22 +2446,31 @@
 
         // ========== 页面切换 ==========
         function showPage(pageId) {
-            document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-            document.getElementById(pageId).classList.add('active');
+            try {
+                document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+                const pageEl = document.getElementById(pageId);
+                if (!pageEl) {
+                    console.error('Page not found:', pageId);
+                    return;
+                }
+                pageEl.classList.add('active');
 
-            // 更新导航高亮
-            document.querySelectorAll('nav a').forEach(a => a.classList.remove('bg-blue-50', 'text-blue-600'));
-            const navId = 'nav-' + pageId.replace('page-', '');
-            const navEl = document.getElementById(navId);
-            if (navEl) navEl.classList.add('bg-blue-50', 'text-blue-600');
+                // 更新导航高亮
+                document.querySelectorAll('nav a').forEach(a => a.classList.remove('bg-blue-50', 'text-blue-600'));
+                const navId = 'nav-' + pageId.replace('page-', '');
+                const navEl = document.getElementById(navId);
+                if (navEl) navEl.classList.add('bg-blue-50', 'text-blue-600');
 
-            // 页面初始化
-            if (pageId === 'page-list') renderList();
-            if (pageId === 'page-import') initImportPage();
-            if (pageId === 'page-template') renderTemplatePage();
-            if (pageId === 'page-suppliers') renderSupplierPage();
-            if (pageId === 'page-settings') renderSettingsPage();
-            if (pageId === 'page-import-records') renderImportRecordsPage();
+                // 页面初始化
+                if (pageId === 'page-list') renderList();
+                if (pageId === 'page-import') initImportPage();
+                if (pageId === 'page-template') renderTemplatePage();
+                if (pageId === 'page-suppliers') renderSupplierPage();
+                if (pageId === 'page-settings') renderSettingsPage();
+                if (pageId === 'page-import-records') renderImportRecordsPage();
+            } catch (e) {
+                console.error('showPage error:', e);
+            }
         }
 
         // ========== 导入记录 ==========
@@ -3989,14 +3998,21 @@
                 const totalCount = Object.keys(pendingWorkbookData.sheets).length;
 
                 // 显示提示
-                document.getElementById('fileInfo').classList.remove('hidden');
-                document.getElementById('fileName').textContent = pendingFileName || 'Excel文件';
-                document.getElementById('fileStats').innerHTML = `
-                    <span class="text-orange-600">还有 ${unimportedCount} 个工作表待导入</span>
-                    <button onclick="showSheetSelectModal()" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">继续导入</button>
-                    <button onclick="clearPendingImport()" class="ml-2 px-3 py-1 border rounded text-xs hover:bg-gray-50">取消导入</button>
-                `;
-                document.getElementById('step2').classList.remove('opacity-50');
+                const fileInfo = document.getElementById('fileInfo');
+                const fileName = document.getElementById('fileName');
+                const fileStats = document.getElementById('fileStats');
+                const step2 = document.getElementById('step2');
+
+                if (fileInfo) fileInfo.classList.remove('hidden');
+                if (fileName) fileName.textContent = pendingFileName || 'Excel文件';
+                if (fileStats) {
+                    fileStats.innerHTML = `
+                        <span class="text-orange-600">还有 ${unimportedCount} 个工作表待导入</span>
+                        <button onclick="showSheetSelectModal()" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">继续导入</button>
+                        <button onclick="clearPendingImport()" class="ml-2 px-3 py-1 border rounded text-xs hover:bg-gray-50">取消导入</button>
+                    `;
+                }
+                if (step2) step2.classList.remove('opacity-50');
                 return;
             }
 
