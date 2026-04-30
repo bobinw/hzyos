@@ -170,6 +170,7 @@
                     <button onclick="setFilterStatus('上架中')" class="px-4 py-2 bg-white border rounded-lg text-sm hover:bg-gray-50" id="btn-status-active">上架中</button>
                     <button onclick="setFilterStatus('待审核')" class="px-4 py-2 bg-white border rounded-lg text-sm hover:bg-gray-50" id="btn-status-pending">待审核</button>
                     <button onclick="setFilterStatus('已过期')" class="px-4 py-2 bg-white border rounded-lg text-sm hover:bg-gray-50" id="btn-status-expired">已过期</button>
+                    <button onclick="detectProductDuplicates()" class="ml-4 px-4 py-2 bg-orange-100 text-orange-700 border border-orange-200 rounded-lg text-sm hover:bg-orange-200">🔍 检测重复</button>
                 </div>
 
                 <!-- 批量操作栏 -->
@@ -179,6 +180,7 @@
                         <button onclick="clearSelection()" class="text-xs text-blue-600 hover:underline">取消选择</button>
                     </div>
                     <div class="flex gap-2">
+                        <button onclick="showBatchEditModal()" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">批量编辑</button>
                         <button onclick="batchEditStatus()" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">批量改状态</button>
                         <button onclick="batchEditPrice()" class="px-3 py-1 bg-white border rounded text-sm hover:bg-gray-50">批量改价格</button>
                         <button onclick="batchDelete()" class="px-3 py-1 bg-red-500 text-white rounded text-sm hover:bg-red-600">批量删除</button>
@@ -273,6 +275,43 @@
                         <div class="flex justify-end gap-2 pt-4">
                             <button onclick="closeModal('modal-batch-price')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
                             <button onclick="confirmBatchPrice()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">确认修改</button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 批量编辑弹窗 -->
+            <div id="modal-batch-edit" class="modal">
+                <div class="modal-content w-md">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">批量编辑</h3>
+                        <button onclick="closeModal('modal-batch-edit')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">选择要修改的字段</label>
+                            <select id="batchEditField" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="updateBatchEditValue()">
+                                <option value="">请选择字段</option>
+                                <option value="status">状态</option>
+                                <option value="supplierId">供应商</option>
+                                <option value="category">分类</option>
+                                <option value="brand">品牌</option>
+                                <option value="brandLevel">品牌级别</option>
+                                <option value="origin">产地</option>
+                                <option value="stockType">库存类型</option>
+                                <option value="stockStatus">备货状态</option>
+                                <option value="logisticsMode">物流方式</option>
+                                <option value="taxIncluded">含税标识</option>
+                                <option value="isExclusive">包销产品</option>
+                            </select>
+                        </div>
+                        <div id="batchEditValueContainer" class="hidden">
+                            <label class="block text-sm text-gray-500 mb-1">新值</label>
+                            <div id="batchEditValueInput"></div>
+                        </div>
+                        <div class="flex justify-end gap-2 pt-4 border-t">
+                            <button onclick="closeModal('modal-batch-edit')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="executeBatchEdit()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存修改</button>
                         </div>
                     </div>
                 </div>
@@ -2606,6 +2645,99 @@
             updateSelection();
         }
 
+        function showBatchEditModal() {
+            if (selectedIds.size === 0) return;
+            document.getElementById('batchEditField').value = '';
+            document.getElementById('batchEditValueContainer').classList.add('hidden');
+            document.getElementById('modal-batch-edit').classList.add('active');
+        }
+
+        function updateBatchEditValue() {
+            const field = document.getElementById('batchEditField').value;
+            const container = document.getElementById('batchEditValueContainer');
+            const inputDiv = document.getElementById('batchEditValueInput');
+
+            if (!field) {
+                container.classList.add('hidden');
+                return;
+            }
+
+            container.classList.remove('hidden');
+
+            // 根据字段类型生成不同的输入控件
+            const fieldConfigs = {
+                status: { type: 'select', options: ['上架中', '待审核', '已过期'] },
+                supplierId: { type: 'datalist', options: [...new Set(products.map(p => p.supplierId).filter(Boolean))] },
+                category: { type: 'datalist', options: [...new Set(products.map(p => p.category).filter(Boolean))] },
+                brand: { type: 'datalist', options: [...new Set(products.map(p => p.brand).filter(Boolean))] },
+                brandLevel: { type: 'select', options: ['全国品牌', '地方品牌', '进口品牌'] },
+                origin: { type: 'datalist', options: [...new Set(products.map(p => p.origin).filter(Boolean))] },
+                stockType: { type: 'select', options: ['现货', '需预订'] },
+                stockStatus: { type: 'select', options: ['充足', '紧张', '需提前'] },
+                logisticsMode: { type: 'select', options: ['集采', '代发'] },
+                taxIncluded: { type: 'select', options: ['true', 'false'], labels: ['含税', '不含税'] },
+                isExclusive: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] }
+            };
+
+            const config = fieldConfigs[field];
+            if (!config) {
+                inputDiv.innerHTML = '<input type="text" id="batchEditValue" class="w-full border rounded-lg px-3 py-2 text-sm">';
+                return;
+            }
+
+            if (config.type === 'select') {
+                inputDiv.innerHTML = `
+                    <select id="batchEditValue" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        <option value="">请选择</option>
+                        ${config.options.map((opt, i) => `<option value="${opt}">${config.labels ? config.labels[i] : opt}</option>`).join('')}
+                    </select>
+                `;
+            } else if (config.type === 'datalist') {
+                const datalistId = 'batchEditDatalist';
+                inputDiv.innerHTML = `
+                    <input type="text" id="batchEditValue" class="w-full border rounded-lg px-3 py-2 text-sm" list="${datalistId}" placeholder="选择或输入">
+                    <datalist id="${datalistId}">
+                        ${config.options.map(opt => `<option value="${opt}">`).join('')}
+                    </datalist>
+                `;
+            }
+        }
+
+        function executeBatchEdit() {
+            const field = document.getElementById('batchEditField').value;
+            const valueInput = document.getElementById('batchEditValue');
+            let value = valueInput.value;
+
+            if (!field) {
+                alert('请选择要修改的字段');
+                return;
+            }
+
+            if (!value && value !== false) {
+                alert('请输入新值');
+                return;
+            }
+
+            // 处理布尔值
+            if (field === 'taxIncluded' || field === 'isExclusive') {
+                value = value === 'true';
+            }
+
+            selectedIds.forEach(id => {
+                const p = products.find(pr => pr.id === id);
+                if (p) {
+                    p[field] = value;
+                    p.updatedAt = new Date().toISOString().split('T')[0];
+                }
+            });
+
+            saveData();
+            closeModal('modal-batch-edit');
+            clearSelection();
+            renderList();
+            alert(`已修改 ${selectedIds.size} 条商品的${field}`);
+        }
+
         function batchEditStatus() {
             if (selectedIds.size === 0) return;
             document.getElementById('modal-batch-status').classList.add('active');
@@ -2689,6 +2821,150 @@
             saveData();
             clearSelection();
             renderList();
+        }
+
+        // ========== 重复检测 ==========
+        function detectProductDuplicates() {
+            const duplicates = [];
+            const skuMap = new Map();
+            const barcodeMap = new Map();
+
+            products.forEach((p, index) => {
+                // 按供应商+SKU检测
+                if (p.sku && p.supplierId) {
+                    const key = `${p.supplierId}_${p.sku}`;
+                    if (skuMap.has(key)) {
+                        duplicates.push({
+                            product: p,
+                            duplicateOf: skuMap.get(key),
+                            matchType: '供应商+SKU相同'
+                        });
+                    } else {
+                        skuMap.set(key, p);
+                    }
+                }
+
+                // 按条码检测
+                if (p.barcode) {
+                    if (barcodeMap.has(p.barcode)) {
+                        // 避免重复添加（同一个商品可能已被SKU检测到）
+                        if (!duplicates.find(d => d.product.id === p.id)) {
+                            duplicates.push({
+                                product: p,
+                                duplicateOf: barcodeMap.get(p.barcode),
+                                matchType: '条码相同'
+                            });
+                        }
+                    } else {
+                        barcodeMap.set(p.barcode, p);
+                    }
+                }
+            });
+
+            if (duplicates.length === 0) {
+                alert('🎉 未检测到重复商品');
+                return;
+            }
+
+            showDuplicateProductsModal(duplicates);
+        }
+
+        function showDuplicateProductsModal(duplicates) {
+            const modal = document.createElement('div');
+            modal.id = 'modal-product-duplicates';
+            modal.className = 'modal active';
+
+            const duplicateRows = duplicates.map(d => `
+                <tr class="bg-yellow-50">
+                    <td class="px-2 py-2 border text-center">
+                        <input type="checkbox" class="dup-checkbox" data-id="${d.product.id}">
+                    </td>
+                    <td class="px-2 py-1 border">${d.product.name || '-'}</td>
+                    <td class="px-2 py-1 border">${d.product.sku || '-'}</td>
+                    <td class="px-2 py-1 border">${d.product.barcode || '-'}</td>
+                    <td class="px-2 py-1 border">${d.product.supplierId || '-'}</td>
+                    <td class="px-2 py-1 border text-orange-600">${d.matchType}</td>
+                    <td class="px-2 py-1 border text-gray-500">${d.duplicateOf.name || '-'}</td>
+                </tr>
+            `).join('');
+
+            modal.innerHTML = `
+                <div class="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[80vh] overflow-auto m-4">
+                    <div class="p-4 border-b sticky top-0 bg-white">
+                        <div class="flex justify-between items-center">
+                            <h3 class="font-bold text-lg text-orange-600">⚠ 检测到 ${duplicates.length} 条重复商品</h3>
+                            <button onclick="document.getElementById('modal-product-duplicates').remove()" class="text-gray-400 hover:text-gray-600">✕</button>
+                        </div>
+                        <p class="text-sm text-gray-500 mt-1">
+                            以下商品与商品库中的其他商品重复，您可以选择删除
+                        </p>
+                    </div>
+                    <div class="p-4 overflow-x-auto">
+                        <table class="w-full text-xs border-collapse">
+                            <thead class="bg-gray-50">
+                                <tr>
+                                    <th class="px-2 py-2 text-center border w-10">
+                                        <input type="checkbox" id="select-all-dups" onchange="toggleSelectAllDups()">
+                                    </th>
+                                    <th class="px-2 py-2 text-left border">商品名称</th>
+                                    <th class="px-2 py-2 text-left border">SKU</th>
+                                    <th class="px-2 py-2 text-left border">条码</th>
+                                    <th class="px-2 py-2 text-left border">供应商</th>
+                                    <th class="px-2 py-2 text-left border">重复类型</th>
+                                    <th class="px-2 py-2 text-left border">重复商品</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                ${duplicateRows}
+                            </tbody>
+                        </table>
+                    </div>
+                    <div class="p-4 border-t sticky bottom-0 bg-gray-50 flex justify-between">
+                        <div class="text-sm text-gray-500">
+                            已选择 <span id="dup-selected-count">0</span> 项
+                        </div>
+                        <div class="flex gap-2">
+                            <button onclick="document.getElementById('modal-product-duplicates').remove()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-100">取消</button>
+                            <button onclick="deleteSelectedDuplicates()" class="px-4 py-2 bg-red-600 text-white rounded-lg text-sm hover:bg-red-700">删除选中</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // 绑定checkbox事件
+            document.querySelectorAll('.dup-checkbox').forEach(cb => {
+                cb.addEventListener('change', updateDupSelectedCount);
+            });
+        }
+
+        function toggleSelectAllDups() {
+            const selectAll = document.getElementById('select-all-dups');
+            document.querySelectorAll('.dup-checkbox').forEach(cb => {
+                cb.checked = selectAll.checked;
+            });
+            updateDupSelectedCount();
+        }
+
+        function updateDupSelectedCount() {
+            const count = document.querySelectorAll('.dup-checkbox:checked').length;
+            document.getElementById('dup-selected-count').textContent = count;
+        }
+
+        function deleteSelectedDuplicates() {
+            const selectedIds = Array.from(document.querySelectorAll('.dup-checkbox:checked')).map(cb => cb.dataset.id);
+            if (selectedIds.length === 0) {
+                alert('请选择要删除的商品');
+                return;
+            }
+
+            if (!confirm(`确定要删除选中的 ${selectedIds.length} 条重复商品吗？`)) return;
+
+            products = products.filter(p => !selectedIds.includes(String(p.id)));
+            saveData();
+            document.getElementById('modal-product-duplicates').remove();
+            renderList();
+            alert(`已删除 ${selectedIds.length} 条重复商品`);
         }
 
         // ========== 单个编辑 ==========
