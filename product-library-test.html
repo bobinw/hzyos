@@ -1776,15 +1776,10 @@
             }
         }
 
-        // 恢复存储文件夹访问（页面刷新后）
-        async function restoreStorageFolderDisplay() {
-            const savedFolderName = await loadSettingFromDB('lastStorageFolderName');
-            if (!savedFolderName) return;
+        // 恢复存储文件夹访问（页面刷新后，需要用户点击）
+        async function restoreStorageFolder() {
+            if (!isFileSystemAccessSupported()) return;
 
-            const pathEl = document.getElementById('storage-folder-path');
-            const iconEl = document.getElementById('storage-folder-icon');
-
-            // 尝试自动恢复访问权限
             try {
                 directoryHandle = await window.showDirectoryPicker({
                     mode: 'readwrite',
@@ -1792,8 +1787,8 @@
                 });
 
                 // 成功恢复
-                if (pathEl) pathEl.textContent = `已选择: ${directoryHandle.name}`;
-                if (iconEl) iconEl.textContent = '✅';
+                document.getElementById('storage-folder-path').textContent = `已选择: ${directoryHandle.name}`;
+                document.getElementById('storage-folder-icon').textContent = '✅';
 
                 // 启用按钮
                 document.getElementById('btn-save-local').disabled = false;
@@ -1805,18 +1800,33 @@
                     const fileHandle = await directoryHandle.getFileHandle(DATA_FILENAME);
                     const file = await fileHandle.getFile();
                     const lastModified = new Date(file.lastModified).toLocaleString();
-                    if (pathEl) pathEl.textContent = `已选择: ${directoryHandle.name}（最后保存: ${lastModified}）`;
+                    document.getElementById('storage-folder-path').textContent = `已选择: ${directoryHandle.name}（最后保存: ${lastModified}）`;
                 } catch (e) {
                     // 文件不存在，忽略
                 }
 
-                console.log('自动恢复存储目录:', directoryHandle.name);
+                console.log('恢复存储目录:', directoryHandle.name);
             } catch (e) {
-                // 无法自动恢复，显示提示
-                if (pathEl) {
-                    pathEl.innerHTML = `上次选择: <strong>${savedFolderName}</strong> <button onclick="selectStorageFolder()" class="text-blue-600 hover:underline text-xs">点击重新授权</button>`;
+                if (e.name !== 'AbortError') {
+                    console.error('恢复目录失败:', e);
                 }
-                if (iconEl) iconEl.textContent = '📁';
+            }
+        }
+
+        // 恢复存储文件夹显示（页面刷新后显示提示）
+        async function restoreStorageFolderDisplay() {
+            const savedFolderName = await loadSettingFromDB('lastStorageFolderName');
+            if (!savedFolderName) return;
+
+            const pathEl = document.getElementById('storage-folder-path');
+            const iconEl = document.getElementById('storage-folder-icon');
+
+            // 显示恢复按钮，用户点击后恢复访问
+            if (pathEl) {
+                pathEl.innerHTML = `上次选择: <strong>${savedFolderName}</strong> <button onclick="restoreStorageFolder()" class="text-blue-600 hover:underline text-xs ml-2">📍 点击恢复访问</button>`;
+            }
+            if (iconEl) {
+                iconEl.textContent = '📁';
             }
         }
 
