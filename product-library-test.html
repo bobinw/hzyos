@@ -1465,8 +1465,11 @@
         // 异步保存数据（到 IndexedDB）
         async function saveDataAsync() {
             try {
-                // 转换模板对象为数组
-                const templatesArray = Object.values(templates);
+                // 转换模板对象为数组，并添加id属性
+                const templatesArray = Object.values(templates).map(t => ({
+                    ...t,
+                    id: t.supplierId
+                }));
 
                 await Promise.all([
                     saveToDB('products', products),
