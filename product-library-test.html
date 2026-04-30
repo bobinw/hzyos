@@ -195,14 +195,18 @@
                                 <th class="px-4 py-3 text-left font-medium text-gray-500 w-10">
                                     <input type="checkbox" id="select-all" onchange="toggleSelectAll()" class="w-4 h-4 rounded">
                                 </th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">供应商</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">品牌</th>
                                 <th class="px-4 py-3 text-left font-medium text-gray-500">商品名称</th>
                                 <th class="px-4 py-3 text-left font-medium text-gray-500">规格</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">集采价</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">集采毛利率</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">一件代发毛利率</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">品牌</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">供应商</th>
-                                <th class="px-4 py-3 text-left font-medium text-gray-500">状态</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">零售价</th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">
+                                    <select id="priceTypeSelect" onchange="renderList()" class="border rounded px-1 py-0.5 text-xs font-medium">
+                                        <option value="jc">集采价</option>
+                                        <option value="df">代发价</option>
+                                    </select>
+                                </th>
+                                <th class="px-4 py-3 text-left font-medium text-gray-500">毛利率</th>
                                 <th class="px-4 py-3 text-left font-medium text-gray-500">操作</th>
                             </tr>
                         </thead>
@@ -2520,17 +2524,31 @@
 
             // 渲染表格
             const tbody = document.getElementById('productList');
+            const priceType = document.getElementById('priceTypeSelect')?.value || 'jc';
+
             tbody.innerHTML = filtered.map(p => {
-                const statusClass = p.status === '上架中' ? 'bg-green-100 text-green-800' :
-                                   p.status === '待审核' ? 'bg-yellow-100 text-yellow-800' :
-                                   p.status === '已过期' ? 'bg-gray-100 text-gray-600' : 'bg-red-100 text-red-800';
-                const isExpired = p.status === '已过期';
                 const jcMargin = calculateMargin(p.retailPrice, p.purchasePrice);
                 const dfMargin = calculateMargin(p.retailPrice, p.normalExpressPrice);
 
-                return `<tr class="hover:bg-gray-50 ${isExpired ? 'opacity-50' : ''}" data-id="${p.id}">
+                // 根据选择显示对应价格
+                let costPrice, margin;
+                if (priceType === 'df') {
+                    costPrice = p.normalExpressPrice || '-';
+                    margin = dfMargin;
+                } else {
+                    costPrice = p.purchasePrice || '-';
+                    margin = jcMargin;
+                }
+
+                return `<tr class="hover:bg-gray-50" data-id="${p.id}">
                     <td class="px-4 py-3">
                         <input type="checkbox" class="product-checkbox w-4 h-4 rounded" data-id="${p.id}" onchange="updateSelection()">
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="text-xs">${p.supplierId || '-'}</div>
+                    </td>
+                    <td class="px-4 py-3">
+                        <div class="text-xs">${p.brand || '-'}</div>
                     </td>
                     <td class="px-4 py-3">
                         <div class="flex items-center gap-2">
@@ -2538,34 +2556,23 @@
                                 ${p.mainImage ? `<img src="${p.mainImage}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-gray-400 text-xs\\'>图</div>'">` : '<div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">图</div>'}
                             </div>
                             <div>
-                                <div class="font-medium">${p.name}</div>
-                                <div class="text-xs text-gray-500">SKU: ${p.sku}</div>
+                                <div class="font-medium">${p.name || '-'}</div>
+                                <div class="text-xs text-gray-500">SKU: ${p.sku || '-'}</div>
                             </div>
                         </div>
                     </td>
                     <td class="px-4 py-3">
                         <div class="text-xs">${p.spec || '-'}</div>
-                        <div class="text-xs text-gray-400">${p.boxSpec || '-'}</div>
+                        <div class="text-xs text-gray-400">${p.boxSpec || ''}</div>
                     </td>
                     <td class="px-4 py-3">
-                        <div class="text-sm font-medium text-green-600">¥${p.purchasePrice || '-'}</div>
-                        <div class="text-xs text-gray-400">零售 ¥${p.retailPrice || '-'}</div>
+                        <div class="text-sm font-medium text-gray-600">¥${p.retailPrice || '-'}</div>
                     </td>
                     <td class="px-4 py-3">
-                        <span class="text-sm font-medium ${getMarginColor(parseFloat(jcMargin))}">${jcMargin || '-'}</span>
+                        <div class="text-sm font-medium text-green-600">¥${costPrice}</div>
                     </td>
                     <td class="px-4 py-3">
-                        <span class="text-sm font-medium ${getMarginColor(parseFloat(dfMargin))}">${dfMargin || '-'}</span>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-xs">${p.brand || '-'}</div>
-                        <div class="text-xs text-gray-400">${p.brandLevel || ''}</div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <div class="text-xs">${p.supplierId || '-'}</div>
-                    </td>
-                    <td class="px-4 py-3">
-                        <span class="tag ${statusClass}">${p.status}</span>
+                        <span class="text-sm font-medium ${getMarginColor(parseFloat(margin))}">${margin || '-'}</span>
                     </td>
                     <td class="px-4 py-3">
                         <button onclick="viewProduct(${p.id})" class="text-blue-600 hover:underline text-sm">查看</button>
