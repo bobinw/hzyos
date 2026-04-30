@@ -4818,7 +4818,7 @@
                         Object.keys(fieldToIndex).forEach(field => {
                             const idx = fieldToIndex[field];
                             if (idx !== undefined && row[idx] !== undefined && row[idx] !== '') {
-                                existingProduct[field] = row[idx];
+                                setProductField(existingProduct, field, row[idx]);
                             }
                         });
 
@@ -4869,7 +4869,7 @@
                         Object.keys(fieldToIndex).forEach(field => {
                             const idx = fieldToIndex[field];
                             if (idx !== undefined && row[idx] !== undefined && row[idx] !== '') {
-                                product[field] = row[idx];
+                                setProductField(product, field, row[idx]);
                             }
                         });
 
@@ -5977,6 +5977,79 @@
             if (h.includes('备注') || h.includes('说明')) return '备注';
 
             return '(忽略)';
+        }
+
+        // 通用字段赋值函数：将中文字段名映射到商品对象的英文属性名
+        function setProductField(product, fieldName, value) {
+            if (!fieldName || fieldName === '(忽略)') return;
+            const val = String(value || '').trim();
+            if (!val) return;
+
+            // 核心字段
+            if (fieldName === '供应商SKU') product.sku = val;
+            else if (fieldName === '商品名称') product.name = val;
+            else if (fieldName === '分类') product.category = val;
+            else if (fieldName === '单位') product.unit = val;
+
+            // 规格包装
+            else if (fieldName === '条码') product.barcode = val;
+            else if (fieldName === '箱码') product.boxBarcode = val;
+            else if (fieldName === '规格型号') product.spec = val;
+            else if (fieldName === '箱规') product.boxSpec = val;
+            else if (fieldName === '内配') product.innerConfig = val;
+            else if (fieldName === '产品尺寸') product.productSize = val;
+            else if (fieldName === '整箱尺寸') product.boxSize = val;
+            else if (fieldName === '净含量') product.weight = parseFloat(val) || 0;
+            else if (fieldName === '产品毛重') product.grossWeight = parseFloat(val) || 0;
+            else if (fieldName === '整箱重量') product.boxWeight = parseFloat(val) || 0;
+
+            // 产品属性
+            else if (fieldName === '品牌') product.brand = val;
+            else if (fieldName === '品牌级别') product.brandLevel = val;
+            else if (fieldName === '产地') product.origin = val;
+            else if (fieldName === '保质期') product.shelfLife = val;
+            else if (fieldName === '配料表') product.ingredients = val;
+            else if (fieldName === '是否无糖') product.isSugarFree = val === '是' || val === 'true';
+            else if (fieldName === '是否有机') product.isOrganic = val === '是' || val === 'true';
+            else if (fieldName === '税收编码') product.taxCode = val;
+
+            // 价格体系
+            else if (fieldName === '集采价') product.purchasePrice = parseFloat(val) || 0;
+            else if (fieldName === '标准零售价') product.retailPrice = parseFloat(val) || 0;
+            else if (fieldName === '渠道价') product.channelPrice = parseFloat(val) || 0;
+            else if (fieldName === '团购价') product.groupPrice = parseFloat(val) || 0;
+            else if (fieldName === '含税标识') product.taxIncluded = val === '含税' || val === '是';
+            else if (fieldName === '一件代发价') product.normalExpressPrice = parseFloat(val) || 0;
+            else if (fieldName === '一件代发运费') product.normalExpressFee = parseFloat(val) || 0;
+            else if (fieldName === '京东/顺丰代发价') product.jdSfExpressPrice = parseFloat(val) || 0;
+
+            // 物流供应链
+            else if (fieldName === '物流方式') product.logisticsMode = val;
+            else if (fieldName === '发货地') product.shipFrom = val;
+            else if (fieldName === '运费包含') product.freightIncluded = val === '是' || val === '包含';
+            else if (fieldName === '不包邮区域') product.noPostArea = val;
+            else if (fieldName === '默认快递公司') product.defaultExpress = val;
+            else if (fieldName === '库存类型') product.stockType = val;
+            else if (fieldName === '备货状态') product.stockStatus = val;
+            else if (fieldName === '备货周期') product.leadTime = val;
+            else if (fieldName === '最小起订量') product.moq = val;
+            else if (fieldName === '包销产品') product.isExclusive = val === '是' || val === 'true';
+            else if (fieldName === '价格有效期') product.priceExpiry = val;
+
+            // 图片媒体
+            else if (fieldName === '产品图片') product.mainImage = val;
+            else if (fieldName === '详情图') product.detailImages = val;
+
+            // 电商参考
+            else if (fieldName === '京东链接') product.jdLink = val;
+            else if (fieldName === '京东价') product.jdPrice = parseFloat(val) || 0;
+            else if (fieldName === '淘宝链接') product.tbLink = val;
+            else if (fieldName === '淘宝价') product.tbPrice = parseFloat(val) || 0;
+            else if (fieldName === '拼多多链接') product.pddLink = val;
+            else if (fieldName === '拼多多价') product.pddPrice = parseFloat(val) || 0;
+
+            // 备注
+            else if (fieldName === '备注') product.note = val;
         }
 
         function renderMappingPreview(headers, mappings) {
