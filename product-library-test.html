@@ -899,17 +899,16 @@
 
             <!-- Sheet选择弹窗 -->
             <div id="modal-sheet-select" class="modal">
-                <div class="modal-content w-96">
+                <div class="modal-content w-md">
                     <div class="flex justify-between items-center mb-4">
-                        <h3 class="text-lg font-bold">选择工作表</h3>
+                        <h3 class="text-lg font-bold">工作表列表</h3>
                         <button onclick="closeModal('modal-sheet-select')" class="text-gray-400 hover:text-gray-600">✕</button>
                     </div>
-                    <p class="text-sm text-gray-500 mb-4">该Excel文件包含多个工作表，请选择要导入的工作表：</p>
-                    <div id="sheet-list" class="space-y-2 mb-4 max-h-60 overflow-y-auto">
+                    <p class="text-sm text-gray-500 mb-4">点击"导入"按钮逐个工作表导入数据，每个工作表可选择不同的供应商：</p>
+                    <div id="sheet-list" class="space-y-2 mb-4 max-h-80 overflow-y-auto">
                     </div>
                     <div class="flex justify-end gap-2 pt-4 border-t">
-                        <button onclick="closeModal('modal-sheet-select')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-                        <button onclick="importSelectedSheets()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">导入选中</button>
+                        <button onclick="closeModal('modal-sheet-select')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">完成</button>
                     </div>
                 </div>
             </div>
@@ -3434,6 +3433,24 @@
 
         // ========== 智能导入 ==========
         function initImportPage() {
+            // 检查是否有未完成的多sheet导入
+            if (pendingWorkbookData && Object.values(pendingWorkbookData.sheets || {}).some(s => !s.imported)) {
+                // 有未导入的sheet，显示继续导入提示
+                const unimportedCount = Object.values(pendingWorkbookData.sheets).filter(s => !s.imported).length;
+                const totalCount = Object.keys(pendingWorkbookData.sheets).length;
+
+                // 显示提示
+                document.getElementById('fileInfo').classList.remove('hidden');
+                document.getElementById('fileName').textContent = pendingFileName || 'Excel文件';
+                document.getElementById('fileStats').innerHTML = `
+                    <span class="text-orange-600">还有 ${unimportedCount} 个工作表待导入</span>
+                    <button onclick="showSheetSelectModal()" class="ml-2 px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">继续导入</button>
+                    <button onclick="clearPendingImport()" class="ml-2 px-3 py-1 border rounded text-xs hover:bg-gray-50">取消导入</button>
+                `;
+                document.getElementById('step2').classList.remove('opacity-50');
+                return;
+            }
+
             // 清理之前的导入数据，释放内存
             if (window.excelData && window.excelData.rowImages) {
                 Object.keys(window.excelData.rowImages).forEach(key => {
@@ -3473,6 +3490,14 @@
             }
         }
 
+        // 清理待导入数据
+        function clearPendingImport() {
+            pendingWorkbookData = null;
+            pendingFileName = '';
+            document.getElementById('fileInfo').classList.add('hidden');
+            document.getElementById('fileStats').textContent = '';
+        }
+
         // 获取当前选择的供应商名称（直接从输入框获取）
         function getCurrentSupplierId() {
             const input = document.getElementById('importSupplier');
@@ -3504,15 +3529,48 @@
 
             pendingFileName = file.name;
 
+            // 显示加载提示
+            const loadingDiv = document.createElement('div');
+            loadingDiv.id = 'excel-loading-overlay';
+            loadingDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            loadingDiv.innerHTML = `
+                <div class="bg-white rounded-lg p-6 w-80">
+                    <div class="text-center">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                        <div class="text-sm text-gray-600" id="excel-loading-text">正在读取文件...</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-3">
+                            <div id="excel-loading-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(loadingDiv);
+
+            const updateProgress = (text, percent) => {
+                document.getElementById('excel-loading-text').textContent = text;
+                document.getElementById('excel-loading-bar').style.width = percent + '%';
+            };
+
             // 使用 FileReader 读取文件
             const reader = new FileReader();
+
+            reader.onprogress = function(e) {
+                if (e.lengthComputable) {
+                    const percent = Math.round((e.loaded / e.total) * 50);
+                    updateProgress(`读取文件... ${Math.round(e.loaded / 1024 / 1024)}MB / ${Math.round(e.total / 1024 / 1024)}MB`, percent);
+                }
+            };
+
             reader.onload = async function(e) {
                 try {
+                    updateProgress('解析Excel结构...', 60);
                     const arrayBuffer = e.target.result;
 
                     // 使用 SheetJS 读取数据
                     const data = new Uint8Array(arrayBuffer);
                     const workbook = XLSX.read(data, { type: 'array' });
+
+                    updateProgress('分析工作表...', 80);
 
                     // 检查是否有多个sheet
                     if (workbook.SheetNames.length > 1) {
@@ -3532,39 +3590,583 @@
                             pendingWorkbookData.sheets[name] = {
                                 rowCount,
                                 colCount,
-                                headers: jsonData[0] || []
+                                headers: jsonData[0] || [],
+                                imported: false // 标记是否已导入
                             };
                         });
 
-                        // 显示选择弹窗
-                        showSheetSelectModal();
+                        updateProgress('完成', 100);
+                        setTimeout(() => {
+                            document.getElementById('excel-loading-overlay')?.remove();
+                            showSheetSelectModal();
+                        }, 300);
                     } else {
-                        // 单个sheet，直接处理
-                        await processExcelSheet(workbook, workbook.SheetNames[0], arrayBuffer);
+                        updateProgress('完成', 100);
+                        setTimeout(() => {
+                            document.getElementById('excel-loading-overlay')?.remove();
+                            processExcelSheet(workbook, workbook.SheetNames[0], arrayBuffer);
+                        }, 300);
                     }
                 } catch (err) {
+                    document.getElementById('excel-loading-overlay')?.remove();
                     alert('Excel 解析失败：' + err.message);
                 }
             };
+
+            reader.onerror = function() {
+                document.getElementById('excel-loading-overlay')?.remove();
+                alert('文件读取失败');
+            };
+
             reader.readAsArrayBuffer(file);
         }
 
         function showSheetSelectModal() {
             const sheetList = document.getElementById('sheet-list');
+            const totalSheets = Object.keys(pendingWorkbookData.sheets).length;
+            const importedCount = Object.values(pendingWorkbookData.sheets).filter(s => s.imported).length;
+
             sheetList.innerHTML = Object.entries(pendingWorkbookData.sheets).map(([name, info], index) => `
-                <label class="flex items-start gap-3 p-3 border rounded-lg hover:bg-gray-50 cursor-pointer">
-                    <input type="checkbox" class="sheet-checkbox mt-1" value="${name}" ${index === 0 ? 'checked' : ''}>
-                    <div class="flex-1">
-                        <div class="font-medium text-sm">${name}</div>
-                        <div class="text-xs text-gray-500 mt-1">
-                            ${info.rowCount} 行 × ${info.colCount} 列
-                            ${info.headers.slice(0, 3).map(h => h || '').join(' / ')}
+                <div class="p-3 border rounded-lg ${info.imported ? 'bg-green-50 border-green-200' : 'hover:bg-gray-50'}">
+                    <div class="flex items-center justify-between">
+                        <div class="flex-1">
+                            <div class="flex items-center gap-2">
+                                <span class="font-medium text-sm">${name}</span>
+                                ${info.imported ? '<span class="text-xs text-green-600">✓ 已导入</span>' : ''}
+                            </div>
+                            <div class="text-xs text-gray-500 mt-1">
+                                ${info.rowCount} 行 × ${info.colCount} 列
+                                ${info.headers.slice(0, 3).map(h => h || '').join(' / ')}
+                            </div>
                         </div>
+                        <button onclick="importSingleSheet('${name}')" class="px-3 py-1.5 text-sm rounded-lg ${info.imported ? 'bg-gray-100 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}" ${info.imported ? 'disabled' : ''}>
+                            ${info.imported ? '已导入' : '导入'}
+                        </button>
                     </div>
-                </label>
+                </div>
             `).join('');
 
+            // 更新弹窗标题
+            document.querySelector('#modal-sheet-select h3').textContent = `工作表列表 (${importedCount}/${totalSheets} 已导入)`;
+
             document.getElementById('modal-sheet-select').classList.add('active');
+        }
+
+        // 导入单个sheet
+        async function importSingleSheet(sheetName) {
+            const sheetInfo = pendingWorkbookData.sheets[sheetName];
+            if (!sheetInfo || sheetInfo.imported) {
+                alert('该工作表已导入');
+                return;
+            }
+
+            // 读取sheet数据
+            const sheet = pendingWorkbookData.workbook.Sheets[sheetName];
+            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            const headers = jsonData[0] || [];
+            const dataRows = jsonData.slice(1).filter(row => row && row.some(cell => cell !== undefined && cell !== ''));
+
+            // 获取供应商列表
+            const productSuppliers = products.map(p => p.supplierId).filter(Boolean);
+            const manualSuppliers = suppliers.map(s => s.name).filter(Boolean);
+            const allSuppliers = [...new Set([...manualSuppliers, ...productSuppliers])].sort();
+
+            // 获取所有字段
+            const allFields = getAllProductFields();
+
+            // 移除已存在的弹窗
+            document.getElementById('modal-sheet-import')?.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'modal-sheet-import';
+            modal.className = 'modal active';
+            modal.innerHTML = `
+                <div class="modal-content w-3xl max-h-[90vh] overflow-y-auto">
+                    <div class="flex justify-between items-center mb-4 sticky top-0 bg-white pb-2 border-b">
+                        <h3 class="text-lg font-bold">导入工作表：${sheetName}</h3>
+                        <button onclick="document.getElementById('modal-sheet-import').remove()" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+
+                    <div class="space-y-4">
+                        <!-- 基本信息 -->
+                        <div class="bg-gray-50 rounded-lg p-3 text-sm grid grid-cols-3 gap-4">
+                            <div>数据行数：<span class="font-medium">${dataRows.length}</span></div>
+                            <div>列数：<span class="font-medium">${headers.length}</span></div>
+                            <div>表头行：<span class="font-medium">第1行</span></div>
+                        </div>
+
+                        <!-- 供应商选择 -->
+                        <div>
+                            <label class="block text-sm text-gray-500 mb-1">供应商 <span class="text-red-500">*</span></label>
+                            <div class="flex gap-2">
+                                <input type="text" id="singleSheetSupplier" class="flex-1 border rounded-lg px-3 py-2 text-sm" list="singleSheetSupplierList" placeholder="选择或输入供应商名称" autocomplete="off">
+                                <datalist id="singleSheetSupplierList">
+                                    ${allSuppliers.map(s => `<option value="${s}">`).join('')}
+                                </datalist>
+                            </div>
+                            <div id="singleSheetTemplateHint" class="text-xs text-gray-400 mt-1">选择已有供应商会自动加载映射模板</div>
+                        </div>
+
+                        <!-- 表头预览 -->
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-sm font-medium">表头预览</label>
+                                <span class="text-xs text-gray-400">${headers.length} 列</span>
+                            </div>
+                            <div class="bg-gray-50 rounded-lg p-2 text-xs overflow-x-auto">
+                                <div class="flex gap-2 flex-wrap">
+                                    ${headers.map((h, i) => `<span class="px-2 py-1 bg-white border rounded text-gray-600">${i + 1}. ${h || '(空)'}</span>`).join('')}
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- 字段映射 -->
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-sm font-medium">字段映射</label>
+                                <button onclick="autoMapSheetFields('${sheetName}')" class="text-xs text-blue-600 hover:underline">自动映射</button>
+                            </div>
+                            <div id="sheetFieldMapping" class="border rounded-lg max-h-60 overflow-y-auto">
+                                <table class="w-full text-xs">
+                                    <thead class="bg-gray-50 sticky top-0">
+                                        <tr>
+                                            <th class="px-3 py-2 text-left border-b">Excel列名</th>
+                                            <th class="px-3 py-2 text-left border-b">映射到字段</th>
+                                            <th class="px-3 py-2 text-left border-b w-20">状态</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody id="sheetMappingBody">
+                                        ${headers.map((h, i) => {
+                                            const hStr = String(h || '').trim();
+                                            const matchedField = allFields.find(f => f.name === hStr || f.keywords?.some(k => hStr.includes(k)));
+                                            return `
+                                                <tr class="hover:bg-gray-50">
+                                                    <td class="px-3 py-2 border-b">${hStr || '(空列)'}</td>
+                                                    <td class="px-3 py-2 border-b">
+                                                        <select class="sheet-field-select border rounded px-2 py-1 w-full" data-index="${i}" data-header="${hStr}">
+                                                            <option value="">(忽略)</option>
+                                                            ${allFields.map(f => `<option value="${f.name}" ${matchedField?.name === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
+                                                        </select>
+                                                    </td>
+                                                    <td class="px-3 py-2 border-b text-center" data-status="${i}">
+                                                        <span class="${matchedField ? 'text-green-600' : 'text-gray-400'}">${matchedField ? '✓' : '-'}</span>
+                                                    </td>
+                                                </tr>
+                                            `;
+                                        }).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 数据预览 -->
+                        <div>
+                            <div class="flex justify-between items-center mb-2">
+                                <label class="text-sm font-medium">数据预览（前5行）</label>
+                            </div>
+                            <div class="border rounded-lg overflow-x-auto max-h-40">
+                                <table class="w-full text-xs">
+                                    <thead class="bg-gray-100">
+                                        <tr>
+                                            ${headers.slice(0, 8).map(h => `<th class="px-2 py-1 text-left font-medium truncate max-w-[100px]">${h || '-'}</th>`).join('')}
+                                            ${headers.length > 8 ? `<th class="px-2 py-1">...</th>` : ''}
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        ${dataRows.slice(0, 5).map(row => `
+                                            <tr class="border-t">
+                                                ${headers.slice(0, 8).map((_, i) => `<td class="px-2 py-1 truncate max-w-[100px]">${row[i] !== undefined ? row[i] : '-'}</td>`).join('')}
+                                                ${headers.length > 8 ? `<td class="px-2 py-1 text-gray-400">...</td>` : ''}
+                                            </tr>
+                                        `).join('')}
+                                    </tbody>
+                                </table>
+                            </div>
+                        </div>
+
+                        <!-- 操作按钮 -->
+                        <div class="flex gap-2 pt-4 border-t sticky bottom-0 bg-white">
+                            <button onclick="document.getElementById('modal-sheet-import').remove()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button onclick="saveSheetMapping('${sheetName}')" class="px-4 py-2 border border-blue-600 text-blue-600 rounded-lg text-sm hover:bg-blue-50">保存映射模板</button>
+                            <button onclick="executeSingleSheetImport('${sheetName}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700 flex-1">确认导入</button>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(modal);
+
+            // 绑定供应商选择事件 - 自动加载模板映射
+            document.getElementById('singleSheetSupplier').addEventListener('change', function() {
+                const supplierId = this.value.trim();
+                const template = templates[supplierId];
+                const hasTemplate = template && Object.keys(template.mappings || {}).length > 0;
+
+                document.getElementById('singleSheetTemplateHint').innerHTML = hasTemplate
+                    ? `<span class="text-green-600">✓ 已配置映射模板（${Object.keys(template.mappings).length}个字段）</span>`
+                    : `<span class="text-gray-400">未配置映射模板</span>`;
+
+                // 如果有模板，自动应用映射
+                if (hasTemplate) {
+                    const savedMappings = template.mappings;
+                    document.querySelectorAll('.sheet-field-select').forEach(select => {
+                        const header = select.dataset.header;
+                        if (savedMappings[header]) {
+                            select.value = savedMappings[header];
+                        }
+                    });
+                    updateMappingStatus();
+                }
+            });
+
+            // 绑定字段选择变化事件
+            document.querySelectorAll('.sheet-field-select').forEach(select => {
+                select.addEventListener('change', updateMappingStatus);
+            });
+
+            function updateMappingStatus() {
+                let mappedCount = 0;
+                document.querySelectorAll('.sheet-field-select').forEach(select => {
+                    const index = select.dataset.index;
+                    const statusTd = document.querySelector(`[data-status="${index}"]`);
+                    if (select.value) {
+                        mappedCount++;
+                        statusTd.innerHTML = '<span class="text-green-600">✓</span>';
+                    } else {
+                        statusTd.innerHTML = '<span class="text-gray-400">-</span>';
+                    }
+                });
+            }
+        }
+
+        // 自动映射字段
+        function autoMapSheetFields(sheetName) {
+            const sheetInfo = pendingWorkbookData.sheets[sheetName];
+            const headers = sheetInfo.headers;
+            const allFields = getAllProductFields();
+
+            document.querySelectorAll('.sheet-field-select').forEach(select => {
+                const header = select.dataset.header;
+                const hStr = String(header || '').trim();
+
+                // 尝试匹配
+                let matched = null;
+                for (const field of allFields) {
+                    if (field.keywords && field.keywords.some(k => hStr.includes(k))) {
+                        matched = field.name;
+                        break;
+                    }
+                    if (hStr === field.name || hStr.includes(field.name)) {
+                        matched = field.name;
+                        break;
+                    }
+                }
+
+                if (matched) {
+                    select.value = matched;
+                }
+            });
+
+            // 触发更新
+            document.querySelector('.sheet-field-select')?.dispatchEvent(new Event('change'));
+        }
+
+        // 保存sheet映射模板
+        function saveSheetMapping(sheetName) {
+            const supplierId = document.getElementById('singleSheetSupplier').value.trim();
+            if (!supplierId) {
+                alert('请先选择供应商');
+                return;
+            }
+
+            const mappings = {};
+            document.querySelectorAll('.sheet-field-select').forEach(select => {
+                const header = select.dataset.header;
+                const field = select.value;
+                if (header && field) {
+                    mappings[header] = field;
+                }
+            });
+
+            templates[supplierId] = {
+                supplierId: supplierId,
+                mappings: mappings,
+                updatedAt: new Date().toISOString()
+            };
+
+            saveData();
+            alert(`已保存供应商「${supplierId}」的映射模板（${Object.keys(mappings).length}个字段）`);
+        }
+
+        // 执行单个sheet导入
+        async function executeSingleSheetImport(sheetName) {
+            const supplierId = document.getElementById('singleSheetSupplier').value.trim();
+            if (!supplierId) {
+                alert('请选择或输入供应商名称');
+                return;
+            }
+
+            // 从弹窗获取字段映射
+            const fieldToIndex = {};
+            const headers = pendingWorkbookData.sheets[sheetName].headers;
+            document.querySelectorAll('.sheet-field-select').forEach(select => {
+                const index = parseInt(select.dataset.index);
+                const field = select.value;
+                if (field && index >= 0) {
+                    fieldToIndex[field] = index;
+                }
+            });
+
+            // 检查是否有映射
+            if (Object.keys(fieldToIndex).length === 0) {
+                alert('请至少映射一个字段');
+                return;
+            }
+
+            // 移除选择弹窗
+            document.getElementById('modal-sheet-import').remove();
+
+            // 显示进度
+            const progressDiv = document.createElement('div');
+            progressDiv.id = 'import-progress-overlay';
+            progressDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+            progressDiv.innerHTML = `
+                <div class="bg-white rounded-lg p-6 w-80">
+                    <div class="text-center">
+                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                        <div class="text-sm text-gray-600" id="import-progress-text">正在处理...</div>
+                        <div class="w-full bg-gray-200 rounded-full h-2 mt-3">
+                            <div id="import-progress-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
+                        </div>
+                    </div>
+                </div>
+            `;
+            document.body.appendChild(progressDiv);
+
+            const updateProgress = (text, percent) => {
+                document.getElementById('import-progress-text').textContent = text;
+                document.getElementById('import-progress-bar').style.width = percent + '%';
+            };
+
+            try {
+                updateProgress('读取工作表数据...', 20);
+
+                const sheet = pendingWorkbookData.workbook.Sheets[sheetName];
+                const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+                if (jsonData.length < 2) {
+                    throw new Error('工作表数据不足');
+                }
+
+                const rows = [];
+                const rowIndexToExcelRow = [];
+
+                for (let i = 1; i < jsonData.length; i++) {
+                    if (jsonData[i] && jsonData[i].some(cell => cell !== undefined && cell !== '')) {
+                        rows.push(jsonData[i]);
+                        rowIndexToExcelRow.push(i + 1);
+                    }
+                }
+
+                updateProgress('提取图片...', 40);
+
+                // 提取图片
+                const rowImages = {};
+                try {
+                    const exceljsWorkbook = new ExcelJS.Workbook();
+                    await exceljsWorkbook.xlsx.load(pendingWorkbookData.arrayBuffer);
+                    const worksheet = exceljsWorkbook.getWorksheet(sheetName);
+
+                    if (worksheet) {
+                        let images = worksheet._images || [];
+                        if (images.length === 0 && typeof worksheet.getImages === 'function') {
+                            try { images = worksheet.getImages() || []; } catch (e) {}
+                        }
+                        if (images.length === 0 && worksheet.model && worksheet.model.media) {
+                            images = worksheet.model.media;
+                        }
+
+                        for (const img of images) {
+                            try {
+                                let rowNumber = 1;
+                                if (img.range && img.range.tl) {
+                                    rowNumber = Math.floor(img.range.tl.row) + 1;
+                                } else if (img.range && img.range.br) {
+                                    rowNumber = Math.floor(img.range.br.row) + 1;
+                                }
+
+                                let base64Data = null;
+                                let mimeType = 'image/png';
+
+                                if (img.imageId !== undefined && exceljsWorkbook.media && exceljsWorkbook.media[img.imageId]) {
+                                    const media = exceljsWorkbook.media[img.imageId];
+                                    if (media.buffer) {
+                                        base64Data = arrayBufferToBase64(media.buffer);
+                                    }
+                                    if (media.extension) mimeType = `image/${media.extension}`;
+                                }
+
+                                if (!base64Data && img.base64EncodedData) base64Data = img.base64EncodedData;
+                                if (!base64Data && img.base64) base64Data = img.base64;
+                                if (!base64Data && img.buffer) base64Data = arrayBufferToBase64(img.buffer);
+
+                                if (base64Data) {
+                                    if (typeof base64Data !== 'string') base64Data = String(base64Data);
+                                    rowImages[rowNumber] = rowImages[rowNumber] || [];
+                                    rowImages[rowNumber].push({
+                                        base64: base64Data.startsWith('data:') ? base64Data : `data:${mimeType};base64,${base64Data}`,
+                                        extension: img.extension || 'png'
+                                    });
+                                }
+                            } catch (e) {}
+                        }
+                    }
+                } catch (e) {
+                    console.warn('图片提取失败:', e);
+                }
+
+                updateProgress('导入数据...', 60);
+
+                // 导入数据
+                let added = 0;
+                let updated = 0;
+                let matchDetails = []; // 调试信息
+
+                // 检测条码是否合规
+                function isValidBarcode(barcode) {
+                    if (!barcode) return false;
+                    // 条码应为纯数字，长度6-18位
+                    // 支持格式: EAN-13, EAN-8, UPC-A, ISBN等
+                    const barcodePattern = /^[0-9]{6,18}$/;
+                    return barcodePattern.test(barcode);
+                }
+
+                // 无效的SKU值（表示没有值）
+                const invalidSkuValues = ['/', '-', '无', 'NA', 'N/A', 'NULL', 'null', ''];
+
+                for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
+                    const row = rows[rowIndex];
+                    let sku = fieldToIndex['供应商SKU'] !== undefined ? String(row[fieldToIndex['供应商SKU']] || '').trim() : '';
+                    let barcode = fieldToIndex['条码'] !== undefined ? String(row[fieldToIndex['条码']] || '').trim() : '';
+
+                    // 过滤无效SKU值
+                    if (invalidSkuValues.includes(sku)) sku = '';
+
+                    // 条码合规检测
+                    if (!isValidBarcode(barcode)) barcode = '';
+
+                    let existingProduct = null;
+                    let matchReason = '';
+
+                    if (sku) {
+                        existingProduct = products.find(p => p.supplierId === supplierId && p.sku === sku);
+                        if (existingProduct) matchReason = `SKU匹配: ${sku}`;
+                    }
+                    if (!existingProduct && barcode) {
+                        existingProduct = products.find(p => p.barcode === barcode);
+                        if (existingProduct) matchReason = `条码匹配: ${barcode}`;
+                    }
+
+                    if (existingProduct) {
+                        Object.keys(fieldToIndex).forEach(field => {
+                            const idx = fieldToIndex[field];
+                            if (idx !== undefined && row[idx] !== undefined && row[idx] !== '') {
+                                existingProduct[field] = row[idx];
+                            }
+                        });
+
+                        // 更新图片
+                        const excelRow = rowIndexToExcelRow[rowIndex];
+                        if (excelRow && rowImages[excelRow] && rowImages[excelRow].length > 0) {
+                            existingProduct.mainImage = rowImages[excelRow][0].base64;
+                            if (rowImages[excelRow].length > 1) {
+                                existingProduct.detailImages = rowImages[excelRow].slice(1).map(img => img.base64).join(',');
+                            }
+                        }
+
+                        existingProduct.updatedAt = new Date().toISOString().split('T')[0];
+                        existingProduct.source = 'Excel更新';
+                        updated++;
+
+                        // 记录匹配详情（只记录前5个）
+                        if (matchDetails.length < 5) {
+                            matchDetails.push(`行${rowIndex + 2}: ${matchReason} → 商品"${existingProduct.name || '(无名称)'}"`);
+                        }
+                    } else {
+                        const product = {
+                            id: nextProductId++,
+                            supplierId: supplierId,
+                            sku: sku,
+                            name: fieldToIndex['商品名称'] !== undefined ? row[fieldToIndex['商品名称']] : '',
+                            category: '食品礼盒',
+                            unit: '盒',
+                            status: '待审核',
+                            source: 'Excel导入',
+                            createdAt: new Date().toISOString().split('T')[0],
+                            updatedAt: new Date().toISOString().split('T')[0],
+                            taxIncluded: true,
+                            freightIncluded: true,
+                            isSugarFree: false,
+                            isOrganic: false,
+                            isExclusive: false,
+                            mainImage: '',
+                            detailImages: ''
+                        };
+
+                        Object.keys(fieldToIndex).forEach(field => {
+                            const idx = fieldToIndex[field];
+                            if (idx !== undefined && row[idx] !== undefined && row[idx] !== '') {
+                                product[field] = row[idx];
+                            }
+                        });
+
+                        // 添加图片
+                        const excelRow = rowIndexToExcelRow[rowIndex];
+                        if (excelRow && rowImages[excelRow] && rowImages[excelRow].length > 0) {
+                            product.mainImage = rowImages[excelRow][0].base64;
+                            if (rowImages[excelRow].length > 1) {
+                                product.detailImages = rowImages[excelRow].slice(1).map(img => img.base64).join(',');
+                            }
+                        }
+
+                        products.push(product);
+                        added++;
+                    }
+
+                    // 更新进度
+                    if (rowIndex % 100 === 0) {
+                        updateProgress(`导入数据... ${rowIndex + 1}/${rows.length}`, 50 + Math.round((rowIndex / rows.length) * 40));
+                    }
+                }
+
+                // 添加导入记录
+                addImportRecord(pendingFileName, sheetName, supplierId, added, updated);
+
+                // 标记已导入
+                pendingWorkbookData.sheets[sheetName].imported = true;
+
+                saveData();
+                updateProgress('完成', 100);
+
+                setTimeout(() => {
+                    document.getElementById('import-progress-overlay')?.remove();
+
+                    // 构建结果消息
+                    let msg = `导入完成！\n新增 ${added} 条，更新 ${updated} 条`;
+                    if (updated > 0 && matchDetails.length > 0) {
+                        msg += `\n\n更新原因（前5条）：\n${matchDetails.join('\n')}`;
+                    }
+
+                    alert(msg);
+
+                    // 刷新sheet列表
+                    showSheetSelectModal();
+                    renderList();
+                }, 300);
+
+            } catch (err) {
+                document.getElementById('import-progress-overlay')?.remove();
+                alert('导入失败：' + err.message);
+            }
         }
 
         async function importSelectedSheets() {
@@ -5881,6 +6483,13 @@
                     createdAt: new Date().toISOString().split('T')[0]
                 });
             }
+
+            // 更新导入记录中的供应商名称
+            importRecords.forEach(r => {
+                if (r.supplierId === originalName) {
+                    r.supplierId = newName;
+                }
+            });
 
             saveData();
             closeModal('modal-edit-supplier');
