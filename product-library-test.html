@@ -7602,7 +7602,16 @@
                     return aIndex - bIndex;
                 });
             } else {
-                result.sort((a, b) => a.name.localeCompare(b.name));
+                // 默认按 SYSTEM_FIELDS.core 的顺序排序
+                const defaultOrder = SYSTEM_FIELDS.core;
+                result.sort((a, b) => {
+                    const aIndex = defaultOrder.indexOf(a.name);
+                    const bIndex = defaultOrder.indexOf(b.name);
+                    if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
+                    if (aIndex === -1) return 1;
+                    if (bIndex === -1) return -1;
+                    return aIndex - bIndex;
+                });
             }
             return result;
         }
