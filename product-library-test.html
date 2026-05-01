@@ -379,7 +379,7 @@
 
                     <!-- 粘贴区域 -->
                     <div id="import-paste" class="hidden">
-                        <textarea id="importData" class="w-full h-48 border rounded-lg p-3 text-sm font-mono resize-none" placeholder="粘贴 Excel 复制的数据（Tab 分隔）&#10;&#10;格式示例：&#10;SKU	商品名称	规格	价格	条码	箱规	零售价"></textarea>
+                        <textarea id="importData" class="w-full h-48 border rounded-lg p-3 text-sm font-mono resize-none" placeholder="粘贴 Excel 复制的数据（Tab 分隔）&#10;&#10;格式示例：&#10;SKU	商品名称	规格	价格	产品条码	箱规	零售价"></textarea>
                     </div>
 
                     <div class="flex justify-end mt-4">
@@ -1189,15 +1189,15 @@
 
         // 系统标准字段
         const SYSTEM_FIELDS = {
-            core: ['供应商ID', '供应商SKU', '商品名称', '分类', '单位'],
-            spec: ['条码', '箱码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量'],
-            product: ['品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码'],
-            price: ['集采价', '标准零售价', '集采毛利率', '含税标识'],
-            delivery: ['一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价'],
-            supply: ['物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司', '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期'],
-            ecommerce: ['京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价'],
-            media: ['产品图片', '详情图'],
-            other: ['备注'],
+            core: ['供应商ID', '供应商SKU', '商品名称', '分类', '单位', '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量', '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码', '集采价', '标准零售价', '集采毛利率', '含税标识', '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价', '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司', '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期', '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价', '产品图片', '详情图', '备注'],
+            spec: [],
+            product: [],
+            price: [],
+            delivery: [],
+            supply: [],
+            ecommerce: [],
+            media: [],
+            other: [],
             status: ['状态', '录入来源', '录入时间', '最后更新']
         };
 
@@ -1218,7 +1218,7 @@
         // 导出表头
         const EXPORT_HEADERS = [
             '供应商', '供应商ID', '供应商SKU', '商品名称', '分类', '单位',
-            '条码', '箱码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
+            '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
             '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
             '集采价', '标准零售价', '集采毛利率', '含税标识',
             '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价',
@@ -1299,7 +1299,7 @@
                     '品名': '商品名称',
                     '规格型号': '规格型号',
                     '单价': '集采价',
-                    '条码': '条码',
+                    '产品条码': '产品条码',
                     '箱规': '箱规',
                     '零售价': '标准零售价',
                     '京东价': '京东价'
@@ -1312,7 +1312,7 @@
                     '产品名称': '商品名称',
                     '规格': '规格型号',
                     '批发价': '渠道价',
-                    'EAN码': '条码',
+                    'EAN码': '产品条码',
                     '装箱数': '箱规',
                     '建议零售': '标准零售价'
                 }
@@ -1324,7 +1324,7 @@
                     '商品名': '商品名称',
                     '规格': '规格型号',
                     '供货价': '集采价',
-                    '条形码': '条码',
+                    '条形码': '产品条码',
                     '箱入数': '箱规',
                     '市场价': '标准零售价'
                 }
@@ -1358,7 +1358,7 @@
         // 所有可选字段（按分类）
         const SELECTABLE_FIELDS = {
             core: ['供应商SKU', '商品名称', '分类', '单位'],
-            spec: ['条码', '箱码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '整箱重量'],
+            spec: ['产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '整箱重量'],
             price: ['集采价', '标准零售价', '含税标识', '一件代发价', '京东/顺丰代发价'],
             other: ['品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
                     '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司',
@@ -1986,7 +1986,7 @@
             },
             search: {
                 id: 'search', label: '搜索', type: 'text', group: 'core',
-                placeholder: '搜索商品名称/SKU/条码'
+                placeholder: '搜索商品名称/SKU/产品条码'
             },
             supplier: {
                 id: 'supplier', label: '供应商', type: 'dynamicSelect', group: 'core',
@@ -2101,7 +2101,7 @@
             margin: { id: 'margin', label: '毛利率', type: 'margin', width: '80px' },
             actions: { id: 'actions', label: '操作', type: 'system', required: true, width: '120px' },
             sku: { id: 'sku', label: 'SKU', type: 'field', field: 'sku', width: '100px' },
-            barcode: { id: 'barcode', label: '条码', type: 'field', field: 'barcode', width: '100px' },
+            barcode: { id: 'barcode', label: '产品条码', type: 'field', field: 'barcode', width: '100px' },
             category: { id: 'category', label: '分类', type: 'field', field: 'category', width: '80px' },
             origin: { id: 'origin', label: '产地', type: 'field', field: 'origin', width: '80px' },
             purchasePrice: { id: 'purchasePrice', label: '集采价', type: 'price', field: 'purchasePrice', width: '80px' },
@@ -2360,7 +2360,7 @@
             // 定义列标题
             const headers = [
                 '供应商', '供应商ID', '供应商SKU', '商品名称', '分类', '单位',
-                '条码', '箱码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
+                '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
                 '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
                 '集采价', '标准零售价', '集采毛利率', '含税标识',
                 '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价',
@@ -2388,8 +2388,8 @@
                     '商品名称': p.name || '',
                     '分类': p.category || '',
                     '单位': p.unit || '',
-                    '条码': p.barcode || '',
-                    '箱码': p.boxBarcode || '',
+                    '产品条码': p.barcode || '',
+                    '外箱条码': p.boxBarcode || '',
                     '规格型号': p.spec || '',
                     '箱规': p.boxSpec || '',
                     '内配': p.innerConfig || '',
@@ -2489,7 +2489,7 @@
             worksheet.eachRow((row, rowNumber) => {
                 row.eachCell((cell) => {
                     cell.font = { size: 10 };
-                    cell.alignment = { vertical: 'middle', horizontal: 'left' };
+                    cell.alignment = { vertical: 'middle', horizontal: 'left', wrapText: true };
                 });
             });
 
@@ -3150,7 +3150,7 @@
                             duplicates.push({
                                 product: p,
                                 duplicateOf: barcodeMap.get(p.barcode),
-                                matchType: '条码相同'
+                                matchType: '产品条码相同'
                             });
                         }
                     } else {
@@ -3206,7 +3206,7 @@
                                     </th>
                                     <th class="px-2 py-2 text-left border">商品名称</th>
                                     <th class="px-2 py-2 text-left border">SKU</th>
-                                    <th class="px-2 py-2 text-left border">条码</th>
+                                    <th class="px-2 py-2 text-left border">产品条码</th>
                                     <th class="px-2 py-2 text-left border">供应商</th>
                                     <th class="px-2 py-2 text-left border">重复类型</th>
                                     <th class="px-2 py-2 text-left border">重复商品</th>
@@ -3291,7 +3291,7 @@
                         <input type="text" id="edit-unit" value="${p.unit || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                     </div>
                     <div>
-                        <label class="block text-sm text-gray-600 mb-1">条码</label>
+                        <label class="block text-sm text-gray-600 mb-1">产品条码</label>
                         <input type="text" id="edit-barcode" value="${p.barcode || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                     </div>
                     <div>
@@ -3874,8 +3874,8 @@
                             <div><span class="text-gray-500">SKU：</span>${p.sku}</div>
                             <div><span class="text-gray-500">分类：</span>${p.category || '-'}</div>
                             <div><span class="text-gray-500">单位：</span>${p.unit || '-'}</div>
-                            <div><span class="text-gray-500">条码：</span>${p.barcode || '-'}</div>
-                            <div><span class="text-gray-500">箱码：</span>${p.boxBarcode || '-'}</div>
+                            <div><span class="text-gray-500">产品条码：</span>${p.barcode || '-'}</div>
+                            <div><span class="text-gray-500">外箱条码：</span>${p.boxBarcode || '-'}</div>
                         </div>
                     </div>
 
@@ -4795,7 +4795,7 @@
                 for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
                     const row = rows[rowIndex];
                     let sku = fieldToIndex['供应商SKU'] !== undefined ? String(row[fieldToIndex['供应商SKU']] || '').trim() : '';
-                    let barcode = fieldToIndex['条码'] !== undefined ? String(row[fieldToIndex['条码']] || '').trim() : '';
+                    let barcode = fieldToIndex['产品条码'] !== undefined ? String(row[fieldToIndex['产品条码']] || '').trim() : '';
 
                     // 过滤无效SKU值
                     if (invalidSkuValues.includes(sku)) sku = '';
@@ -4812,7 +4812,7 @@
                     }
                     if (!existingProduct && barcode) {
                         existingProduct = products.find(p => p.barcode === barcode);
-                        if (existingProduct) matchReason = `条码匹配: ${barcode}`;
+                        if (existingProduct) matchReason = `产品条码匹配: ${barcode}`;
                     }
 
                     if (existingProduct) {
@@ -5846,11 +5846,11 @@
         function loadSampleData() {
             const supplierId = document.getElementById('importSupplier').value;
             const samples = {
-                'wufangzhai': '货号\t品名\t规格型号\t单价\t条码\t箱规\t零售价\t京东价\nWFZ-002\t蛋黄粽礼盒\t800g/盒\t58\t6923456789013\t16\t75\t76\nWFZ-003\t鲜肉粽礼盒\t1kg/盒\t48\t6923456789014\t20\t62\t65',
+                'wufangzhai': '货号\t品名\t规格型号\t单价\t产品条码\t箱规\t零售价\t京东价\nWFZ-002\t蛋黄粽礼盒\t800g/盒\t58\t6923456789013\t16\t75\t76\nWFZ-003\t鲜肉粽礼盒\t1kg/盒\t48\t6923456789014\t20\t62\t65',
                 'gaoyou': '产品编号\t产品名称\t规格\t批发价\tEAN码\t装箱数\t建议零售\nGY-YD-002\t双黄咸鸭蛋\t12枚/盒\t45\t6923456789030\t12\t68\nGY-YD-003\t精品咸鸭蛋\t30枚/盒\t55\t6923456789031\t6\t82',
                 'sanshisongsu': 'SKU\t商品名\t规格\t供货价\t条形码\t箱入数\t市场价\nSZS-JG-002\t每日坚果\t750g/袋\t42\t6923456789044\t16\t58\nSZS-JG-003\t碧根果\t500g/袋\t35\t6923456789045\t24\t48'
             };
-            document.getElementById('importData').value = samples[supplierId] || 'SKU\t商品名称\t规格\t价格\t条码\t箱规\nP001\t测试商品\t500g\t25\t6901234567890\t24';
+            document.getElementById('importData').value = samples[supplierId] || 'SKU\t商品名称\t规格\t价格\t产品条码\t箱规\nP001\t测试商品\t500g\t25\t6901234567890\t24';
         }
 
         function parseImportData() {
@@ -5917,8 +5917,8 @@
             if (h.includes('单位')) return '单位';
 
             // 规格包装
-            if (h.includes('条码') || h.includes('ean') || h.includes('条形码') || h.includes('barcode')) return '条码';
-            if (h.includes('箱码') || h.includes('外箱码')) return '箱码';
+            if (h.includes('条码') || h.includes('ean') || h.includes('条形码') || h.includes('barcode')) return '产品条码';
+            if (h.includes('箱码') || h.includes('外箱码') || h.includes('外箱条码')) return '外箱条码';
             if (h.includes('规格型号') || h === '规格' || h.includes('型号')) return '规格型号';
             if (h.includes('箱规') || h.includes('装箱数') || h.includes('箱入数') || h.includes('每箱')) return '箱规';
             if (h.includes('内配') || h.includes('包装配置')) return '内配';
@@ -5993,8 +5993,8 @@
             else if (fieldName === '单位') product.unit = val;
 
             // 规格包装
-            else if (fieldName === '条码') product.barcode = val;
-            else if (fieldName === '箱码') product.boxBarcode = val;
+            else if (fieldName === '产品条码') product.barcode = val;
+            else if (fieldName === '外箱条码') product.boxBarcode = val;
             else if (fieldName === '规格型号') product.spec = val;
             else if (fieldName === '箱规') product.boxSpec = val;
             else if (fieldName === '内配') product.innerConfig = val;
@@ -6344,7 +6344,7 @@
 
             parsedData.rows.forEach((row, idx) => {
                 const sku = fieldToIndex['供应商SKU'] !== undefined ? String(row[fieldToIndex['供应商SKU']] || '').trim() : '';
-                const barcode = fieldToIndex['条码'] !== undefined ? String(row[fieldToIndex['条码']] || '').trim() : '';
+                const barcode = fieldToIndex['产品条码'] !== undefined ? String(row[fieldToIndex['产品条码']] || '').trim() : '';
                 const name = fieldToIndex['商品名称'] !== undefined ? String(row[fieldToIndex['商品名称']] || '').trim() : '';
 
                 // 查找重复：供应商ID + SKU 匹配
@@ -6359,7 +6359,7 @@
                 // 如果SKU没匹配，再检查条码
                 if (!existingProduct && barcode) {
                     existingProduct = products.find(p => p.barcode === barcode);
-                    if (existingProduct) matchType = '条码相同';
+                    if (existingProduct) matchType = '产品条码相同';
                 }
 
                 if (existingProduct) {
@@ -6403,7 +6403,7 @@
                             <button onclick="document.getElementById('modal-duplicates').remove()" class="text-gray-400 hover:text-gray-600">✕</button>
                         </div>
                         <p class="text-sm text-gray-500 mt-1">
-                            以下商品与现有商品库中的商品重复（按供应商SKU或条码匹配）
+                            以下商品与现有商品库中的商品重复（按供应商SKU或产品条码匹配）
                         </p>
                     </div>
                     <div class="p-4 overflow-x-auto">
@@ -6413,7 +6413,7 @@
                                     <th class="px-2 py-2 text-left border">行号</th>
                                     <th class="px-2 py-2 text-left border">商品名称</th>
                                     <th class="px-2 py-2 text-left border">SKU</th>
-                                    <th class="px-2 py-2 text-left border">条码</th>
+                                    <th class="px-2 py-2 text-left border">产品条码</th>
                                     <th class="px-2 py-2 text-left border">重复类型</th>
                                     <th class="px-2 py-2 text-left border">现有商品</th>
                                 </tr>
@@ -6702,8 +6702,8 @@
                     else if (field === '单位') product.unit = value;
 
                     // 规格包装
-                    else if (field === '条码') product.barcode = value;
-                    else if (field === '箱码') product.boxBarcode = value;
+                    else if (field === '产品条码') product.barcode = value;
+                    else if (field === '外箱条码') product.boxBarcode = value;
                     else if (field === '规格型号') product.spec = value;
                     else if (field === '箱规') product.boxSpec = value;
                     else if (field === '内配') product.innerConfig = value;
