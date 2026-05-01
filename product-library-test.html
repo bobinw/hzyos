@@ -7613,8 +7613,8 @@
 
         function resetProductFieldOrder() {
             productFieldOrder = [];
-            saveAllData();
-            renderProductFieldsList();
+            saveData();
+            location.reload();
         }
 
         function moveProductField(name, direction) {
