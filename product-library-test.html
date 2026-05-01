@@ -912,7 +912,10 @@
                     <div id="product-fields-panel">
                         <div class="flex justify-between items-center mb-3">
                             <div class="text-sm text-gray-500">共 <span id="product-field-count">0</span> 个字段</div>
-                            <button onclick="showAddProductFieldModal()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">+ 新增字段</button>
+                            <div class="flex gap-2">
+                                <button onclick="resetProductFieldOrder()" class="px-3 py-1 border border-gray-300 rounded text-xs hover:bg-gray-50">重置默认顺序</button>
+                                <button onclick="showAddProductFieldModal()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">+ 新增字段</button>
+                            </div>
                         </div>
                         <div class="overflow-x-auto">
                             <table class="w-full text-sm">
@@ -7614,6 +7617,12 @@
                 });
             }
             return result;
+        }
+
+        function resetProductFieldOrder() {
+            productFieldOrder = [];
+            saveAllData();
+            renderProductFieldsList();
         }
 
         function moveProductField(name, direction) {
