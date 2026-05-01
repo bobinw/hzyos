@@ -7592,30 +7592,22 @@
                 }
             });
 
+            // 如果没有自定义顺序，直接按 SYSTEM_FIELDS 遍历顺序返回
+            if (!productFieldOrder || productFieldOrder.length === 0) {
+                return Array.from(fieldMap.values());
+            }
+
             const result = Array.from(fieldMap.values());
 
             // 按自定义顺序排序
-            if (productFieldOrder && productFieldOrder.length > 0) {
-                result.sort((a, b) => {
-                    const aIndex = productFieldOrder.indexOf(a.name);
-                    const bIndex = productFieldOrder.indexOf(b.name);
-                    if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
-                    if (aIndex === -1) return 1;
-                    if (bIndex === -1) return -1;
-                    return aIndex - bIndex;
-                });
-            } else {
-                // 默认按 SYSTEM_FIELDS.core 的顺序排序
-                const defaultOrder = SYSTEM_FIELDS.core;
-                result.sort((a, b) => {
-                    const aIndex = defaultOrder.indexOf(a.name);
-                    const bIndex = defaultOrder.indexOf(b.name);
-                    if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
-                    if (aIndex === -1) return 1;
-                    if (bIndex === -1) return -1;
-                    return aIndex - bIndex;
-                });
-            }
+            result.sort((a, b) => {
+                const aIndex = productFieldOrder.indexOf(a.name);
+                const bIndex = productFieldOrder.indexOf(b.name);
+                if (aIndex === -1 && bIndex === -1) return a.name.localeCompare(b.name);
+                if (aIndex === -1) return 1;
+                if (bIndex === -1) return -1;
+                return aIndex - bIndex;
+            });
             return result;
         }
 
