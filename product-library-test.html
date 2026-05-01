@@ -1058,7 +1058,7 @@
     <script>
         // ========== IndexedDB 数据库 ==========
         const DB_NAME = 'ProductLibraryDB';
-        const DB_VERSION = 1;
+        const DB_VERSION = 3;
         let db = null;
 
         // 初始化 IndexedDB
@@ -1080,7 +1080,6 @@
                 request.onupgradeneeded = (event) => {
                     const database = event.target.result;
 
-                    // 创建数据存储
                     if (!database.objectStoreNames.contains('products')) {
                         database.createObjectStore('products', { keyPath: 'id' });
                     }
@@ -1093,8 +1092,18 @@
                     if (!database.objectStoreNames.contains('settings')) {
                         database.createObjectStore('settings', { keyPath: 'key' });
                     }
+                    // V2/V3 新增 store（与提案系统共享）
+                    if (!database.objectStoreNames.contains('projects')) {
+                        database.createObjectStore('projects', { keyPath: 'id' });
+                    }
+                    if (!database.objectStoreNames.contains('proposals')) {
+                        database.createObjectStore('proposals', { keyPath: 'id' });
+                    }
+                    if (!database.objectStoreNames.contains('pptTemplates')) {
+                        database.createObjectStore('pptTemplates', { keyPath: 'id' });
+                    }
 
-                    console.log('IndexedDB 数据库结构创建完成');
+                    console.log('IndexedDB 数据库结构创建完成 (V3)');
                 };
             });
         }
