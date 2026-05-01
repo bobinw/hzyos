@@ -1019,7 +1019,7 @@
                         </div>
                     </div>
                     <div class="mt-4 p-3 bg-blue-50 rounded-lg text-xs text-blue-700">
-                        <strong>提示：</strong>数据使用 IndexedDB 自动保存，关闭页面后重新打开数据仍会保留。建议定期导出备份以防意外。
+                        <strong>提示：</strong>数据自动保存到云端服务器，建议定期导出备份以防意外。
                     </div>
                 </div>
             </div>
@@ -1289,7 +1289,7 @@
                     '产品图片', '详情图', '备注']
         };
 
-        // 异步加载数据（从 IndexedDB）
+        // 异步加载数据（从云端缓存）
         async function loadDataAsync() {
             try {
                 const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords, savedUserFilterConfig, savedUserColumnConfig] = await Promise.all([
@@ -1342,7 +1342,7 @@
             }
         }
 
-        // 异步保存数据（到 IndexedDB）
+        // 异步保存数据（到云端）
         async function saveDataAsync() {
             try {
                 // 转换模板对象为数组，并添加id属性
@@ -1394,19 +1394,6 @@
         // 显示保存失败警告
         function showStorageWarning() {
             alert('数据保存失败，请检查网络连接');
-        }
-
-        // 重置为默认数据
-                                📥 再次导出备份
-                            </button>
-                            <button onclick="document.getElementById('storage-warning-modal').remove()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">
-                                关闭
-                            </button>
-                        </div>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(modal);
         }
 
         // 获取存储使用情况
@@ -1736,7 +1723,7 @@
         // 异步初始化数据
         async function initData() {
             try {
-                // 先初始化 IndexedDB
+                // 先加载云端数据
                 await initDB();
 
                 // 加载数据
