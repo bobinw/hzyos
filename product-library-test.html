@@ -2711,6 +2711,9 @@
 
         // ========== 商品列表 ==========
         function renderList() {
+            // 刷新动态筛选选项（品牌、供应商、发货地、产地等）
+            initFilterOptions();
+
             // 获取所有筛选值
             const getFilterVal = (id) => document.getElementById(id)?.value || '';
             const filterMargin = getFilterVal('filterMargin');
