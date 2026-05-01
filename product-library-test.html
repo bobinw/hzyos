@@ -1378,7 +1378,7 @@
         // 异步加载数据（从 IndexedDB）
         async function loadDataAsync() {
             try {
-                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords] = await Promise.all([
+                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords, savedUserFilterConfig, savedUserColumnConfig] = await Promise.all([
                     loadFromDB('products'),
                     loadFromDB('suppliers'),
                     loadFromDB('templates'),
@@ -1391,7 +1391,9 @@
                     loadSettingFromDB('deletedSystemSupplierFields'),
                     loadSettingFromDB('productFieldOrder'),
                     loadSettingFromDB('supplierFieldOrder'),
-                    loadSettingFromDB('importRecords')
+                    loadSettingFromDB('importRecords'),
+                    loadSettingFromDB('userFilterConfig'),
+                    loadSettingFromDB('userColumnConfig')
                 ]);
 
                 // 转换模板数组为对象
@@ -1416,7 +1418,9 @@
                     deletedSystemSupplierFields: savedDeletedSupplierFields || [],
                     productFieldOrder: savedProductFieldOrder || [],
                     supplierFieldOrder: savedSupplierFieldOrder || [],
-                    importRecords: savedImportRecords || []
+                    importRecords: savedImportRecords || [],
+                    userFilterConfig: savedUserFilterConfig || null,
+                    userColumnConfig: savedUserColumnConfig || null
                 };
             } catch (e) {
                 console.error('加载数据失败:', e);
