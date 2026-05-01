@@ -1,0 +1,1705 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>智能团购方案系统</title>
+    <script src="libs/tailwind.min.js"></script>
+    <script src="libs/xlsx.full.min.js"></script>
+    <script src="libs/exceljs.min.js"></script>
+    <style>
+        .page { display: none; }
+        .page.active { display: block; }
+        .page-chat-container { display: flex; flex-direction: column; min-height: calc(100vh - 0px); }
+        .modal { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 50; align-items: center; justify-content: center; }
+        .modal.active { display: flex; }
+        .modal-content { background: white; border-radius: 12px; padding: 24px; position: relative; }
+        .w-lg { width: 600px; max-width: 90vw; }
+        .w-xl { width: 900px; max-width: 95vw; }
+        .chat-bubble { max-width: 80%; padding: 12px 16px; border-radius: 12px; margin-bottom: 8px; line-height: 1.6; }
+        .chat-ai { background: #f0f4ff; border-top-left-radius: 4px; }
+        .chat-user { background: #e8f5e9; margin-left: auto; border-top-right-radius: 4px; }
+        .proposal-card { transition: all 0.2s; }
+        .proposal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
+        .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+        .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen">
+    <div class="flex min-h-screen">
+        <!-- 侧边栏 -->
+        <div class="w-48 bg-white shadow flex-shrink-0 flex flex-col">
+            <div class="p-4 border-b">
+                <h1 class="font-bold text-lg">智能方案系统</h1>
+            </div>
+            <nav class="p-2 flex-1">
+                <a onclick="showPage('page-projects')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-projects">📋 项目列表</a>
+                <a onclick="showPage('page-templates')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-templates">📄 方案模板</a>
+                <a onclick="showPage('page-ai-settings')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-ai-settings">⚙️ AI设置</a>
+            </nav>
+            <div class="p-4 border-t text-xs text-gray-400">
+                商品库数据共享
+            </div>
+        </div>
+
+        <!-- 主内容区 -->
+        <div class="flex-1 overflow-auto">
+
+            <!-- 页面：项目列表 -->
+            <div id="page-projects" class="page active p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold">团购方案项目</h2>
+                    <button onclick="showNewProjectModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ 新建项目</button>
+                </div>
+
+                <!-- 统计卡片 -->
+                <div class="grid grid-cols-4 gap-4 mb-6" id="project-stats">
+                </div>
+
+                <!-- 项目列表 -->
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div id="projectList" class="space-y-3">
+                        <div class="text-center text-gray-400 py-12">暂无项目，点击"新建项目"开始</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 页面：新建项目（基础信息表单） -->
+            <div id="page-new-project" class="page p-6">
+                <div class="flex items-center gap-4 mb-6">
+                    <button onclick="showPage('page-projects')" class="text-gray-500 hover:text-gray-700">
+                        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                    </button>
+                    <h2 class="text-xl font-bold">新建项目</h2>
+                </div>
+                <div id="new-project-form"></div>
+            </div>
+
+            <!-- 页面：AI 对话 -->
+            <div id="page-chat" class="page" style="height:calc(100vh - 0px);">
+                <div class="flex flex-col h-full">
+                    <div class="flex items-center justify-between p-4 border-b bg-white flex-shrink-0">
+                        <div class="flex items-center gap-4">
+                            <button onclick="showPage('page-projects')" class="text-gray-500 hover:text-gray-700">
+                                <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+                            </button>
+                            <span class="font-medium" id="chat-project-name"></span>
+                            <span class="text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded" id="chat-status">对话中</span>
+                        </div>
+                        <button onclick="finishChat()" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">生成需求文档</button>
+                    </div>
+                    <div class="flex flex-1 overflow-hidden">
+                        <div class="flex-1 flex flex-col">
+                            <div class="flex-1 overflow-y-auto p-4 space-y-2" id="chat-messages"></div>
+                            <div class="border-t p-4 bg-white">
+                                <div class="flex gap-2">
+                                    <input type="text" id="chat-input" class="flex-1 border rounded-lg px-4 py-2 text-sm" placeholder="输入回复..." onkeydown="if(event.key==='Enter')sendChatMessage()">
+                                    <button onclick="sendChatMessage()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">发送</button>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="w-80 border-l bg-gray-50 p-4 overflow-y-auto" id="chat-summary-panel">
+                            <h4 class="text-sm font-medium mb-3">需求摘要</h4>
+                            <div id="chat-summary" class="text-xs text-gray-500">对话中逐步提取...</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 页面：需求确认 + 方案展示 -->
+            <div id="page-proposal-detail" class="page p-6">
+                <div id="proposal-detail-content"></div>
+            </div>
+
+            <!-- 页面：方案模板管理 -->
+            <div id="page-templates" class="page p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold">方案模板管理</h2>
+                    <div class="flex gap-2">
+                        <button onclick="importTemplateExcel()" class="border rounded-lg px-4 py-2 text-sm hover:bg-gray-50">📥 导入模板</button>
+                        <button onclick="createNewTemplate()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ 新建模板</button>
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-6">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="font-medium mb-4">模板列表</h3>
+                        <div id="template-list" class="space-y-2"></div>
+                    </div>
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="font-medium mb-4">模板编辑</h3>
+                        <div id="template-editor">
+                            <p class="text-gray-400 text-sm">请从左侧选择一个模板进行编辑</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 页面：AI 设置 -->
+            <div id="page-ai-settings" class="page p-6">
+                <h2 class="text-xl font-bold mb-6">AI 接口设置</h2>
+                <div class="max-w-2xl space-y-6">
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="font-medium mb-4">API 配置</h3>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">API 类型</label>
+                                <select id="ai-api-type" class="w-full border rounded px-3 py-2 text-sm" onchange="updateAISettingsForm()">
+                                    <option value="claude">Anthropic Claude API</option>
+                                    <option value="openai">OpenAI API</option>
+                                    <option value="custom">自定义 API</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">API Endpoint</label>
+                                <input type="text" id="ai-endpoint" class="w-full border rounded px-3 py-2 text-sm" placeholder="https://api.anthropic.com/v1/messages">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">API Key</label>
+                                <div class="flex gap-2">
+                                    <input type="password" id="ai-api-key" class="flex-1 border rounded px-3 py-2 text-sm" placeholder="sk-ant-... 或 sk-...">
+                                    <button onclick="toggleApiKeyVisibility()" class="px-3 py-2 border rounded text-sm hover:bg-gray-50" id="btn-toggle-key">👁</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">模型</label>
+                                <input type="text" id="ai-model" class="w-full border rounded px-3 py-2 text-sm" list="ai-model-list" placeholder="选择或输入模型名称">
+                                <datalist id="ai-model-list">
+                                    <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+                                    <option value="claude-opus-4-7">Claude Opus 4.7</option>
+                                    <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+                                    <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+                                    <option value="deepseek-chat">DeepSeek Chat</option>
+                                    <option value="gpt-4o">GPT-4o</option>
+                                    <option value="gpt-4o-mini">GPT-4o mini</option>
+                                </datalist>
+                            </div>
+                            <div class="grid grid-cols-2 gap-4">
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">Max Tokens</label>
+                                    <input type="number" id="ai-max-tokens" class="w-full border rounded px-3 py-2 text-sm" value="4096" min="256" max="128000">
+                                </div>
+                                <div>
+                                    <label class="block text-sm text-gray-500 mb-1">Temperature</label>
+                                    <input type="number" id="ai-temperature" class="w-full border rounded px-3 py-2 text-sm" value="0.7" min="0" max="2" step="0.1">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="font-medium mb-4">功能开关</h3>
+                        <div class="space-y-3">
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" id="ai-enable-chat" checked>
+                                <span class="text-sm">启用 AI 需求对话</span>
+                            </label>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" id="ai-enable-proposal" checked>
+                                <span class="text-sm">启用 AI 方案生成</span>
+                            </label>
+                            <label class="flex items-center gap-2">
+                                <input type="checkbox" id="ai-enable-bid" checked>
+                                <span class="text-sm">启用投标邀约 AI 分析</span>
+                            </label>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="font-medium mb-4">连接测试</h3>
+                        <div class="flex gap-2 items-center">
+                            <button onclick="testAIConnection()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">🔌 测试连接</button>
+                            <span id="ai-test-result" class="text-sm"></span>
+                        </div>
+                        <div id="ai-test-detail" class="mt-3 hidden p-3 bg-gray-50 rounded text-xs font-mono"></div>
+                    </div>
+
+                    <div class="flex justify-end gap-2">
+                        <button onclick="resetAISettings()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">恢复默认</button>
+                        <button onclick="saveAISettings()" class="px-6 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">保存设置</button>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+    </div>
+
+    <!-- 模态框：新建项目基础信息 -->
+    <div id="modal-new-project" class="modal">
+        <div class="modal-content w-xl max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">新建团购方案项目</h3>
+                <button onclick="closeModal('modal-new-project')" class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div id="modal-new-project-form"></div>
+        </div>
+    </div>
+
+    <!-- 模态框：方案详情 -->
+    <div id="modal-proposal" class="modal">
+        <div class="modal-content w-xl max-h-[85vh] overflow-y-auto" id="modal-proposal-content"></div>
+    </div>
+
+    <!-- 模态框：模板编辑 -->
+    <div id="modal-template-editor" class="modal">
+        <div class="modal-content w-xl max-h-[85vh] overflow-y-auto" id="modal-template-editor-content"></div>
+    </div>
+
+<script>
+// ========== IndexedDB 数据库（与商品库共享） ==========
+const DB_NAME = 'ProductLibraryDB';
+const DB_VERSION = 3;
+let db = null;
+
+// ========== 数据变量 ==========
+let products = [];
+let suppliers = [];
+let templates = {};           // 字段映射模板（来自商品库）
+let projects = [];
+let proposals = [];
+let proposalTemplates = [];  // 方案PPT模板
+let nextProjectId = 1;
+let nextProposalId = 1;
+let nextTemplateId = 1;
+
+// 当前编辑状态
+let currentProjectId = null;
+let currentEditingTemplateId = null;
+
+// ========== 数据库操作 ==========
+function initDB() {
+    return new Promise((resolve, reject) => {
+        const request = indexedDB.open(DB_NAME, DB_VERSION);
+        request.onerror = () => { console.error('DB打开失败:', request.error); reject(request.error); };
+        request.onsuccess = () => { db = request.result; console.log('方案系统DB连接成功'); resolve(db); };
+        request.onupgradeneeded = (event) => {
+            const database = event.target.result;
+            if (!database.objectStoreNames.contains('products')) database.createObjectStore('products', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('suppliers')) database.createObjectStore('suppliers', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('templates')) database.createObjectStore('templates', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('settings')) database.createObjectStore('settings', { keyPath: 'key' });
+            if (!database.objectStoreNames.contains('projects')) database.createObjectStore('projects', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('proposals')) database.createObjectStore('proposals', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('pptTemplates')) database.createObjectStore('pptTemplates', { keyPath: 'id' });
+            console.log('方案系统DB结构创建完成');
+        };
+    });
+}
+
+function saveToDB(storeName, data) {
+    return new Promise((resolve, reject) => {
+        if (!db) { reject('DB未初始化'); return; }
+        const tx = db.transaction([storeName], 'readwrite');
+        const store = tx.objectStore(storeName);
+        if (Array.isArray(data)) {
+            const cr = store.clear();
+            cr.onsuccess = () => {
+                const adds = data.map(item => new Promise((ra, rj) => {
+                    const req = store.add(item);
+                    req.onsuccess = () => ra(); req.onerror = () => rj(req.error);
+                }));
+                Promise.all(adds).then(() => resolve(adds.length)).catch(reject);
+            };
+            cr.onerror = () => reject(cr.error);
+        } else {
+            const req = store.put(data);
+            req.onsuccess = () => resolve(data); req.onerror = () => reject(req.error);
+        }
+    });
+}
+
+function loadFromDB(storeName) {
+    return new Promise((resolve, reject) => {
+        if (!db) { reject('DB未初始化'); return; }
+        const tx = db.transaction([storeName], 'readonly');
+        const store = tx.objectStore(storeName);
+        const req = store.getAll();
+        req.onsuccess = () => resolve(req.result || []);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function loadSetting(key) {
+    return new Promise((resolve, reject) => {
+        if (!db) { reject('DB未初始化'); return; }
+        const tx = db.transaction(['settings'], 'readonly');
+        const store = tx.objectStore('settings');
+        const req = store.get(key);
+        req.onsuccess = () => resolve(req.result ? req.result.value : null);
+        req.onerror = () => reject(req.error);
+    });
+}
+
+async function saveSetting(key, value) {
+    return new Promise((resolve, reject) => {
+        if (!db) { reject('DB未初始化'); return; }
+        const tx = db.transaction(['settings'], 'readwrite');
+        const store = tx.objectStore('settings');
+        const req = store.put({ key, value });
+        req.onsuccess = () => resolve(value); req.onerror = () => reject(req.error);
+    });
+}
+
+async function saveAllData() {
+    try {
+        const tmplArray = Object.values(templates).map(t => ({ ...t, id: t.supplierId }));
+        await Promise.all([
+            saveToDB('projects', projects),
+            saveToDB('proposals', proposals),
+            saveToDB('pptTemplates', proposalTemplates),
+            saveSetting('nextProjectId', nextProjectId),
+            saveSetting('nextProposalId', nextProposalId),
+            saveSetting('nextTemplateId', nextTemplateId)
+        ]);
+        console.log('方案数据保存成功');
+        return true;
+    } catch (e) {
+        console.error('保存失败:', e);
+        return false;
+    }
+}
+
+// ========== 辅助函数 ==========
+function showPage(pageId) {
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    const page = document.getElementById(pageId);
+    if (page) page.classList.add('active');
+    else { console.warn('Page not found:', pageId); return; }
+    // 更新导航高亮
+    document.querySelectorAll('nav a').forEach(a => a.classList.remove('bg-blue-50', 'text-blue-600'));
+    const navMap = { 'page-projects': 'nav-projects', 'page-templates': 'nav-templates', 'page-ai-settings': 'nav-ai-settings' };
+    if (navMap[pageId]) {
+        const nav = document.getElementById(navMap[pageId]);
+        if (nav) nav.classList.add('bg-blue-50', 'text-blue-600');
+    }
+    // 自动渲染
+    if (pageId === 'page-projects') renderProjectList();
+    if (pageId === 'page-templates') renderTemplateList();
+    if (pageId === 'page-ai-settings') showAISettingsForm();
+}
+
+function closeModal(id) { document.getElementById(id).classList.remove('active'); }
+function openModal(id) { document.getElementById(id).classList.add('active'); }
+
+function formatDate(d) { if (!d) return ''; return new Date(d).toISOString().split('T')[0]; }
+function formatMoney(n) { if (n === null || n === undefined || isNaN(n)) return '-'; return '¥' + Number(n).toFixed(2); }
+function today() { return new Date().toISOString().split('T')[0]; }
+
+// ========== 默认方案模板 ==========
+const DEFAULT_PPT_TEMPLATE = {
+    id: 'default',
+    name: '默认方案模板',
+    isDefault: true,
+    source: 'system',
+    slides: [
+        { type: 'cover', title: '封面页', layout: 'full', fields: ['projectName', 'customerCompany', 'date'] },
+        { type: 'content', title: '需求分析', layout: 'full', fields: ['requirementSummary'] },
+        { type: 'content', title: '方案概览', layout: 'top-bottom', fields: ['proposalName', 'tagline', 'productTable', 'price', 'budgetUtilization', 'rationale'] },
+        { type: 'product', title: '产品详情', layout: 'grid', fields: ['productImage', 'productName', 'productSpec', 'purchasePrice', 'retailPrice'] },
+        { type: 'summary', title: '价格汇总', layout: 'full', fields: ['priceTable', 'totalPrice', 'perPersonPrice'] },
+        { type: 'back', title: '封底', layout: 'full', fields: ['contactInfo'] }
+    ],
+    style: { primaryColor: '#1a56db', fontFamily: '微软雅黑', logoPosition: 'top-left', showPageNumber: true, watermark: '' },
+    createdAt: '', updatedAt: ''
+};
+
+// ========== 默认供应商模板（无实际作用，占位） ==========
+function getDefaultProposalTemplates() {
+    return [{ ...DEFAULT_PPT_TEMPLATE, createdAt: today(), updatedAt: today() }];
+}
+
+// ========== 初始化 ==========
+async function init() {
+    await initDB();
+    // 加载商品库数据（只读引用）
+    try {
+        products = await loadFromDB('products') || [];
+        suppliers = await loadFromDB('suppliers') || [];
+        const tmplData = await loadFromDB('templates') || [];
+        tmplData.forEach(t => { templates[t.supplierId || t.id] = t; });
+    } catch (e) { console.warn('加载商品库数据失败:', e); }
+    // 加载方案系统数据
+    projects = await loadFromDB('projects') || [];
+    proposals = await loadFromDB('proposals') || [];
+    proposalTemplates = await loadFromDB('pptTemplates') || [];
+    if (proposalTemplates.length === 0) proposalTemplates = getDefaultProposalTemplates();
+    nextProjectId = (await loadSetting('nextProjectId')) || 1;
+    nextProposalId = (await loadSetting('nextProposalId')) || 1;
+    nextTemplateId = (await loadSetting('nextTemplateId')) || 1;
+    renderProjectList();
+}
+
+// ========== 项目列表 ==========
+function getProjectStats() {
+    const total = projects.length;
+    const generated = projects.filter(p => ['generated', 'adjusted', 'confirmed'].includes(p.status)).length;
+    const confirmed = projects.filter(p => p.status === 'confirmed').length;
+    const inProgress = projects.filter(p => ['drafting', 'chatting', 'requirement_ready', 'generating'].includes(p.status)).length;
+    return { total, generated, confirmed, inProgress };
+}
+
+function renderProjectList() {
+    const stats = getProjectStats();
+    document.getElementById('project-stats').innerHTML = `
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-blue-600">${stats.total}</div><div class="text-sm text-gray-500">项目总数</div></div>
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-green-600">${stats.generated}</div><div class="text-sm text-gray-500">已生成方案</div></div>
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-purple-600">${stats.confirmed}</div><div class="text-sm text-gray-500">已确认</div></div>
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-orange-600">${stats.inProgress}</div><div class="text-sm text-gray-500">进行中</div></div>
+    `;
+
+    const statusLabels = { drafting: '草稿', chatting: '对话中', requirement_ready: '需求已确认', generating: '生成中', generated: '方案已生成', adjusted: '已调整', confirmed: '已确认' };
+    const statusColors = { drafting: 'bg-gray-100 text-gray-600', chatting: 'bg-blue-100 text-blue-600', requirement_ready: 'bg-green-100 text-green-600', generating: 'bg-yellow-100 text-yellow-600', generated: 'bg-indigo-100 text-indigo-600', adjusted: 'bg-purple-100 text-purple-600', confirmed: 'bg-green-200 text-green-800' };
+
+    if (projects.length === 0) {
+        document.getElementById('projectList').innerHTML = '<div class="text-center text-gray-400 py-12">暂无项目，点击"新建项目"开始</div>';
+        return;
+    }
+
+    document.getElementById('projectList').innerHTML = projects.sort((a, b) => b.id - a.id).map(p => {
+        const proposalCount = proposals.filter(pp => pp.projectId === p.id).length;
+        return `
+        <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer" onclick="openProject(${p.id})">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                        <h3 class="font-medium">${p.name}</h3>
+                        <span class="tag ${statusColors[p.status] || ''}">${statusLabels[p.status] || p.status}</span>
+                    </div>
+                    <div class="flex gap-4 text-sm text-gray-500">
+                        <span>🏢 ${p.customerCompany || '-'}</span>
+                        <span>👥 ${p.peopleCount || 0}人</span>
+                        <span>💰 人均${formatMoney(p.budgetPerPerson)}</span>
+                        <span>📅 交付: ${p.deadline || '-'}</span>
+                        ${p.targetMargin ? `<span>📊 毛利率≥${p.targetMargin}%</span>` : ''}
+                    </div>
+                    ${p.structuredRequirement ? `<div class="mt-2 text-xs text-gray-400 line-clamp-2">${p.structuredRequirement.substring(0, 120)}...</div>` : ''}
+                </div>
+                <div class="text-right ml-4">
+                    <div class="text-lg font-bold text-blue-600">${proposalCount}</div>
+                    <div class="text-xs text-gray-400">方案数</div>
+                </div>
+            </div>
+        </div>
+    `}).join('');
+}
+
+// ========== 新建项目表单 ==========
+function showNewProjectModal() {
+    const formHTML = `
+    <form onsubmit="event.preventDefault(); startProjectChat();" class="space-y-4">
+        <!-- 客户画像 -->
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">客户画像</h4>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">企业性质 <span class="text-red-500">*</span></label>
+                    <select id="np-companyType" class="w-full border rounded px-3 py-2 text-sm" required>
+                        <option value="">请选择</option>
+                        <option>国企</option><option>央企</option><option>外企</option><option>民企</option>
+                        <option>上市公司</option><option>事业单位</option><option>政府机关</option><option>其他</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">公司规模 <span class="text-red-500">*</span></label>
+                    <select id="np-companySize" class="w-full border rounded px-3 py-2 text-sm" required>
+                        <option value="">请选择</option>
+                        <option>50人以下</option><option>50-200人</option><option>200-500人</option>
+                        <option>500-2000人</option><option>2000人以上</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">所在地区 <span class="text-red-500">*</span></label>
+                    <input type="text" id="np-region" class="w-full border rounded px-3 py-2 text-sm" placeholder="省份+城市" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">所属行业</label>
+                    <select id="np-industry" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">请选择</option>
+                        <option>互联网/科技</option><option>制造业</option><option>金融</option>
+                        <option>医疗</option><option>教育</option><option>地产</option><option>零售</option><option>其他</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- 项目基础 -->
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">项目基础</h4>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">项目名称 <span class="text-red-500">*</span></label>
+                    <input type="text" id="np-name" class="w-full border rounded px-3 py-2 text-sm" placeholder="如"XX公司2026春节福利"" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">客户公司</label>
+                    <input type="text" id="np-customerCompany" class="w-full border rounded px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">客户联系人</label>
+                    <input type="text" id="np-customerContact" class="w-full border rounded px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">预计人数 <span class="text-red-500">*</span></label>
+                    <input type="number" id="np-peopleCount" class="w-full border rounded px-3 py-2 text-sm" min="1" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">人均预算(元) <span class="text-red-500">*</span></label>
+                    <input type="number" id="np-budgetPerPerson" class="w-full border rounded px-3 py-2 text-sm" min="1" step="0.01" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">交付日期 <span class="text-red-500">*</span></label>
+                    <input type="date" id="np-deadline" class="w-full border rounded px-3 py-2 text-sm" required>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">履约周期(天)</label>
+                    <input type="number" id="np-fulfillmentDays" class="w-full border rounded px-3 py-2 text-sm" placeholder="下单到交付完成天数" min="1">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">方案毛利率要求(%)</label>
+                    <input type="number" id="np-targetMargin" class="w-full border rounded px-3 py-2 text-sm" placeholder="如20" min="0" max="100">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">初步场景</label>
+                    <select id="np-initialScene" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">请选择</option>
+                        <option>春节福利</option><option>中秋福利</option><option>员工生日</option>
+                        <option>年会奖品</option><option>客户送礼</option><option>开业伴手礼</option>
+                        <option>投标邀约</option><option>其他</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">紧急程度</label>
+                    <select id="np-urgency" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="正常">正常</option><option value="加急">加急（一周内）</option><option value="紧急">紧急（3天内）</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- 采购执行 -->
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">采购执行</h4>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">采购模式</label>
+                    <select id="np-purchaseMode" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option>
+                        <option>集采统一配送</option><option>员工自选兑换</option><option>混合模式</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">员工分档</label>
+                    <select id="np-employeeTiers" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option>
+                        <option>全员统一</option><option>按层级分档</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">配送方式</label>
+                    <select id="np-deliveryMode" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option>
+                        <option>单一地址（公司）</option><option>多地配送</option><option>配送到家</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">付款方式</label>
+                    <select id="np-paymentTerms" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option>
+                        <option>预付</option><option>货到付款</option><option>月结</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">是否需要定制</label>
+                    <select id="np-needCustomization" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option>
+                        <option>Logo定制</option><option>包装定制</option><option>不需要</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">是否需要样品</label>
+                    <select id="np-needSample" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option><option>需要先寄样</option><option>不需要</option>
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500 mb-1">发票要求</label>
+                    <div class="flex gap-4">
+                        <label class="text-sm"><input type="checkbox" id="np-invoice-special"> 增值税专票</label>
+                        <label class="text-sm"><input type="checkbox" id="np-invoice-normal"> 普票</label>
+                        <label class="text-sm"><input type="checkbox" id="np-invoice-tax" checked> 含税</label>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 历史与参照 -->
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">历史与参照</h4>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">往年福利</label>
+                    <textarea id="np-previousWelfare" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="之前做过什么？预算？"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">员工反馈</label>
+                    <textarea id="np-employeeFeedback" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="上次福利员工的反馈"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">竞品参照</label>
+                    <input type="text" id="np-competitorRef" class="w-full border rounded px-3 py-2 text-sm" placeholder="客户提到的参照公司或方案">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">决策人</label>
+                    <select id="np-decisionMaker" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option>
+                        <option>工会</option><option>HR</option><option>采购部</option><option>老板</option>
+                    </select>
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500 mb-1">方案用途</label>
+                    <select id="np-proposalUsage" class="w-full border rounded px-3 py-2 text-sm">
+                        <option value="">未定</option>
+                        <option>精美方案书（给客户看）</option><option>内部快速决策</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+
+        <!-- 投标邀约 -->
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">投标邀约</h4>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">是否有招标文件</label>
+                    <select id="np-hasBidDoc" class="w-full border rounded px-3 py-2 text-sm" onchange="toggleBidFields()">
+                        <option value="否">否</option><option value="是">是</option>
+                    </select>
+                </div>
+                <div id="bid-row-deadline" style="display:none">
+                    <label class="block text-xs text-gray-500 mb-1">投标截止日期</label>
+                    <input type="date" id="np-bidDeadline" class="w-full border rounded px-3 py-2 text-sm">
+                </div>
+                <div id="bid-row-scoring" style="display:none" class="col-span-2">
+                    <label class="block text-xs text-gray-500 mb-1">评分标准</label>
+                    <textarea id="np-bidScoring" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="价格分/技术分/商务分权重"></textarea>
+                </div>
+                <div id="bid-row-qual" style="display:none" class="col-span-2">
+                    <label class="block text-xs text-gray-500 mb-1">资质要求</label>
+                    <textarea id="np-bidQualifications" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="需要的资质证书、业绩案例等"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <!-- 特殊要求 -->
+        <div>
+            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">特殊要求</h4>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">禁忌/规避</label>
+                    <textarea id="np-taboos" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="如清真、素食、避免特定品牌等"></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">关键词标签</label>
+                    <input type="text" id="np-initialTags" class="w-full border rounded px-3 py-2 text-sm" placeholder="逗号分隔：如实用,品牌,礼盒">
+                </div>
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500 mb-1">其他备注</label>
+                    <textarea id="np-notes" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="其他补充信息"></textarea>
+                </div>
+            </div>
+        </div>
+
+        <div class="flex justify-end gap-2 pt-4 border-t">
+            <button type="button" onclick="closeModal('modal-new-project')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+            <button type="button" onclick="saveProjectDraft()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">保存草稿</button>
+            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">开始 AI 需求对话</button>
+        </div>
+    </form>`;
+    document.getElementById('modal-new-project-form').innerHTML = formHTML;
+    openModal('modal-new-project');
+    // 默认履约周期
+    document.getElementById('np-fulfillmentDays').value = 14;
+}
+
+// ========== 保存项目草稿 / 开始对话 ==========
+function toggleBidFields() {
+    const show = document.getElementById('np-hasBidDoc')?.value === '是';
+    const display = show ? 'block' : 'none';
+    ['bid-row-deadline', 'bid-row-scoring', 'bid-row-qual'].forEach(id => {
+        const el = document.getElementById(id);
+        if (el) el.style.display = display;
+    });
+}
+
+function collectProjectForm() {
+    const getVal = id => document.getElementById(id)?.value?.trim() || '';
+    const invoiceTypes = [];
+    if (document.getElementById('np-invoice-special')?.checked) invoiceTypes.push('专票');
+    if (document.getElementById('np-invoice-normal')?.checked) invoiceTypes.push('普票');
+    if (document.getElementById('np-invoice-tax')?.checked) invoiceTypes.push('含税');
+    const hasBid = getVal('np-hasBidDoc') === '是';
+
+    return {
+        id: nextProjectId,
+        name: getVal('np-name'),
+        customerCompany: getVal('np-customerCompany'),
+        customerContact: getVal('np-customerContact'),
+        companyType: getVal('np-companyType'),
+        companySize: getVal('np-companySize'),
+        region: getVal('np-region'),
+        industry: getVal('np-industry'),
+        purchaseMode: getVal('np-purchaseMode'),
+        employeeTiers: getVal('np-employeeTiers'),
+        deliveryMode: getVal('np-deliveryMode'),
+        invoiceType: invoiceTypes,
+        paymentTerms: getVal('np-paymentTerms'),
+        needCustomization: getVal('np-needCustomization'),
+        needSample: getVal('np-needSample'),
+        previousWelfare: getVal('np-previousWelfare'),
+        employeeFeedback: getVal('np-employeeFeedback'),
+        competitorRef: getVal('np-competitorRef'),
+        decisionMaker: getVal('np-decisionMaker'),
+        proposalUsage: getVal('np-proposalUsage'),
+        taboos: getVal('np-taboos'),
+        urgency: getVal('np-urgency') || '正常',
+        peopleCount: parseInt(getVal('np-peopleCount')) || 0,
+        budgetPerPerson: parseFloat(getVal('np-budgetPerPerson')) || 0,
+        deadline: getVal('np-deadline'),
+        fulfillmentDays: parseInt(getVal('np-fulfillmentDays')) || 14,
+        targetMargin: parseFloat(getVal('np-targetMargin')) || 0,
+        initialScene: getVal('np-initialScene'),
+        initialTags: getVal('np-initialTags').split(/[,，]/).filter(Boolean),
+        notes: getVal('np-notes'),
+        hasBidDoc: getVal('np-hasBidDoc') === '是',
+        bidDeadline: getVal('np-bidDeadline'),
+        bidScoring: getVal('np-bidScoring'),
+        bidQualifications: getVal('np-bidQualifications'),
+        conversation: [],
+        structuredRequirement: '',
+        constraints: [],
+        proposalCount: 6,
+        status: 'drafting',
+        templateId: 'default',
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+    };
+}
+
+async function saveProjectDraft() {
+    const project = collectProjectForm();
+    if (!project.name) { alert('请输入项目名称'); return; }
+    projects.push(project);
+    nextProjectId++;
+    await saveAllData();
+    closeModal('modal-new-project');
+    renderProjectList();
+}
+
+async function startProjectChat() {
+    const project = collectProjectForm();
+    if (!project.name || !project.companyType || !project.companySize || !project.region || !project.peopleCount || !project.budgetPerPerson || !project.deadline) {
+        alert('请填写所有必填字段（标*的）');
+        return;
+    }
+    project.status = 'chatting';
+    projects.push(project);
+    currentProjectId = project.id;
+    nextProjectId++;
+    await saveAllData();
+    closeModal('modal-new-project');
+    startChatSession(project);
+}
+
+// ========== AI 对话 ==========
+function startChatSession(project) {
+    showPage('page-chat');
+    document.getElementById('chat-project-name').textContent = project.name;
+    document.getElementById('chat-messages').innerHTML = '';
+    document.getElementById('chat-summary').innerHTML = '<span class="text-gray-400">对话开始后逐步提取...</span>';
+
+    // 构建初始上下文
+    const contextParts = [];
+    contextParts.push(`${project.companyType}，${project.companySize}，${project.region}`);
+    if (project.industry) contextParts.push(`${project.industry}行业`);
+    contextParts.push(`${project.peopleCount}人，人均预算${project.budgetPerPerson}元`);
+    if (project.initialScene) contextParts.push(`${project.initialScene}场景`);
+    if (project.urgency !== '正常') contextParts.push(`紧急程度：${project.urgency}`);
+    if (project.initialTags.length > 0) contextParts.push(`标签：${project.initialTags.join('、')}`);
+
+    const firstMessage = `你好！我是团购需求顾问。根据你提供的初步信息，我来帮你梳理一下：
+
+你这是一个**${project.name}**项目，客户是${project.companyType}企业，规模${project.companySize}，位于${project.region}。
+
+${project.peopleCount}人，人均预算${formatMoney(project.budgetPerPerson)}，${project.deadline ? '预计' + project.deadline + '前交付' : ''}。${project.initialScene ? '属于' + project.initialScene + '场景。' : ''}
+
+${project.urgency === '紧急' ? '这个项目时间很紧，我会优先考虑现货产品。' : ''}
+${project.urgency === '加急' ? '时间比较紧，我会倾向于备货周期短的产品。' : ''}
+
+我们先从用户画像开始：**这批福利的最终用户大概是什么年龄层？男女比例怎么样？**`;
+
+    addChatMessage('ai', firstMessage);
+    updateChatSummary(project);
+}
+
+function addChatMessage(role, content) {
+    // 保存到项目对话记录
+    const project = findProject(currentProjectId);
+    if (project) {
+        if (!project.conversation) project.conversation = [];
+        project.conversation.push({ role, content, time: new Date().toISOString() });
+        project.updatedAt = new Date().toISOString();
+        saveAllData().catch(() => {}); // 异步保存，不阻塞
+    }
+
+    const div = document.createElement('div');
+    div.className = `chat-bubble ${role === 'ai' ? 'chat-ai' : 'chat-user'}`;
+    div.innerHTML = `<div class="text-xs ${role === 'ai' ? 'text-blue-500' : 'text-green-500'} mb-1">${role === 'ai' ? '🤖 AI顾问' : '👤 我'}</div><div class="text-sm">${content.replace(/\n/g, '<br>')}</div>`;
+    document.getElementById('chat-messages').appendChild(div);
+    div.scrollIntoView({ behavior: 'smooth' });
+}
+
+function sendChatMessage() {
+    const input = document.getElementById('chat-input');
+    const msg = input.value.trim();
+    if (!msg) return;
+    addChatMessage('user', msg);
+    input.value = '';
+
+    // 模拟 AI 回复
+    setTimeout(() => {
+        const aiReplies = [
+            '明白了。那这批福利的**使用场景**是怎样的？是统一配送到公司发放，还是员工自己在家兑换？',
+            '了解了。对于**品类偏好**，客户有没有明确的方向？比如食品礼盒、日用品、还是小家电？',
+            '好的。那在**品牌认知**方面，客户是比较认全国大牌，还是地方特产也接受？',
+            '清楚。对**包装**有什么期望吗？要精美的礼盒装，还是简约实用就行？',
+            '关于**物流配送**，需要支持一件代发吗？还是统一集采配送到公司就可以？',
+            '从客户角度来看，他们是希望"看起来值这个钱"（面子型），还是"实际成本划算"（里子型）？',
+            '之前这个客户做过类似福利吗？效果怎么样？有没有什么教训要吸取的？',
+            '好的，我基本了解情况了。需求已经比较清晰，**可以点击右上角的"生成需求文档"了**。还有需要补充的吗？'
+        ];
+
+        // 简单轮询模拟
+        const chatMessages = document.querySelectorAll('#chat-messages .chat-user');
+        const msgCount = chatMessages.length;
+        const reply = aiReplies[Math.min(msgCount - 1, aiReplies.length - 1)];
+        addChatMessage('ai', reply);
+
+        // 更新摘要
+        const project = findProject(currentProjectId);
+        if (project) updateChatSummary(project);
+    }, 800 + Math.random() * 600);
+}
+
+function findProject(id) {
+    return projects.find(p => p.id === id);
+}
+
+function updateChatSummary(project) {
+    const chatMessages = document.querySelectorAll('#chat-messages .chat-user');
+    const userReplies = Array.from(chatMessages).map(el => el.textContent);
+
+    // 简单关键词提取
+    const ageKeywords = ['岁', '年龄', '中年', '青年', '老年', '年轻'];
+    const genderKeywords = ['男', '女', '男女'];
+    const styleKeywords = ['实用', '品质', '精致', '简约', '新潮', '文化', '国潮', '颜值'];
+    const categoryKeywords = ['食品', '日用品', '家电', '小家电', '家纺', '个护', '文创', '卡券'];
+    const packageKeywords = ['礼盒', '包装', '精装', '简装'];
+
+    let summaryHTML = '';
+    const allText = userReplies.join(' ');
+
+    // 用户画像
+    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">👥 用户画像</div>';
+    if (ageKeywords.some(k => allText.includes(k))) summaryHTML += '<div class="text-green-600">✓ 年龄段已提及</div>';
+    else summaryHTML += '<div class="text-orange-500">⚠ 年龄待确认</div>';
+    if (genderKeywords.some(k => allText.includes(k))) summaryHTML += '<div class="text-green-600">✓ 性别已提及</div>';
+    else summaryHTML += '<div class="text-orange-500">⚠ 性别待确认</div>';
+    summaryHTML += '</div>';
+
+    // 风格
+    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">🏷 风格</div>';
+    const matchedStyles = styleKeywords.filter(k => allText.includes(k));
+    if (matchedStyles.length > 0) summaryHTML += `<div class="text-green-600">✓ ${matchedStyles.join('、')}</div>`;
+    else summaryHTML += '<div class="text-gray-400">待确认</div>';
+    summaryHTML += '</div>';
+
+    // 品类
+    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">📦 品类</div>';
+    const matchedCats = categoryKeywords.filter(k => allText.includes(k));
+    if (matchedCats.length > 0) summaryHTML += `<div class="text-green-600">✓ ${matchedCats.join('、')}</div>`;
+    else summaryHTML += '<div class="text-gray-400">待确认</div>';
+    summaryHTML += '</div>';
+
+    // 包装
+    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">🎁 包装</div>';
+    const matchedPkg = packageKeywords.filter(k => allText.includes(k));
+    if (matchedPkg.length > 0) summaryHTML += `<div class="text-green-600">✓ ${matchedPkg.join('、')}</div>`;
+    else summaryHTML += '<div class="text-gray-400">待确认</div>';
+    summaryHTML += '</div>';
+
+    // 已回复轮数
+    summaryHTML += `<div class="text-xs text-gray-400 pt-2 border-t">已对话 ${userReplies.length} 轮</div>`;
+
+    document.getElementById('chat-summary').innerHTML = summaryHTML;
+}
+
+async function finishChat() {
+    const project = findProject(currentProjectId);
+    if (!project) return;
+
+    // 从对话记录中提取用户回复
+    const userReplies = (project.conversation || [])
+        .filter(m => m.role === 'user')
+        .map(m => m.content);
+    const allText = userReplies.join('\n');
+
+    project.structuredRequirement = generateStructuredRequirement(project, allText);
+    project.status = 'requirement_ready';
+    project.updatedAt = new Date().toISOString();
+
+    // 更新项目
+    const idx = projects.findIndex(p => p.id === project.id);
+    if (idx >= 0) projects[idx] = project;
+    await saveAllData();
+
+    // 跳转到需求确认页
+    showRequirementConfirm(project);
+}
+
+function generateStructuredRequirement(project, chatText) {
+    const sceneText = project.initialScene || '员工福利';
+    const companyDesc = `${project.companyType}企业，${project.companySize}，位于${project.region}${project.industry ? '，' + project.industry + '行业' : ''}`;
+
+    return `【需求概述】
+${project.name}，${project.peopleCount}人，人均预算${formatMoney(project.budgetPerPerson)}，${project.deadline ? '预计' + project.deadline + '前交付' : ''}。${project.purchaseMode ? '采购模式：' + project.purchaseMode + '。' : ''}
+
+【客户画像】
+${companyDesc}
+${project.decisionMaker ? '决策人：' + project.decisionMaker + '。' : ''}
+
+【场景定位】
+${sceneText}场景${project.deliveryMode ? '，' + project.deliveryMode : ''}。
+${project.urgency === '正常' ? '时间充裕，可按正常流程推进。' : project.urgency === '加急' ? '时间较紧，优先现货和短备货周期产品。' : '时间非常紧张，必须现货且快速配送。'}
+
+【品类方向】
+${project.initialTags.length > 0 ? '基于标签偏好：' + project.initialTags.join('、') : '待从对话中提取'}
+
+【风格要求】
+待从对话中提取
+
+【约束条件】
+${project.targetMargin ? '- 方案整体毛利率 ≥ ' + project.targetMargin + '%\n' : ''}${project.fulfillmentDays ? '- 履约周期 ≤ ' + project.fulfillmentDays + '天\n' : ''}- 需从商品库中选品，严格满足约束
+
+【客户零散描述】
+${chatText.substring(0, 300) || '（对话中收集）'}${chatText.length > 300 ? '...' : ''}
+
+【待确认项】
+${project.taboos ? '禁忌/规避：' + project.taboos : '无特殊禁忌'}`;
+}
+
+// ========== 需求确认页 ==========
+function showRequirementConfirm(project) {
+    showPage('page-proposal-detail');
+    const proposalsForProject = proposals.filter(p => p.projectId === project.id);
+
+    let html = `
+    <div class="flex items-center gap-4 mb-6">
+        <button onclick="renderProjectList(); showPage('page-projects')" class="text-gray-500 hover:text-gray-700">
+            <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
+        </button>
+        <h2 class="text-xl font-bold">${project.name}</h2>
+        <span class="tag bg-blue-100 text-blue-600">需求已确认</span>
+    </div>
+
+    <!-- 需求文档 -->
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-medium">结构化需求文档</h3>
+            <button onclick="editRequirement(${project.id})" class="text-blue-600 text-sm hover:underline">✏️ 编辑</button>
+        </div>
+        <div class="bg-gray-50 rounded-lg p-4 text-sm whitespace-pre-wrap leading-relaxed" id="req-doc-${project.id}">${project.structuredRequirement}</div>
+    </div>
+
+    <!-- 生成参数 -->
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <h3 class="font-medium mb-4">方案生成设置</h3>
+        <div class="flex flex-wrap gap-4 items-end">
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">生成方案数量</label>
+                <input type="number" id="gen-proposalCount" class="border rounded px-3 py-2 text-sm w-24" value="${project.proposalCount || 6}" min="1" max="20">
+            </div>
+            <button onclick="generateProposals(${project.id})" class="px-6 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">🤖 生成方案</button>
+        </div>
+        <div id="gen-constraints" class="mt-4">
+            <div class="text-xs text-gray-500 mb-2">字段约束（可选）</div>
+            <div id="constraint-rows-${project.id}">
+                ${(project.constraints || []).map((c, i) => `
+                <div class="flex gap-2 mb-2 items-center">
+                    <select class="border rounded px-2 py-1 text-xs" onchange="this.parentElement.querySelector('.c-val').dataset.field=this.value">
+                        <option value="">选择字段</option>
+                        <option value="毛利率" ${c.field==='毛利率'?'selected':''}>毛利率</option>
+                        <option value="品牌级别" ${c.field==='品牌级别'?'selected':''}>品牌级别</option>
+                        <option value="一件代发" ${c.field==='一件代发'?'selected':''}>一件代发</option>
+                        <option value="供应商合作度" ${c.field==='供应商合作度'?'selected':''}>供应商合作度</option>
+                        <option value="库存类型" ${c.field==='库存类型'?'selected':''}>库存类型</option>
+                        <option value="备货周期" ${c.field==='备货周期'?'selected':''}>备货周期</option>
+                        <option value="产品条码" ${c.field==='产品条码'?'selected':''}>产品条码</option>
+                        <option value="发货地" ${c.field==='发货地'?'selected':''}>发货地</option>
+                        <option value="含税" ${c.field==='含税'?'selected':''}>含税</option>
+                    </select>
+                    <select class="border rounded px-2 py-1 text-xs">
+                        <option value="≥" ${c.operator==='≥'?'selected':''}>≥</option>
+                        <option value="≤" ${c.operator==='≤'?'selected':''}>≤</option>
+                        <option value="必须" ${c.operator==='必须'?'selected':''}>必须</option>
+                        <option value="排除" ${c.operator==='排除'?'selected':''}>排除</option>
+                    </select>
+                    <input type="text" class="c-val border rounded px-2 py-1 text-xs w-32" value="${c.value||''}" placeholder="值">
+                    <button onclick="this.parentElement.remove()" class="text-red-500 text-xs">×</button>
+                </div>`).join('')}
+            </div>
+            <button onclick="addConstraintRow(${project.id})" class="text-blue-600 text-xs hover:underline mt-1">+ 添加约束</button>
+        </div>
+    </div>
+
+    <!-- 方案列表 -->
+    <div class="bg-white rounded-lg shadow p-6">
+        <h3 class="font-medium mb-4">方案列表 <span class="text-sm text-gray-400">(${proposalsForProject.length} 个)</span></h3>
+        <div class="grid grid-cols-3 gap-4" id="proposal-grid-${project.id}">
+            ${proposalsForProject.length === 0 ? '<div class="col-span-3 text-center text-gray-400 py-8">点击"生成方案"开始</div>' : ''}
+        </div>
+    </div>`;
+
+    document.getElementById('proposal-detail-content').innerHTML = html;
+    if (proposalsForProject.length > 0) renderProposalCards(project.id);
+}
+
+async function editRequirement(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+    const newReq = prompt('编辑需求文档：', project.structuredRequirement);
+    if (newReq !== null) {
+        project.structuredRequirement = newReq;
+        project.updatedAt = new Date().toISOString();
+        await saveAllData();
+        showRequirementConfirm(project);
+    }
+}
+
+function addConstraintRow(projectId) {
+    const container = document.getElementById(`constraint-rows-${projectId}`);
+    const row = document.createElement('div');
+    row.className = 'flex gap-2 mb-2 items-center';
+    row.innerHTML = `
+        <select class="border rounded px-2 py-1 text-xs">
+            <option value="">选择字段</option>
+            <option>毛利率</option><option>品牌级别</option><option>一件代发</option>
+            <option>供应商合作度</option><option>库存类型</option><option>备货周期</option>
+            <option>产品条码</option><option>发货地</option><option>含税</option>
+        </select>
+        <select class="border rounded px-2 py-1 text-xs">
+            <option>≥</option><option>≤</option><option>必须</option><option>排除</option>
+        </select>
+        <input type="text" class="border rounded px-2 py-1 text-xs w-32" placeholder="值">
+        <button onclick="this.parentElement.remove()" class="text-red-500 text-xs">×</button>`;
+    container.appendChild(row);
+}
+
+// ========== 方案生成 ==========
+async function generateProposals(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+    if (products.length === 0) { alert('商品库为空，请先在商品库中导入商品数据'); return; }
+
+    // 收集约束
+    const constraintRows = document.querySelectorAll(`#constraint-rows-${projectId} .flex`);
+    project.constraints = [];
+    constraintRows.forEach(row => {
+        const field = row.querySelector('select').value;
+        const operator = row.querySelectorAll('select')[1].value;
+        const value = row.querySelector('input').value.trim();
+        if (field && value) project.constraints.push({ field, operator, value });
+    });
+
+    const count = parseInt(document.getElementById('gen-proposalCount')?.value) || 6;
+    project.proposalCount = count;
+    project.status = 'generating';
+    project.updatedAt = new Date().toISOString();
+    await saveAllData();
+
+    // 显示加载
+    document.getElementById(`proposal-grid-${projectId}`).innerHTML = `
+        <div class="col-span-3 text-center py-8">
+            <div class="animate-spin text-4xl mb-4">🤖</div>
+            <div class="text-gray-500">AI 正在分析商品库并生成方案...</div>
+            <div class="text-xs text-gray-400 mt-2">已筛选 ${products.length} 个商品，正在组合最优方案</div>
+        </div>`;
+
+    // 模拟 AI 生成
+    setTimeout(async () => {
+        await mockGenerateProposals(project, count);
+        project.status = 'generated';
+        project.updatedAt = new Date().toISOString();
+        await saveAllData();
+        showRequirementConfirm(project);
+    }, 2000);
+}
+
+async function mockGenerateProposals(project, count) {
+    // 预筛选商品
+    let candidates = [...products];
+    // 价格区间
+    if (project.budgetPerPerson) {
+        const lo = project.budgetPerPerson * 0.5;
+        const hi = project.budgetPerPerson * 1.3;
+        candidates = candidates.filter(p => p.purchasePrice >= lo && p.purchasePrice <= hi);
+    }
+    if (candidates.length === 0) candidates = [...products]; // fallback
+
+    // 约束筛选
+    project.constraints.forEach(c => {
+        if (c.field === '品牌级别' && c.operator === '必须') {
+            candidates = candidates.filter(p => p.brandLevel === c.value);
+        }
+        if (c.field === '一件代发' && c.operator === '必须') {
+            candidates = candidates.filter(p => p.normalExpressPrice && p.normalExpressPrice > 0);
+        }
+        if (c.field === '库存类型' && c.operator === '必须') {
+            candidates = candidates.filter(p => p.stockType === c.value);
+        }
+        if (c.field === '毛利率' && c.operator === '≥') {
+            const minMargin = parseFloat(c.value) || 0;
+            candidates = candidates.filter(p => {
+                if (!p.retailPrice || !p.purchasePrice) return false;
+                return ((p.retailPrice - p.purchasePrice) / p.retailPrice * 100) >= minMargin;
+            });
+        }
+    });
+
+    if (candidates.length < 3) candidates = [...products].slice(0, 20);
+
+    // 删除旧方案
+    proposals = proposals.filter(p => p.projectId !== project.id);
+
+    const themes = ['品质生活', '实用主义', '国潮文化', '健康养生', '简约时尚', '混搭精选', '轻奢体验', '商务大气', '新潮有趣', '经典传承'];
+    const taglines = [
+        '品质之选，彰显企业关怀', '实用搭配，性价比首选', '国风雅韵，文化自信',
+        '健康生活，关爱员工', '简约不凡，细节之美', '精选组合，面面俱到',
+        '轻奢体验，尊享品质', '商务典范，气度不凡', '新潮好物，年轻活力'
+    ];
+
+    for (let i = 0; i < count; i++) {
+        // 随机选 2-4 个产品
+        const productCount = 2 + Math.floor(Math.random() * 3);
+        const shuffled = [...candidates].sort(() => Math.random() - 0.5);
+        const selected = shuffled.slice(0, productCount);
+
+        const proposalProducts = selected.map(p => {
+            const quantity = 1;
+            const quotePrice = p.purchasePrice * (1 + (0.2 + Math.random() * 0.3)); // 加价 20-50%
+            const margin = ((quotePrice - p.purchasePrice) / quotePrice * 100).toFixed(1);
+            return {
+                productId: p.id, sku: p.sku, name: p.name, supplier: p.supplierId,
+                brand: p.brand, brandLevel: p.brandLevel || '',
+                purchasePrice: p.purchasePrice, quotePrice: Math.round(quotePrice * 100) / 100,
+                margin: margin + '%', image: p.mainImage || '', quantity, subtotal: Math.round(quotePrice * 100) / 100
+            };
+        });
+
+        const totalPerPerson = proposalProducts.reduce((s, p) => s + p.quotePrice, 0);
+        const totalCost = proposalProducts.reduce((s, p) => s + p.purchasePrice, 0);
+        const overallMargin = totalPerPerson > 0 ? ((totalPerPerson - totalCost) / totalPerPerson * 100).toFixed(1) : 0;
+        const budgetUtil = project.budgetPerPerson > 0 ? (totalPerPerson / project.budgetPerPerson * 100).toFixed(0) : 0;
+        const maxLeadTime = Math.max(...selected.map(p => {
+            const lt = (p.leadTime || '0天').replace('天', '');
+            return parseInt(lt) || 0;
+        }));
+        const canFulfill = !project.fulfillmentDays || maxLeadTime <= project.fulfillmentDays;
+
+        proposals.push({
+            id: nextProposalId++,
+            projectId: project.id,
+            index: i + 1,
+            name: `方案${i + 1}：${themes[i % themes.length]}组合`,
+            tagline: taglines[i % taglines.length],
+            theme: themes[i % themes.length],
+            products: proposalProducts,
+            totalPerPerson: Math.round(totalPerPerson * 100) / 100,
+            totalPrice: Math.round(totalPerPerson * project.peopleCount * 100) / 100,
+            totalCost: Math.round(totalCost * 100) / 100,
+            overallMargin: parseFloat(overallMargin),
+            budgetUtilization: parseInt(budgetUtil),
+            maxLeadTime,
+            canFulfill,
+            aiRationale: `基于${project.name}的需求，${project.companyType}企业${project.companySize}，人均预算${project.budgetPerPerson}元。本方案聚焦${themes[i % themes.length]}方向，选择了${proposalProducts.map(p => p.brand + p.name.replace(/礼盒|套装/g, '')).join(' + ')}的组合，总价${formatMoney(totalPerPerson)}/人，预算利用率${budgetUtil}%。${canFulfill ? '在履约周期内可交付。' : '注意：部分产品备货周期较长。'}`,
+            isManualEdited: false, manualChanges: '',
+            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+        });
+    }
+    await saveAllData();
+}
+
+function renderProposalCards(projectId) {
+    const proposalsForProject = proposals.filter(p => p.projectId === projectId);
+    const grid = document.getElementById(`proposal-grid-${projectId}`);
+    if (!grid) return;
+
+    if (proposalsForProject.length === 0) {
+        grid.innerHTML = '<div class="col-span-3 text-center text-gray-400 py-8">点击"生成方案"开始</div>';
+        return;
+    }
+
+    grid.innerHTML = proposalsForProject.map(pp => {
+        const marginColor = pp.overallMargin >= (findProject(projectId)?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
+        return `
+        <div class="proposal-card border rounded-lg p-4 hover:shadow-lg cursor-pointer bg-white" onclick="viewProposal(${pp.id})">
+            <div class="flex justify-between items-start mb-2">
+                <span class="text-xs text-gray-400">#${pp.index}</span>
+                <span class="tag bg-purple-100 text-purple-700">${pp.theme}</span>
+            </div>
+            <h4 class="font-medium text-sm mb-1">${pp.name}</h4>
+            <p class="text-xs text-gray-500 mb-3">${pp.tagline}</p>
+            <div class="space-y-1 mb-3">
+                ${pp.products.map(p => `
+                <div class="flex items-center gap-2 text-xs">
+                    ${p.image ? `<img src="${p.image}" class="w-8 h-8 rounded object-cover" onerror="this.style.display='none'">` : '<div class="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">图</div>'}
+                    <span class="flex-1 truncate">${p.brand ? p.brand + ' ' : ''}${p.name}</span>
+                    <span class="text-gray-400">${formatMoney(p.quotePrice)}</span>
+                </div>`).join('')}
+            </div>
+            <div class="border-t pt-2 space-y-1 text-xs">
+                <div class="flex justify-between"><span class="text-gray-400">人均价</span><span class="font-medium">${formatMoney(pp.totalPerPerson)}</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">预算利用率</span><span>${pp.budgetUtilization}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">毛利率</span><span class="${marginColor} font-medium">${pp.overallMargin}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">履约</span>
+                    ${pp.canFulfill ? '<span class="text-green-600">✓ 可交付</span>' : '<span class="text-red-500">⚠ ' + pp.maxLeadTime + '天</span>'}
+                </div>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+// ========== 方案详情弹窗 ==========
+function viewProposal(proposalId) {
+    const pp = proposals.find(p => p.id === proposalId);
+    if (!pp) return;
+    const project = findProject(pp.projectId);
+    const marginColor = pp.overallMargin >= (project?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
+
+    document.getElementById('modal-proposal-content').innerHTML = `
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h3 class="text-lg font-bold">${pp.name}</h3>
+                <p class="text-sm text-gray-500">${pp.tagline}</p>
+            </div>
+            <button onclick="closeModal('modal-proposal')" class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div class="space-y-4">
+            <div class="grid grid-cols-4 gap-3 text-center">
+                <div class="bg-blue-50 rounded-lg p-3"><div class="text-lg font-bold text-blue-600">${formatMoney(pp.totalPerPerson)}</div><div class="text-xs text-gray-500">人均报价</div></div>
+                <div class="bg-green-50 rounded-lg p-3"><div class="text-lg font-bold text-green-600">${pp.budgetUtilization}%</div><div class="text-xs text-gray-500">预算利用率</div></div>
+                <div class="bg-purple-50 rounded-lg p-3"><div class="text-lg font-bold ${marginColor}">${pp.overallMargin}%</div><div class="text-xs text-gray-500">方案毛利率</div></div>
+                <div class="bg-orange-50 rounded-lg p-3"><div class="text-lg font-bold ${pp.canFulfill ? 'text-green-600' : 'text-red-500'}">${pp.canFulfill ? '✓' : pp.maxLeadTime + '天'}</div><div class="text-xs text-gray-500">履约状态</div></div>
+            </div>
+
+            <div>
+                <h4 class="font-medium mb-2">产品明细</h4>
+                <table class="w-full text-sm border">
+                    <thead class="bg-gray-50"><tr>
+                        <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-right">集采成本</th><th class="px-3 py-2 text-right">客户报价</th><th class="px-3 py-2 text-right">单品毛利率</th><th class="px-3 py-2 text-right">小计</th>
+                    </tr></thead>
+                    <tbody>
+                    ${pp.products.map(p => `
+                        <tr class="border-t">
+                            <td class="px-3 py-2 flex items-center gap-2">
+                                ${p.image ? `<img src="${p.image}" class="w-10 h-10 rounded object-cover" onerror="this.style.display='none'">` : ''}
+                                <span>${p.name}</span>
+                            </td>
+                            <td class="px-3 py-2">${p.brand || '-'}</td>
+                            <td class="px-3 py-2 text-right">${formatMoney(p.purchasePrice)}</td>
+                            <td class="px-3 py-2 text-right">${formatMoney(p.quotePrice)}</td>
+                            <td class="px-3 py-2 text-right">${p.margin}</td>
+                            <td class="px-3 py-2 text-right">${formatMoney(p.subtotal)}</td>
+                        </tr>
+                    `).join('')}
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="bg-gray-50 rounded-lg p-4">
+                <h4 class="font-medium mb-2 text-sm">AI 推荐理由</h4>
+                <p class="text-sm text-gray-600">${pp.aiRationale}</p>
+            </div>
+
+            <div class="flex justify-end gap-2 pt-4 border-t">
+                <button onclick="closeModal('modal-proposal')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">关闭</button>
+                <button onclick="exportProposalPPT(${pp.id})" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">📥 导出PPT</button>
+            </div>
+        </div>`;
+    openModal('modal-proposal');
+}
+
+// ========== 项目详情页入口 ==========
+function openProject(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+
+    if (project.status === 'chatting') {
+        currentProjectId = projectId;
+        showPage('page-chat');
+        document.getElementById('chat-project-name').textContent = project.name;
+        document.getElementById('chat-status').textContent = '对话中';
+        // 恢复对话历史
+        document.getElementById('chat-messages').innerHTML = '';
+        if (project.conversation && project.conversation.length > 0) {
+            project.conversation.forEach(msg => addChatMessage(msg.role, msg.content));
+        }
+        updateChatSummary(project);
+    } else if (['requirement_ready', 'generating', 'generated', 'adjusted', 'confirmed'].includes(project.status)) {
+        showRequirementConfirm(project);
+    } else {
+        // draft - 继续编辑
+        showNewProjectModal();
+    }
+}
+
+// ========== 方案模板管理 ==========
+function renderTemplateList() {
+    if (proposalTemplates.length === 0) proposalTemplates = getDefaultProposalTemplates();
+
+    document.getElementById('template-list').innerHTML = proposalTemplates.map(t => `
+        <div onclick="editTemplate('${t.id}')" class="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${t.isDefault ? 'border-blue-200 bg-blue-50' : ''}">
+            <div class="flex justify-between items-center">
+                <span class="font-medium text-sm">${t.name}</span>
+                ${t.isDefault ? '<span class="text-blue-600 text-xs">默认</span>' : ''}
+            </div>
+            <div class="text-xs text-gray-400 mt-1">${t.slides.length} 页 · ${t.source === 'system' ? '系统内置' : t.source === 'imported' ? '已导入' : '自定义'}</div>
+        </div>
+    `).join('');
+}
+
+function editTemplate(templateId) {
+    const t = proposalTemplates.find(tp => tp.id === templateId);
+    if (!t) return;
+    currentEditingTemplateId = templateId;
+
+    document.getElementById('template-editor').innerHTML = `
+        <div class="mb-4">
+            <div class="flex justify-between">
+                <h4 class="font-medium">${t.name}</h4>
+                <span class="text-xs text-gray-400">${t.source === 'system' ? '系统默认模板' : '自定义模板'}</span>
+            </div>
+            <div class="mt-3 space-y-3">
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">模板名称</label>
+                    <input type="text" id="tmpl-name" class="w-full border rounded px-3 py-2 text-sm" value="${t.name}">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">主题色</label>
+                    <input type="color" id="tmpl-color" value="${t.style.primaryColor}" class="w-16 h-8 border rounded">
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">字体</label>
+                    <select id="tmpl-font" class="w-full border rounded px-3 py-2 text-sm">
+                        <option ${t.style.fontFamily === '微软雅黑' ? 'selected' : ''}>微软雅黑</option>
+                        <option ${t.style.fontFamily === '宋体' ? 'selected' : ''}>宋体</option>
+                        <option ${t.style.fontFamily === '黑体' ? 'selected' : ''}>黑体</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs text-gray-500 mb-1">水印文字（可选）</label>
+                    <input type="text" id="tmpl-watermark" class="w-full border rounded px-3 py-2 text-sm" value="${t.style.watermark || ''}" placeholder="如：方案草稿、机密">
+                </div>
+                <div class="flex items-center gap-2">
+                    <input type="checkbox" id="tmpl-pagenum" ${t.style.showPageNumber ? 'checked' : ''}>
+                    <label class="text-sm">显示页码</label>
+                </div>
+                <h5 class="text-sm font-medium mt-4">页面结构</h5>
+                <div id="tmpl-slides" class="space-y-2 max-h-60 overflow-y-auto">
+                    ${t.slides.map((s, i) => `
+                    <div class="flex items-center gap-2 border rounded p-2 text-xs">
+                        <span class="text-gray-400 w-6">${i + 1}.</span>
+                        <select class="border rounded px-2 py-1 flex-1">
+                            <option ${s.type === 'cover' ? 'selected' : ''} value="cover">封面页</option>
+                            <option ${s.type === 'content' ? 'selected' : ''} value="content">内容页</option>
+                            <option ${s.type === 'product' ? 'selected' : ''} value="product">产品详情页</option>
+                            <option ${s.type === 'summary' ? 'selected' : ''} value="summary">价格汇总页</option>
+                            <option ${s.type === 'back' ? 'selected' : ''} value="back">封底</option>
+                        </select>
+                        <input type="text" class="border rounded px-2 py-1 flex-1" value="${s.title}" placeholder="页标题">
+                        <button onclick="this.parentElement.remove()" class="text-red-500">×</button>
+                    </div>`).join('')}
+                </div>
+                <button onclick="addTemplateSlide()" class="text-blue-600 text-xs hover:underline">+ 添加页面</button>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-4 border-t">
+            <button onclick="saveTemplateConfig()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存模板</button>
+        </div>`;
+}
+
+function addTemplateSlide() {
+    const container = document.getElementById('tmpl-slides');
+    const idx = container.children.length + 1;
+    const div = document.createElement('div');
+    div.className = 'flex items-center gap-2 border rounded p-2 text-xs';
+    div.innerHTML = `
+        <span class="text-gray-400 w-6">${idx}.</span>
+        <select class="border rounded px-2 py-1 flex-1">
+            <option value="cover">封面页</option><option value="content">内容页</option>
+            <option value="product">产品详情页</option><option value="summary">价格汇总页</option>
+            <option value="back">封底</option>
+        </select>
+        <input type="text" class="border rounded px-2 py-1 flex-1" value="新页面" placeholder="页标题">
+        <button onclick="this.parentElement.remove()" class="text-red-500">×</button>`;
+    container.appendChild(div);
+}
+
+async function saveTemplateConfig() {
+    const t = proposalTemplates.find(tp => tp.id === currentEditingTemplateId);
+    if (!t) return;
+
+    t.name = document.getElementById('tmpl-name')?.value || t.name;
+    t.style.primaryColor = document.getElementById('tmpl-color')?.value || t.style.primaryColor;
+    t.style.fontFamily = document.getElementById('tmpl-font')?.value || t.style.fontFamily;
+    t.style.watermark = document.getElementById('tmpl-watermark')?.value || '';
+    t.style.showPageNumber = document.getElementById('tmpl-pagenum')?.checked || false;
+    t.updatedAt = new Date().toISOString();
+
+    // 收集页面
+    const slideDivs = document.querySelectorAll('#tmpl-slides > div');
+    t.slides = [];
+    slideDivs.forEach(div => {
+        const type = div.querySelector('select').value;
+        const title = div.querySelector('input').value;
+        t.slides.push({ type, title, layout: type === 'product' ? 'grid' : 'full', fields: [] });
+    });
+
+    // 如果修改了默认模板，保存为自定义副本
+    if (t.isDefault && t.source === 'system') {
+        t.isDefault = false;
+        t.source = 'custom';
+        t.id = 'tpl_' + Date.now();
+        t.name = t.name + '（自定义）';
+    }
+
+    await saveAllData();
+    alert('模板已保存');
+    renderTemplateList();
+}
+
+function createNewTemplate() {
+    const newTpl = {
+        id: 'tpl_' + Date.now(),
+        name: '新建模板',
+        isDefault: false,
+        source: 'custom',
+        slides: [
+            { type: 'cover', title: '封面页', layout: 'full', fields: [] },
+            { type: 'content', title: '方案概览', layout: 'full', fields: [] },
+            { type: 'product', title: '产品详情', layout: 'grid', fields: [] },
+            { type: 'summary', title: '价格汇总', layout: 'full', fields: [] },
+            { type: 'back', title: '封底', layout: 'full', fields: [] }
+        ],
+        style: { primaryColor: '#1a56db', fontFamily: '微软雅黑', logoPosition: 'top-left', showPageNumber: true, watermark: '' },
+        createdAt: today(), updatedAt: today()
+    };
+    proposalTemplates.push(newTpl);
+    renderTemplateList();
+    editTemplate(newTpl.id);
+}
+
+function importTemplateExcel() {
+    // 创建文件上传弹窗
+    const input = document.createElement('input');
+    input.type = 'file';
+    input.accept = '.xlsx,.xls,.pptx';
+    input.onchange = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        // 简单版本：读取 Excel 结构的模板配置
+        // 完整版需要解析 PPT 文件结构，这里先用 Excel 配置模板
+        try {
+            const buffer = await file.arrayBuffer();
+            const workbook = XLSX.read(buffer, { type: 'array' });
+            const sheet = workbook.Sheets[workbook.SheetNames[0]];
+            const rows = XLSX.utils.sheet_to_json(sheet);
+
+            if (rows.length === 0) { alert('模板文件为空'); return; }
+
+            const newTpl = {
+                id: 'tpl_' + Date.now(),
+                name: file.name.replace(/\.(xlsx|xls)$/, ''),
+                isDefault: false,
+                source: 'imported',
+                slides: rows.map((r, i) => ({
+                    type: r['页面类型'] || r['type'] || 'content',
+                    title: r['页标题'] || r['title'] || `第${i + 1}页`,
+                    layout: r['布局'] || r['layout'] || 'full',
+                    fields: (r['字段'] || r['fields'] || '').split(/[,，]/).filter(Boolean)
+                })),
+                style: { primaryColor: '#1a56db', fontFamily: '微软雅黑', logoPosition: 'top-left', showPageNumber: true, watermark: '' },
+                createdAt: today(), updatedAt: today()
+            };
+
+            proposalTemplates.push(newTpl);
+            await saveAllData();
+            renderTemplateList();
+            editTemplate(newTpl.id);
+            alert(`已导入模板"${newTpl.name}"，共 ${newTpl.slides.length} 页`);
+        } catch (e) {
+            console.error('导入模板失败:', e);
+            alert('导入失败：' + e.message);
+        }
+    };
+    input.click();
+}
+
+// ========== PPT 导出（placeholder） ==========
+function exportProposalPPT(proposalId) {
+    alert('PPT 导出功能需要在引入 PptxGenJS 后实现。\n当前可查看方案详情。');
+    // TODO: 集成 PptxGenJS 后实现真实导出
+}
+
+// ========== AI 设置 ==========
+let aiSettings = {
+    apiType: 'claude', endpoint: 'https://api.anthropic.com/v1/messages', apiKey: '',
+    model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.7,
+    enableChat: true, enableProposal: true, enableBid: true
+};
+
+async function loadAISettings() {
+    try {
+        const saved = await loadSetting('aiSettings');
+        if (saved) aiSettings = { ...aiSettings, ...saved };
+    } catch (e) { /* use defaults */ }
+}
+
+function updateAISettingsForm() {
+    const type = document.getElementById('ai-api-type')?.value;
+    const endpointEl = document.getElementById('ai-endpoint');
+    if (!endpointEl) return;
+    const modelList = document.getElementById('ai-model-list');
+
+    if (type === 'claude') {
+        endpointEl.value = 'https://api.anthropic.com/v1/messages';
+        if (modelList) modelList.innerHTML = `
+            <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
+            <option value="claude-opus-4-7">Claude Opus 4.7</option>
+            <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
+            <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
+            <option value="deepseek-chat">DeepSeek Chat</option>`;
+    } else if (type === 'openai') {
+        endpointEl.value = 'https://api.openai.com/v1/chat/completions';
+        if (modelList) modelList.innerHTML = `
+            <option value="gpt-4o">GPT-4o</option>
+            <option value="gpt-4o-mini">GPT-4o mini</option>
+            <option value="gpt-4.1">GPT-4.1</option>`;
+    } else {
+        endpointEl.value = '';
+        if (modelList) modelList.innerHTML = '<option value="">手动输入模型名</option>';
+    }
+}
+
+function toggleApiKeyVisibility() {
+    const input = document.getElementById('ai-api-key');
+    if (input.type === 'password') { input.type = 'text'; document.getElementById('btn-toggle-key').textContent = '🙈'; }
+    else { input.type = 'password'; document.getElementById('btn-toggle-key').textContent = '👁'; }
+}
+
+function showAISettingsForm() {
+    document.getElementById('ai-api-type').value = aiSettings.apiType;
+    document.getElementById('ai-endpoint').value = aiSettings.endpoint;
+    document.getElementById('ai-api-key').value = aiSettings.apiKey;
+    document.getElementById('ai-model').value = aiSettings.model;
+    document.getElementById('ai-max-tokens').value = aiSettings.maxTokens;
+    document.getElementById('ai-temperature').value = aiSettings.temperature;
+    document.getElementById('ai-enable-chat').checked = aiSettings.enableChat;
+    document.getElementById('ai-enable-proposal').checked = aiSettings.enableProposal;
+    document.getElementById('ai-enable-bid').checked = aiSettings.enableBid;
+}
+
+async function saveAISettings() {
+    aiSettings.apiType = document.getElementById('ai-api-type')?.value || aiSettings.apiType;
+    aiSettings.endpoint = document.getElementById('ai-endpoint')?.value || aiSettings.endpoint;
+    aiSettings.apiKey = document.getElementById('ai-api-key')?.value || aiSettings.apiKey;
+    aiSettings.model = document.getElementById('ai-model')?.value || aiSettings.model;
+    aiSettings.maxTokens = parseInt(document.getElementById('ai-max-tokens')?.value) || 4096;
+    aiSettings.temperature = parseFloat(document.getElementById('ai-temperature')?.value) || 0.7;
+    aiSettings.enableChat = document.getElementById('ai-enable-chat')?.checked || false;
+    aiSettings.enableProposal = document.getElementById('ai-enable-proposal')?.checked || false;
+    aiSettings.enableBid = document.getElementById('ai-enable-bid')?.checked || false;
+    await saveSetting('aiSettings', aiSettings);
+    alert('AI 设置已保存');
+}
+
+function resetAISettings() {
+    aiSettings = { apiType: 'claude', endpoint: 'https://api.anthropic.com/v1/messages', apiKey: '', model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.7, enableChat: true, enableProposal: true, enableBid: true };
+    showAISettingsForm();
+}
+
+async function testAIConnection() {
+    const resultEl = document.getElementById('ai-test-result');
+    const detailEl = document.getElementById('ai-test-detail');
+    resultEl.textContent = '测试中...';
+    resultEl.className = 'text-sm text-blue-600';
+    detailEl.classList.add('hidden');
+
+    // 先从表单读取最新值
+    const apiKey = document.getElementById('ai-api-key')?.value?.trim() || aiSettings.apiKey;
+    const endpoint = document.getElementById('ai-endpoint')?.value?.trim() || aiSettings.endpoint;
+    const apiType = document.getElementById('ai-api-type')?.value || aiSettings.apiType;
+    const model = document.getElementById('ai-model')?.value || aiSettings.model;
+
+    try {
+        if (!apiKey) {
+            resultEl.textContent = '❌ 请先填写 API Key';
+            resultEl.className = 'text-sm text-red-500';
+            return;
+        }
+
+        const body = apiType === 'openai' ? {
+            model: model,
+            messages: [{ role: 'user', content: 'Hello' }],
+            max_tokens: 10
+        } : {
+            model: model,
+            max_tokens: 10,
+            messages: [{ role: 'user', content: 'Hello' }]
+        };
+
+        const headers = apiType === 'openai'
+            ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
+            : { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+
+        const resp = await fetch(endpoint, {
+            method: 'POST', headers, body: JSON.stringify(body)
+        });
+
+        if (resp.ok) {
+            resultEl.textContent = '✅ 连接成功';
+            resultEl.className = 'text-sm text-green-600';
+            detailEl.classList.remove('hidden');
+            detailEl.textContent = JSON.stringify(await resp.json(), null, 2);
+        } else {
+            const errText = await resp.text();
+            resultEl.textContent = `❌ 连接失败 (${resp.status})`;
+            resultEl.className = 'text-sm text-red-500';
+            detailEl.classList.remove('hidden');
+            detailEl.textContent = errText.substring(0, 500);
+        }
+    } catch (e) {
+        resultEl.textContent = '❌ 网络错误：' + e.message;
+        resultEl.className = 'text-sm text-red-500';
+    }
+}
+
+// ========== 启动 ==========
+async function boot() {
+    await init();              // 先初始化 DB
+    await loadAISettings();    // 再加载 AI 设置
+    showAISettingsForm();      // 如果当前在设置页，填充表单
+}
+boot();
+</script>
+</body>
+</html>
