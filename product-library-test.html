@@ -6916,10 +6916,10 @@
             alert(msg);
 
             // 记录导入信息
-            const sheetNames = window.excelData?.rowIndexToSheet
+            const sheetNames = window.excelData?.rowIndexToSheet?.length
                 ? [...new Set(window.excelData.rowIndexToSheet.filter(Boolean))]
-                : ['单工作表'];
-            const sheetNameStr = sheetNames.join(', ');
+                : (window.multiSheetContext?.activeSheet || window.excelData?.sheetName || '单工作表');
+            const sheetNameStr = Array.isArray(sheetNames) ? sheetNames.join(', ') : sheetNames;
 
             addImportRecord(
                 pendingFileName || '手动输入',
