@@ -6174,6 +6174,7 @@
         }
 
         function renderMappingPreview(headers, mappings) {
+            const allFields = getAllProductFields();
             document.getElementById('mappingPreview').innerHTML = `
                 <table class="w-full text-xs">
                     <thead><tr class="text-gray-500 border-b">
@@ -6190,7 +6191,8 @@
                                 <td class="py-1"><code class="bg-gray-100 px-1 rounded">${hStr}</code></td>
                                 <td class="py-1">
                                     <select class="border rounded px-1 py-0.5 w-32" onchange="updateMapping(${idx}, this.value)">
-                                        ${ALL_FIELDS.map(f => `<option value="${f}" ${mapping === f ? 'selected' : ''}>${f}</option>`).join('')}
+                                        <option value="(忽略)">(忽略)</option>
+                                        ${allFields.map(f => `<option value="${f.name}" ${mapping === f.name ? 'selected' : ''}>${f.name}</option>`).join('')}
                                     </select>
                                 </td>
                                 <td class="py-1">
