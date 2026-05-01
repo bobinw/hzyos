@@ -170,7 +170,7 @@
                             <label class="block text-sm text-gray-600 mb-1">价格类型</label>
                             <select id="batch-price-type" class="w-full border rounded-lg px-3 py-2">
                                 <option value="purchasePrice">集采价</option>
-                                <option value="retailPrice">标准零售价</option>
+                                <option value="retailPrice">零售价</option>
                                 <option value="normalExpressPrice">一件代发价</option>
                                 <option value="jdSfExpressPrice">京东/顺丰代发价</option>
                             </select>
@@ -1115,19 +1115,23 @@
                     // 先清空再批量添加
                     const clearRequest = store.clear();
                     clearRequest.onsuccess = () => {
-                        let added = 0;
+                        const addPromises = [];
                         data.forEach(item => {
                             // 确保item有id属性
                             if (item && (item.id !== undefined || item.key !== undefined)) {
                                 try {
-                                    store.add(item);
-                                    added++;
+                                    addPromises.push(new Promise((resolveAdd, rejectAdd) => {
+                                        const addReq = store.add(item);
+                                        addReq.onsuccess = () => resolveAdd();
+                                        addReq.onerror = () => rejectAdd(addReq.error);
+                                    }));
                                 } catch (e) {
                                     console.warn('添加数据失败:', e, item);
                                 }
                             }
                         });
-                        resolve(added);
+                        // 等待所有 add 完成后再 resolve
+                        Promise.all(addPromises).then(() => resolve(addPromises.length)).catch(reject);
                     };
                     clearRequest.onerror = () => reject(clearRequest.error);
                 } else {
@@ -1193,7 +1197,7 @@
 
         // 系统标准字段
         const SYSTEM_FIELDS = {
-            core: ['供应商ID', '供应商SKU', '商品名称', '分类', '单位', '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量', '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码', '集采价', '标准零售价', '集采毛利率', '含税标识', '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价', '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司', '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期', '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价', '产品图片', '详情图', '备注'],
+            core: ['供应商ID', '供应商SKU', '商品名称', '分类', '单位', '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量', '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码', '集采价', '零售价', '渠道价', '团购价', '集采毛利率', '含税标识', '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价', '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司', '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期', '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价', '产品图片', '详情图', '备注'],
             spec: [],
             product: [],
             price: [],
@@ -1224,7 +1228,7 @@
             '供应商', '供应商ID', '供应商SKU', '商品名称', '分类', '单位',
             '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
             '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
-            '集采价', '标准零售价', '集采毛利率', '含税标识',
+            '集采价', '零售价', '渠道价', '团购价', '集采毛利率', '含税标识',
             '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价',
             '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司',
             '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期',
@@ -1305,7 +1309,7 @@
                     '单价': '集采价',
                     '产品条码': '产品条码',
                     '箱规': '箱规',
-                    '零售价': '标准零售价',
+                    '零售价': '零售价',
                     '京东价': '京东价'
                 }
             },
@@ -1318,7 +1322,7 @@
                     '批发价': '渠道价',
                     'EAN码': '产品条码',
                     '装箱数': '箱规',
-                    '建议零售': '标准零售价'
+                    '建议零售': '零售价'
                 }
             },
             'sanshisongsu': {
@@ -1330,7 +1334,7 @@
                     '供货价': '集采价',
                     '条形码': '产品条码',
                     '箱入数': '箱规',
-                    '市场价': '标准零售价'
+                    '市场价': '零售价'
                 }
             }
         };
@@ -1362,13 +1366,13 @@
         // 所有可选字段（按分类）
         const SELECTABLE_FIELDS = {
             core: ['供应商SKU', '商品名称', '分类', '单位'],
-            spec: ['产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '整箱重量'],
-            price: ['集采价', '标准零售价', '含税标识', '一件代发价', '京东/顺丰代发价'],
+            spec: ['产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量'],
+            price: ['集采价', '零售价', '渠道价', '团购价', '含税标识', '一件代发价', '一件代发运费', '京东/顺丰代发价'],
             other: ['品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
                     '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司',
                     '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期',
                     '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价',
-                    '产品图片', '详情图']
+                    '产品图片', '详情图', '备注']
         };
 
         // 异步加载数据（从 IndexedDB）
@@ -2366,7 +2370,7 @@
                 '供应商', '供应商ID', '供应商SKU', '商品名称', '分类', '单位',
                 '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
                 '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
-                '集采价', '标准零售价', '集采毛利率', '含税标识',
+                '集采价', '零售价', '集采毛利率', '含税标识',
                 '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价',
                 '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司',
                 '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期',
@@ -2411,7 +2415,9 @@
                     '是否有机': p.isOrganic ? '是' : '否',
                     '税收编码': p.taxCode || '',
                     '集采价': p.purchasePrice || '',
-                    '标准零售价': p.retailPrice || '',
+                    '零售价': p.retailPrice || '',
+                    '渠道价': p.channelPrice || '',
+                    '团购价': p.groupPrice || '',
                     '集采毛利率': calculateMargin(p.retailPrice, p.purchasePrice),
                     '含税标识': p.taxIncluded ? '含税' : '不含税',
                     '一件代发价': p.normalExpressPrice || '',
@@ -3336,8 +3342,16 @@
                             <input type="number" id="edit-purchasePrice" value="${p.purchasePrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">标准零售价</label>
+                            <label class="block text-sm text-gray-600 mb-1">零售价</label>
                             <input type="number" id="edit-retailPrice" value="${p.retailPrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">渠道价</label>
+                            <input type="number" id="edit-channelPrice" value="${p.channelPrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">团购价</label>
+                            <input type="number" id="edit-groupPrice" value="${p.groupPrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                         </div>
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">一件代发价</label>
@@ -3444,6 +3458,8 @@
             p.origin = document.getElementById('edit-origin').value;
             p.purchasePrice = document.getElementById('edit-purchasePrice').value;
             p.retailPrice = document.getElementById('edit-retailPrice').value;
+            p.channelPrice = document.getElementById('edit-channelPrice').value;
+            p.groupPrice = document.getElementById('edit-groupPrice').value;
             p.normalExpressPrice = document.getElementById('edit-normalExpressPrice').value;
             p.dropshipFreight = document.getElementById('edit-dropshipFreight').value;
             p.jdSfExpressPrice = document.getElementById('edit-jdSfExpressPrice').value;
@@ -3921,7 +3937,9 @@
                         <h4 class="font-medium text-green-700 mb-2">价格体系</h4>
                         <div class="grid grid-cols-3 gap-2">
                             <div><span class="text-gray-500">集采价：</span><span class="text-green-600 font-bold">¥${p.purchasePrice || '-'}</span></div>
-                            <div><span class="text-gray-500">标准零售价：</span>¥${p.retailPrice || '-'}</div>
+                            <div><span class="text-gray-500">零售价：</span>¥${p.retailPrice || '-'}</div>
+                            <div><span class="text-gray-500">渠道价：</span>¥${p.channelPrice || '-'}</div>
+                            <div><span class="text-gray-500">团购价：</span>¥${p.groupPrice || '-'}</div>
                             <div><span class="text-gray-500">集采毛利率：</span><span class="font-medium ${getMarginColor(parseFloat(calculateMargin(p.retailPrice, p.purchasePrice)))}">${calculateMargin(p.retailPrice, p.purchasePrice) || '-'}</span></div>
                             <div><span class="text-gray-500">含税：</span>${p.taxIncluded ? '是' : '否'}</div>
                             <div><span class="text-gray-500">一件代发价：</span>¥${p.normalExpressPrice || '-'}</div>
@@ -4728,7 +4746,7 @@
         }
 
         // 保存sheet映射模板
-        function saveSheetMapping(sheetName) {
+        async function saveSheetMapping(sheetName) {
             const supplierId = document.getElementById('singleSheetSupplier').value.trim();
             if (!supplierId) {
                 alert('请先选择供应商');
@@ -4750,7 +4768,7 @@
                 updatedAt: new Date().toISOString()
             };
 
-            saveData();
+            await saveDataAsync();
             alert(`已保存供应商「${supplierId}」的映射模板（${Object.keys(mappings).length}个字段）`);
         }
 
@@ -4976,7 +4994,12 @@
                             isOrganic: false,
                             isExclusive: false,
                             mainImage: '',
-                            detailImages: ''
+                            detailImages: '',
+                            grossWeight: 0,
+                            dropshipFreight: 0,
+                            channelPrice: 0,
+                            groupPrice: 0,
+                            remark: ''
                         };
 
                         Object.keys(fieldToIndex).forEach(field => {
@@ -6063,7 +6086,9 @@
 
             // 价格体系
             if (h.includes('集采价') || h.includes('采购价') || h.includes('进货价')) return '集采价';
-            if (h.includes('零售价') || h.includes('市场价') || h.includes('指导价') || h.includes('建议零售')) return '标准零售价';
+            if (h.includes('渠道价')) return '渠道价';
+            if (h.includes('团购价')) return '团购价';
+            if (h.includes('零售价') || h.includes('市场价') || h.includes('指导价') || h.includes('建议零售')) return '零售价';
             if (h.includes('含税')) return '含税标识';
             if (h.includes('一件代发') || h.includes('一份代发') || h.includes('代发价')) return '一件代发价';
             if (h.includes('一件代发运费') || h.includes('一份代发运费') || h.includes('代发运费')) return '一件代发运费';
@@ -6099,6 +6124,13 @@
 
             // 备注
             if (h.includes('备注') || h.includes('说明')) return '备注';
+
+            // 自定义/重命名字段匹配：查找 getAllProductFields 中的字段名和关键词
+            const allFields = getAllProductFields();
+            for (const f of allFields) {
+                if (f.name.toLowerCase().replace(/[_\s]/g, '') === h) return f.name;
+                if (f.keywords && f.keywords.some(kw => h.includes(kw.toLowerCase().replace(/[_\s]/g, '')))) return f.name;
+            }
 
             return '(忽略)';
         }
@@ -6139,12 +6171,12 @@
 
             // 价格体系
             else if (fieldName === '集采价') product.purchasePrice = parseFloat(val) || 0;
-            else if (fieldName === '标准零售价') product.retailPrice = parseFloat(val) || 0;
+            else if (fieldName === '零售价') product.retailPrice = parseFloat(val) || 0;
             else if (fieldName === '渠道价') product.channelPrice = parseFloat(val) || 0;
             else if (fieldName === '团购价') product.groupPrice = parseFloat(val) || 0;
             else if (fieldName === '含税标识') product.taxIncluded = val === '含税' || val === '是';
             else if (fieldName === '一件代发价') product.normalExpressPrice = parseFloat(val) || 0;
-            else if (fieldName === '一件代发运费') product.normalExpressFee = parseFloat(val) || 0;
+            else if (fieldName === '一件代发运费') product.dropshipFreight = parseFloat(val) || 0;
             else if (fieldName === '京东/顺丰代发价') product.jdSfExpressPrice = parseFloat(val) || 0;
 
             // 物流供应链
@@ -6173,7 +6205,18 @@
             else if (fieldName === '拼多多价') product.pddPrice = parseFloat(val) || 0;
 
             // 备注
-            else if (fieldName === '备注') product.note = val;
+            else if (fieldName === '备注') product.remark = val;
+
+            // 自定义/重命名字段处理：映射重命名字段到原始字段的英文属性
+            else {
+                const override = customProductFields.find(f => f.isSystemOverride && f.name === fieldName);
+                if (override && override.originalName) {
+                    setProductField(product, override.originalName, val);
+                } else {
+                    // 自定义字段：直接设置属性
+                    product[fieldName] = val;
+                }
+            }
         }
 
         function renderMappingPreview(headers, mappings) {
@@ -6189,7 +6232,8 @@
                         ${headers.map((h, idx) => {
                             const hStr = String(h || '').trim();
                             const mapping = mappings[idx] || '(忽略)';
-                            const isTemplate = templates[document.getElementById('importSupplier').value]?.mappings?.[hStr];
+                            const supplierId = getCurrentSupplierId();
+                            const templateMatch = supplierId && templates[supplierId]?.mappings?.[hStr];
                             return `<tr class="border-b border-gray-100">
                                 <td class="py-1"><code class="bg-gray-100 px-1 rounded">${hStr}</code></td>
                                 <td class="py-1">
@@ -6199,7 +6243,7 @@
                                     </select>
                                 </td>
                                 <td class="py-1">
-                                    ${isTemplate ? '<span class="text-green-600">模板匹配</span>' :
+                                    ${templateMatch ? '<span class="text-green-600">模板匹配</span>' :
                                       mapping !== '(忽略)' ? '<span class="text-yellow-600">智能推断</span>' :
                                       '<span class="text-gray-400">-</span>'}
                                 </td>
@@ -6782,7 +6826,11 @@
                             isExclusive: false,
                             mainImage: '',
                             detailImages: '',
-                            grossWeight: 0
+                            grossWeight: 0,
+                            dropshipFreight: 0,
+                            channelPrice: 0,
+                            groupPrice: 0,
+                            remark: ''
                         };
                     }
                 } else {
@@ -6805,7 +6853,11 @@
                         isExclusive: false,
                         mainImage: '',
                         detailImages: '',
-                        grossWeight: 0
+                        grossWeight: 0,
+                        dropshipFreight: 0,
+                        channelPrice: 0,
+                        groupPrice: 0,
+                        remark: ''
                     };
                 }
 
@@ -6850,9 +6902,12 @@
 
                     // 价格体系
                     else if (field === '集采价') product.purchasePrice = parseFloat(value) || 0;
-                    else if (field === '标准零售价') product.retailPrice = parseFloat(value) || 0;
+                    else if (field === '零售价') product.retailPrice = parseFloat(value) || 0;
+                    else if (field === '渠道价') product.channelPrice = parseFloat(value) || 0;
+                    else if (field === '团购价') product.groupPrice = parseFloat(value) || 0;
                     else if (field === '含税标识') product.taxIncluded = value === '含税' || value === '是';
                     else if (field === '一件代发价') product.normalExpressPrice = parseFloat(value) || 0;
+                    else if (field === '一件代发运费') product.dropshipFreight = parseFloat(value) || 0;
                     else if (field === '京东/顺丰代发价') product.jdSfExpressPrice = parseFloat(value) || 0;
 
                     // 物流供应链
@@ -6879,6 +6934,19 @@
                     else if (field === '淘宝价') product.tbPrice = parseFloat(value) || 0;
                     else if (field === '拼多多链接') product.pddLink = value;
                     else if (field === '拼多多价') product.pddPrice = parseFloat(value) || 0;
+
+                    // 备注
+                    else if (field === '备注') product.remark = value;
+
+                    // 自定义/重命名字段：如果是重命名字段则按原始字段处理，否则直接设置属性
+                    else {
+                        const override = customProductFields.find(f => f.isSystemOverride && f.name === field);
+                        if (override && override.originalName) {
+                            setProductField(product, override.originalName, value);
+                        } else {
+                            product[field] = value;
+                        }
+                    }
                 });
 
                 // 如果从工作表名检测到品牌且未通过字段映射设置，自动填充
@@ -7205,7 +7273,7 @@
             document.getElementById('rule-count').textContent = count;
         }
 
-        function saveTemplateConfig(supplierId) {
+        async function saveTemplateConfig(supplierId) {
             const rules = document.querySelectorAll('.mapping-rule');
             const mappings = {};
 
@@ -7219,7 +7287,7 @@
 
             templates[supplierId] = { supplierId, mappings };
 
-            saveData();
+            await saveDataAsync();
             alert(`已保存 ${Object.keys(mappings).length} 条映射规则`);
             renderTemplatePage();
             editTemplate(supplierId);
@@ -7619,7 +7687,7 @@
         }
 
         // ========== 保存映射模板 ==========
-        function saveAsTemplate() {
+        async function saveAsTemplate() {
             if (!currentMappings || Object.keys(currentMappings).length === 0) {
                 alert('没有可保存的映射配置');
                 return;
@@ -7657,7 +7725,7 @@
                 mappings: mappings
             };
 
-            saveData();
+            await saveDataAsync();
 
             alert(`已保存为「${supplierId}」的映射模板`);
         }
