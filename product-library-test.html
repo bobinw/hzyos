@@ -7611,10 +7611,9 @@
             return result;
         }
 
-        function resetProductFieldOrder() {
+        async function resetProductFieldOrder() {
             productFieldOrder = [];
-            saveData();
-            alert('字段顺序已重置，页面即将刷新');
+            await saveDataAsync();
             location.reload();
         }
 
