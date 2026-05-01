@@ -409,7 +409,8 @@
                     <div class="flex justify-between mt-4">
                         <button onclick="saveAsTemplate()" class="px-4 py-2 text-blue-600 hover:underline text-sm">💾 保存为映射模板</button>
                         <div class="flex gap-2">
-                            <button onclick="showPage('page-list')" class="px-6 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                            <button id="btnBackToSheetList" onclick="backToSheetList()" class="px-6 py-2 border rounded-lg text-sm hover:bg-gray-50 hidden">返回工作表列表</button>
+                            <button id="btnCancelImport" onclick="showPage('page-list')" class="px-6 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
                             <button onclick="confirmImport()" class="bg-green-600 text-white px-6 py-2 rounded-lg text-sm hover:bg-green-700">确认入库</button>
                         </div>
                     </div>
@@ -824,7 +825,7 @@
                     <div id="sheet-list" class="space-y-2 mb-4 max-h-80 overflow-y-auto">
                     </div>
                     <div class="flex justify-end gap-2 pt-4 border-t">
-                        <button onclick="closeModal('modal-sheet-select')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">完成</button>
+                        <button onclick="finishMultiSheetImport()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">完成</button>
                     </div>
                 </div>
             </div>
@@ -4126,8 +4127,11 @@
         function clearPendingImport() {
             pendingWorkbookData = null;
             pendingFileName = '';
+            window.multiSheetContext = null;
             document.getElementById('fileInfo').classList.add('hidden');
             document.getElementById('fileStats').textContent = '';
+            document.getElementById('btnBackToSheetList').classList.add('hidden');
+            document.getElementById('btnCancelImport').classList.remove('hidden');
         }
 
         // 获取当前选择的供应商名称（直接从输入框获取）
@@ -4271,7 +4275,7 @@
                                 ${info.headers.slice(0, 3).map(h => h || '').join(' / ')}
                             </div>
                         </div>
-                        <button onclick="importSingleSheet('${name}')" class="px-3 py-1.5 text-sm rounded-lg ${info.imported ? 'bg-gray-100 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}" ${info.imported ? 'disabled' : ''}>
+                        <button onclick="loadSheetToStandardFlow('${name}')" class="px-3 py-1.5 text-sm rounded-lg ${info.imported ? 'bg-gray-100 text-gray-500' : 'bg-blue-600 text-white hover:bg-blue-700'}" ${info.imported ? 'disabled' : ''}>
                             ${info.imported ? '已导入' : '导入'}
                         </button>
                     </div>
@@ -4282,6 +4286,53 @@
             document.querySelector('#modal-sheet-select h3').textContent = `工作表列表 (${importedCount}/${totalSheets} 已导入)`;
 
             document.getElementById('modal-sheet-select').classList.add('active');
+        }
+
+        // 将多sheet中的单个sheet加载到标准导入流程
+        async function loadSheetToStandardFlow(sheetName) {
+            document.getElementById('modal-sheet-select').classList.remove('active');
+            window.multiSheetContext = { activeSheet: sheetName };
+            // 显示返回工作表列表按钮，隐藏取消按钮
+            document.getElementById('btnBackToSheetList').classList.remove('hidden');
+            document.getElementById('btnCancelImport').classList.add('hidden');
+            await processExcelSheet(pendingWorkbookData.workbook, sheetName, pendingWorkbookData.arrayBuffer);
+        }
+
+        // 完成多sheet导入
+        function finishMultiSheetImport() {
+            pendingWorkbookData = null;
+            pendingFileName = '';
+            window.multiSheetContext = null;
+            document.getElementById('btnBackToSheetList').classList.add('hidden');
+            document.getElementById('btnCancelImport').classList.remove('hidden');
+            closeModal('modal-sheet-select');
+        }
+
+        // 返回工作表列表（从标准流程中）
+        function backToSheetList() {
+            // 只清理当前sheet的临时数据，不清理pendingWorkbookData
+            if (window.excelData && window.excelData.rowImages) {
+                Object.keys(window.excelData.rowImages).forEach(key => {
+                    window.excelData.rowImages[key] = null;
+                });
+            }
+            window.excelData = null;
+            parsedData = null;
+            currentMappings = {};
+            window.multiSheetContext = null;
+            document.getElementById('fileInfo').classList.add('hidden');
+            document.getElementById('fileStats').textContent = '';
+            document.getElementById('fileName').textContent = '';
+            document.getElementById('headerPreview').textContent = '';
+            document.getElementById('headerRowSelect').value = '1';
+            document.getElementById('mappingPreview').innerHTML = '<p class="text-gray-400 text-sm">请先解析数据</p>';
+            document.getElementById('dataPreview').classList.add('hidden');
+            document.getElementById('step3').classList.add('opacity-50');
+            document.getElementById('btnBackToSheetList').classList.add('hidden');
+            document.getElementById('btnCancelImport').classList.remove('hidden');
+            const imageHint = document.getElementById('imageHint');
+            if (imageHint) imageHint.remove();
+            showSheetSelectModal();
         }
 
         // 导入单个sheet
@@ -5838,10 +5889,18 @@
                 });
             }
             window.excelData = null;
-            // 清理临时数据
-            pendingWorkbookData = null;
             parsedData = null;
             currentMappings = {};
+            // 多sheet模式下保留pendingWorkbookData，返回工作表列表
+            if (window.multiSheetContext && pendingWorkbookData) {
+                document.getElementById('btnBackToSheetList').classList.add('hidden');
+                document.getElementById('btnCancelImport').classList.remove('hidden');
+                window.multiSheetContext = null;
+                showSheetSelectModal();
+                return;
+            }
+            // 非多sheet模式，完整清理
+            pendingWorkbookData = null;
             // 尝试触发垃圾回收（虽然不保证，但可以帮助释放内存）
             if (window.gc) window.gc();
         }
@@ -6873,8 +6932,54 @@
             // 保存数据
             saveData();
 
-            // 重置导入状态
-            clearFile();
+            // 检查是否是多sheet导入上下文
+            if (window.multiSheetContext && pendingWorkbookData) {
+                // 标记当前sheet为已导入
+                const activeSheet = window.multiSheetContext.activeSheet;
+                if (pendingWorkbookData.sheets[activeSheet]) {
+                    pendingWorkbookData.sheets[activeSheet].imported = true;
+                }
+
+                // 清理标准流程UI
+                if (window.excelData && window.excelData.rowImages) {
+                    Object.keys(window.excelData.rowImages).forEach(key => {
+                        window.excelData.rowImages[key] = null;
+                    });
+                }
+                window.excelData = null;
+                parsedData = null;
+                currentMappings = {};
+                document.getElementById('fileInfo').classList.add('hidden');
+                document.getElementById('fileStats').textContent = '';
+                document.getElementById('fileName').textContent = '';
+                document.getElementById('headerPreview').textContent = '';
+                document.getElementById('headerRowSelect').value = '1';
+                document.getElementById('importData').value = '';
+                document.getElementById('mappingPreview').innerHTML = '<p class="text-gray-400 text-sm">请先解析数据</p>';
+                document.getElementById('dataPreview').classList.add('hidden');
+                document.getElementById('step3').classList.add('opacity-50');
+                document.getElementById('btnBackToSheetList').classList.add('hidden');
+                document.getElementById('btnCancelImport').classList.remove('hidden');
+                const imageHint = document.getElementById('imageHint');
+                if (imageHint) imageHint.remove();
+
+                // 检查是否所有sheet都已导入
+                const unimportedCount = Object.values(pendingWorkbookData.sheets).filter(s => !s.imported).length;
+                if (unimportedCount > 0) {
+                    // 还有未导入的sheet，显示sheet选择弹窗
+                    window.multiSheetContext = null;
+                    showSheetSelectModal();
+                    return;
+                }
+                // 全部导入完成，清理
+                pendingWorkbookData = null;
+                pendingFileName = '';
+                window.multiSheetContext = null;
+            } else {
+                // 非多sheet模式，正常清理
+                clearFile();
+            }
+
             document.getElementById('importData').value = '';
             parsedData = null;
             document.getElementById('mappingPreview').innerHTML = '<p class="text-gray-400 text-sm">请先解析数据</p>';
