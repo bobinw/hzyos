@@ -4291,6 +4291,10 @@
         }
 
         function showSheetSelectModal() {
+            if (!pendingWorkbookData || !pendingWorkbookData.sheets) {
+                alert('工作簿数据已丢失，请重新上传文件');
+                return;
+            }
             const sheetList = document.getElementById('sheet-list');
             const totalSheets = Object.keys(pendingWorkbookData.sheets).length;
             const importedCount = Object.values(pendingWorkbookData.sheets).filter(s => s.imported).length;
@@ -4323,6 +4327,14 @@
 
         // 将多sheet中的单个sheet加载到标准导入流程
         async function loadSheetToStandardFlow(sheetName) {
+            if (!pendingWorkbookData || !pendingWorkbookData.workbook) {
+                alert('工作簿数据已丢失，请重新上传文件');
+                return;
+            }
+            if (pendingWorkbookData.sheets[sheetName]?.imported) {
+                alert('该工作表已导入');
+                return;
+            }
             document.getElementById('modal-sheet-select').classList.remove('active');
             window.multiSheetContext = { activeSheet: sheetName };
             // 显示返回工作表列表按钮，隐藏取消按钮
@@ -7066,51 +7078,57 @@
             );
 
             // 保存数据
-            saveData();
+            await saveDataAsync();
 
-            // 检查是否是多sheet导入上下文
-            if (window.multiSheetContext && pendingWorkbookData) {
+            // 检查是否有多sheet待导入的工作簿数据（不依赖 window.multiSheetContext，因为可能在异步操作中丢失）
+            const hasPendingSheets = pendingWorkbookData && Object.values(pendingWorkbookData.sheets || {}).some(s => !s.imported);
+            if (hasPendingSheets) {
                 // 标记当前sheet为已导入
-                const activeSheet = window.multiSheetContext.activeSheet;
-                if (pendingWorkbookData.sheets[activeSheet]) {
+                const activeSheet = window.multiSheetContext?.activeSheet || window.excelData?.sheetName;
+                if (activeSheet && pendingWorkbookData.sheets[activeSheet]) {
                     pendingWorkbookData.sheets[activeSheet].imported = true;
                 }
 
-                // 清理标准流程UI
+                // 清理标准流程UI（容错处理）
+                const safeHide = (id) => { try { const el = document.getElementById(id); if (el) el.classList.add('hidden'); } catch(e) {} };
+                const safeText = (id, text) => { try { const el = document.getElementById(id); if (el) el.textContent = text; } catch(e) {} };
+                const safeValue = (id, value) => { try { const el = document.getElementById(id); if (el) el.value = value; } catch(e) {} };
+                const safeInner = (id, html) => { try { const el = document.getElementById(id); if (el) el.innerHTML = html; } catch(e) {} };
+                const safeRemove = (id) => { try { const el = document.getElementById(id); if (el) el.remove(); } catch(e) {} };
+
                 if (window.excelData && window.excelData.rowImages) {
-                    Object.keys(window.excelData.rowImages).forEach(key => {
-                        window.excelData.rowImages[key] = null;
-                    });
+                    try { Object.keys(window.excelData.rowImages).forEach(key => { window.excelData.rowImages[key] = null; }); } catch(e) {}
                 }
                 window.excelData = null;
                 parsedData = null;
                 currentMappings = {};
                 window.pendingBrandName = null;
-                document.getElementById('fileInfo').classList.add('hidden');
-                document.getElementById('fileStats').textContent = '';
-                document.getElementById('fileName').textContent = '';
-                document.getElementById('headerPreview').textContent = '';
-                document.getElementById('headerRowSelect').value = '1';
-                document.getElementById('importData').value = '';
-                document.getElementById('mappingPreview').innerHTML = '<p class="text-gray-400 text-sm">请先解析数据</p>';
-                document.getElementById('dataPreview').classList.add('hidden');
-                document.getElementById('step3').classList.add('opacity-50');
-                document.getElementById('btnBackToSheetList').classList.add('hidden');
-                document.getElementById('btnCancelImport').classList.remove('hidden');
-                const imageHint = document.getElementById('imageHint');
-                if (imageHint) imageHint.remove();
-                const brandHint = document.getElementById('brandDetectHint');
-                if (brandHint) brandHint.remove();
 
-                // 检查是否所有sheet都已导入
+                safeHide('fileInfo');
+                safeText('fileStats', '');
+                safeText('fileName', '');
+                safeText('headerPreview', '');
+                safeValue('headerRowSelect', '1');
+                safeValue('importData', '');
+                safeInner('mappingPreview', '<p class="text-gray-400 text-sm">请先解析数据</p>');
+                try { document.getElementById('dataPreview').classList.add('hidden'); } catch(e) {}
+                try { document.getElementById('step3').classList.add('opacity-50'); } catch(e) {}
+                safeHide('btnBackToSheetList');
+                try { document.getElementById('btnCancelImport').classList.remove('hidden'); } catch(e) {}
+                safeRemove('imageHint');
+                safeRemove('brandDetectHint');
+                const brandSection = document.getElementById('brandConfirmSection');
+                if (brandSection) try { brandSection.remove(); } catch(e) {}
+
+                // 检查未导入的sheet数量
                 const unimportedCount = Object.values(pendingWorkbookData.sheets).filter(s => !s.imported).length;
                 if (unimportedCount > 0) {
-                    // 还有未导入的sheet，显示sheet选择弹窗
                     window.multiSheetContext = null;
-                    showSheetSelectModal();
+                    // 延迟显示弹窗，确保 alert 的阻塞已完全解除
+                    setTimeout(() => showSheetSelectModal(), 100);
                     return;
                 }
-                // 全部导入完成，清理
+                // 全部导入完成
                 pendingWorkbookData = null;
                 pendingFileName = '';
                 window.multiSheetContext = null;
