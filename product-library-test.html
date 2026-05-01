@@ -819,7 +819,7 @@
                 <div class="modal-content w-md">
                     <div class="flex justify-between items-center mb-4">
                         <h3 class="text-lg font-bold">工作表列表</h3>
-                        <button onclick="closeModal('modal-sheet-select')" class="text-gray-400 hover:text-gray-600">✕</button>
+                        <button onclick="finishMultiSheetImport()" class="text-gray-400 hover:text-gray-600">✕</button>
                     </div>
                     <p class="text-sm text-gray-500 mb-4">点击"导入"按钮逐个工作表导入数据，每个工作表可选择不同的供应商：</p>
                     <div id="sheet-list" class="space-y-2 mb-4 max-h-80 overflow-y-auto">
@@ -4059,6 +4059,9 @@
 
         // ========== 智能导入 ==========
         function initImportPage() {
+            // 始终刷新供应商列表（即使有未完成的多sheet导入）
+            refreshSupplierDatalist();
+
             // 检查是否有未完成的多sheet导入
             if (pendingWorkbookData && Object.values(pendingWorkbookData.sheets || {}).some(s => !s.imported)) {
                 // 有未导入的sheet，显示继续导入提示
@@ -4101,12 +4104,8 @@
                 selectedSupplierId = existingInput.value;
             }
 
-            // 填充供应商列表（合并供应商数组和商品数据中的供应商）
-            const datalist = document.getElementById('supplierDatalist');
-            const productSuppliers = products.map(p => p.supplierId).filter(Boolean);
-            const manualSuppliers = suppliers.map(s => s.name).filter(Boolean);
-            const allSuppliers = [...new Set([...manualSuppliers, ...productSuppliers])].sort();
-            datalist.innerHTML = allSuppliers.map(name => `<option value="${name}">`).join('');
+            // 填充供应商列表
+            refreshSupplierDatalist();
 
             // 恢复之前选择的供应商
             if (selectedSupplierId) {
@@ -4121,6 +4120,16 @@
                 }
                 document.getElementById('step2').classList.remove('opacity-50');
             }
+        }
+
+        // 刷新供应商datalist
+        function refreshSupplierDatalist() {
+            const datalist = document.getElementById('supplierDatalist');
+            if (!datalist) return;
+            const productSuppliers = products.map(p => p.supplierId).filter(Boolean);
+            const manualSuppliers = suppliers.map(s => s.name).filter(Boolean);
+            const allSuppliers = [...new Set([...manualSuppliers, ...productSuppliers])].sort();
+            datalist.innerHTML = allSuppliers.map(name => `<option value="${name}">`).join('');
         }
 
         // 清理待导入数据
