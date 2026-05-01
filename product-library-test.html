@@ -4192,33 +4192,48 @@
         let pendingWorkbookData = null;
         let pendingFileName = '';
 
+        // ========== 导入进度条 ==========
+        function showImportOverlay(text, percent) {
+            let overlay = document.getElementById('import-loading-overlay');
+            if (!overlay) {
+                overlay = document.createElement('div');
+                overlay.id = 'import-loading-overlay';
+                overlay.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
+                overlay.innerHTML = `
+                    <div class="bg-white rounded-lg p-6 w-80">
+                        <div class="text-center">
+                            <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3"></div>
+                            <div class="text-sm text-gray-600" id="import-loading-text">${text}</div>
+                            <div class="w-full bg-gray-200 rounded-full h-2 mt-3">
+                                <div id="import-loading-bar" class="bg-blue-600 h-2 rounded-full transition-all duration-300" style="width: ${percent}%"></div>
+                            </div>
+                        </div>
+                    </div>
+                `;
+                document.body.appendChild(overlay);
+            } else {
+                updateImportOverlay(text, percent);
+            }
+        }
+
+        function updateImportOverlay(text, percent) {
+            const textEl = document.getElementById('import-loading-text');
+            const barEl = document.getElementById('import-loading-bar');
+            if (textEl) textEl.textContent = text;
+            if (barEl) barEl.style.width = percent + '%';
+        }
+
+        function hideImportOverlay() {
+            document.getElementById('import-loading-overlay')?.remove();
+        }
+
         function handleExcelFile(event) {
             const file = event.target.files[0];
             if (!file) return;
 
             pendingFileName = file.name;
 
-            // 显示加载提示
-            const loadingDiv = document.createElement('div');
-            loadingDiv.id = 'excel-loading-overlay';
-            loadingDiv.className = 'fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50';
-            loadingDiv.innerHTML = `
-                <div class="bg-white rounded-lg p-6 w-80">
-                    <div class="text-center">
-                        <div class="animate-spin rounded-full h-10 w-10 border-b-2 border-blue-600 mx-auto mb-3"></div>
-                        <div class="text-sm text-gray-600" id="excel-loading-text">正在读取文件...</div>
-                        <div class="w-full bg-gray-200 rounded-full h-2 mt-3">
-                            <div id="excel-loading-bar" class="bg-blue-600 h-2 rounded-full transition-all" style="width: 0%"></div>
-                        </div>
-                    </div>
-                </div>
-            `;
-            document.body.appendChild(loadingDiv);
-
-            const updateProgress = (text, percent) => {
-                document.getElementById('excel-loading-text').textContent = text;
-                document.getElementById('excel-loading-bar').style.width = percent + '%';
-            };
+            showImportOverlay('正在读取文件...', 0);
 
             // 使用 FileReader 读取文件
             const reader = new FileReader();
@@ -4226,20 +4241,20 @@
             reader.onprogress = function(e) {
                 if (e.lengthComputable) {
                     const percent = Math.round((e.loaded / e.total) * 50);
-                    updateProgress(`读取文件... ${Math.round(e.loaded / 1024 / 1024)}MB / ${Math.round(e.total / 1024 / 1024)}MB`, percent);
+                    updateImportOverlay(`读取文件... ${Math.round(e.loaded / 1024 / 1024)}MB / ${Math.round(e.total / 1024 / 1024)}MB`, percent);
                 }
             };
 
             reader.onload = async function(e) {
                 try {
-                    updateProgress('解析Excel结构...', 60);
+                    updateImportOverlay('解析Excel结构...', 60);
                     const arrayBuffer = e.target.result;
 
                     // 使用 SheetJS 读取数据
                     const data = new Uint8Array(arrayBuffer);
                     const workbook = XLSX.read(data, { type: 'array' });
 
-                    updateProgress('分析工作表...', 80);
+                    updateImportOverlay('分析工作表...', 80);
 
                     // 检查是否有多个sheet
                     if (workbook.SheetNames.length > 1) {
@@ -4264,26 +4279,26 @@
                             };
                         });
 
-                        updateProgress('完成', 100);
+                        updateImportOverlay('完成', 100);
                         setTimeout(() => {
-                            document.getElementById('excel-loading-overlay')?.remove();
+                            hideImportOverlay();
                             showSheetSelectModal();
                         }, 300);
                     } else {
-                        updateProgress('完成', 100);
+                        updateImportOverlay('完成', 100);
                         setTimeout(() => {
-                            document.getElementById('excel-loading-overlay')?.remove();
+                            hideImportOverlay();
                             processExcelSheet(workbook, workbook.SheetNames[0], arrayBuffer);
                         }, 300);
                     }
                 } catch (err) {
-                    document.getElementById('excel-loading-overlay')?.remove();
+                    hideImportOverlay();
                     alert('Excel 解析失败：' + err.message);
                 }
             };
 
             reader.onerror = function() {
-                document.getElementById('excel-loading-overlay')?.remove();
+                hideImportOverlay();
                 alert('文件读取失败');
             };
 
@@ -4833,13 +4848,13 @@
             `;
             document.body.appendChild(progressDiv);
 
-            const updateProgress = (text, percent) => {
+            const updateImportOverlay = (text, percent) => {
                 document.getElementById('import-progress-text').textContent = text;
                 document.getElementById('import-progress-bar').style.width = percent + '%';
             };
 
             try {
-                updateProgress('读取工作表数据...', 20);
+                updateImportOverlay('读取工作表数据...', 20);
 
                 const sheet = pendingWorkbookData.workbook.Sheets[sheetName];
                 const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
@@ -4858,7 +4873,7 @@
                     }
                 }
 
-                updateProgress('提取图片...', 40);
+                updateImportOverlay('提取图片...', 40);
 
                 // 提取图片
                 const rowImages = {};
@@ -4915,7 +4930,7 @@
                     console.warn('图片提取失败:', e);
                 }
 
-                updateProgress('导入数据...', 60);
+                updateImportOverlay('导入数据...', 60);
 
                 // 导入数据
                 let added = 0;
@@ -5043,7 +5058,7 @@
 
                     // 更新进度
                     if (rowIndex % 100 === 0) {
-                        updateProgress(`导入数据... ${rowIndex + 1}/${rows.length}`, 50 + Math.round((rowIndex / rows.length) * 40));
+                        updateImportOverlay(`导入数据... ${rowIndex + 1}/${rows.length}`, 50 + Math.round((rowIndex / rows.length) * 40));
                     }
                 }
 
@@ -5054,7 +5069,7 @@
                 pendingWorkbookData.sheets[sheetName].imported = true;
 
                 saveData();
-                updateProgress('完成', 100);
+                updateImportOverlay('完成', 100);
 
                 setTimeout(() => {
                     document.getElementById('import-progress-overlay')?.remove();
@@ -5244,6 +5259,8 @@
                 return;
             }
 
+            showImportOverlay(`正在加载 ${sheetName || '工作表'}...`, 10);
+
             // 创建行号映射：过滤后的行索引 -> 原始 Excel 行号
             const filteredRows = [];
             const rowIndexToExcelRow = []; // 映射：数据行索引 -> Excel行号
@@ -5274,8 +5291,10 @@
             let extractedImageCount = 0;
 
             try {
+                updateImportOverlay('正在解析Excel图片...', 30);
                 const exceljsWorkbook = new ExcelJS.Workbook();
                 await exceljsWorkbook.xlsx.load(arrayBuffer);
+                updateImportOverlay('正在提取图片...', 40);
 
                 // 统计工作簿中的媒体文件
                 if (exceljsWorkbook.media && exceljsWorkbook.media.length > 0) {
@@ -5340,7 +5359,9 @@
                     worksheetImageCount = images.length;
 
                     // 处理图片
+                    let imgIndex = 0;
                     for (const img of images) {
+                        imgIndex++;
                         try {
                             let rowNumber = 1;
                             let rowDetectedBy = '';
@@ -5497,6 +5518,9 @@
                                     extension: img.extension || 'png'
                                 });
                                 extractedImageCount++;
+                                if (images.length > 0 && imgIndex % Math.max(1, Math.floor(images.length / 10)) === 0) {
+                                    updateImportOverlay(`提取图片中... ${imgIndex}/${images.length}`, 40 + Math.round((imgIndex / images.length) * 50));
+                                }
                             }
                         } catch (imgErr) {
                             // 单张图片处理失败，继续处理其他图片
@@ -5598,6 +5622,8 @@
             document.getElementById('importData').value =
                 window.excelData.headers.join('\t') + '\n' +
                 window.excelData.rows.map(row => row.join('\t')).join('\n');
+
+            hideImportOverlay();
         }
 
         function arrayBufferToBase64(buffer) {
