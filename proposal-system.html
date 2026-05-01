@@ -144,6 +144,7 @@
                             <div>
                                 <label class="block text-sm text-gray-500 mb-1">API 类型</label>
                                 <select id="ai-api-type" class="w-full border rounded px-3 py-2 text-sm" onchange="updateAISettingsForm()">
+                                    <option value="deepseek">DeepSeek API</option>
                                     <option value="claude">Anthropic Claude API</option>
                                     <option value="openai">OpenAI API</option>
                                     <option value="custom">自定义 API</option>
@@ -164,11 +165,11 @@
                                 <label class="block text-sm text-gray-500 mb-1">模型</label>
                                 <input type="text" id="ai-model" class="w-full border rounded px-3 py-2 text-sm" list="ai-model-list" placeholder="选择或输入模型名称">
                                 <datalist id="ai-model-list">
+                                    <option value="deepseek-chat">DeepSeek Chat (V3)</option>
+                                    <option value="deepseek-reasoner">DeepSeek Reasoner (R1)</option>
                                     <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
                                     <option value="claude-opus-4-7">Claude Opus 4.7</option>
                                     <option value="claude-haiku-4-5">Claude Haiku 4.5</option>
-                                    <option value="deepseek-v4-pro">DeepSeek V4 Pro</option>
-                                    <option value="deepseek-chat">DeepSeek Chat</option>
                                     <option value="gpt-4o">GPT-4o</option>
                                     <option value="gpt-4o-mini">GPT-4o mini</option>
                                 </datalist>
@@ -1562,8 +1563,8 @@ function exportProposalPPT(proposalId) {
 
 // ========== AI 设置 ==========
 let aiSettings = {
-    apiType: 'claude', endpoint: 'https://api.anthropic.com/v1/messages', apiKey: '',
-    model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.7,
+    apiType: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '',
+    model: 'deepseek-chat', maxTokens: 4096, temperature: 0.7,
     enableChat: true, enableProposal: true, enableBid: true
 };
 
@@ -1580,7 +1581,12 @@ function updateAISettingsForm() {
     if (!endpointEl) return;
     const modelList = document.getElementById('ai-model-list');
 
-    if (type === 'claude') {
+    if (type === 'deepseek') {
+        endpointEl.value = 'https://api.deepseek.com/chat/completions';
+        if (modelList) modelList.innerHTML = `
+            <option value="deepseek-chat">DeepSeek Chat (V3)</option>
+            <option value="deepseek-reasoner">DeepSeek Reasoner (R1)</option>`;
+    } else if (type === 'claude') {
         endpointEl.value = 'https://api.anthropic.com/v1/messages';
         if (modelList) modelList.innerHTML = `
             <option value="claude-sonnet-4-6">Claude Sonnet 4.6</option>
@@ -1633,7 +1639,7 @@ async function saveAISettings() {
 }
 
 function resetAISettings() {
-    aiSettings = { apiType: 'claude', endpoint: 'https://api.anthropic.com/v1/messages', apiKey: '', model: 'claude-sonnet-4-6', maxTokens: 4096, temperature: 0.7, enableChat: true, enableProposal: true, enableBid: true };
+    aiSettings = { apiType: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '', model: 'deepseek-chat', maxTokens: 4096, temperature: 0.7, enableChat: true, enableProposal: true, enableBid: true };
     showAISettingsForm();
 }
 
@@ -1657,7 +1663,8 @@ async function testAIConnection() {
             return;
         }
 
-        const body = apiType === 'openai' ? {
+        const isOpenAIFormat = apiType === 'openai' || apiType === 'deepseek' || apiType === 'custom';
+        const body = isOpenAIFormat ? {
             model: model,
             messages: [{ role: 'user', content: 'Hello' }],
             max_tokens: 10
@@ -1667,7 +1674,7 @@ async function testAIConnection() {
             messages: [{ role: 'user', content: 'Hello' }]
         };
 
-        const headers = apiType === 'openai'
+        const headers = isOpenAIFormat
             ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
             : { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
 
