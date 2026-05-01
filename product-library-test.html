@@ -4129,6 +4129,8 @@
             pendingFileName = '';
             window.multiSheetContext = null;
             window.pendingBrandName = null;
+            const brandSection = document.getElementById('brandConfirmSection');
+            if (brandSection) brandSection.remove();
             document.getElementById('fileInfo').classList.add('hidden');
             document.getElementById('fileStats').textContent = '';
             document.getElementById('btnBackToSheetList').classList.add('hidden');
@@ -4298,15 +4300,40 @@
             document.getElementById('btnCancelImport').classList.add('hidden');
             await processExcelSheet(pendingWorkbookData.workbook, sheetName, pendingWorkbookData.arrayBuffer);
             // 从工作表名自动检测品牌名
-            window.pendingBrandName = extractBrandFromSheetName(sheetName);
-            if (window.pendingBrandName) {
-                const hint = document.getElementById('brandDetectHint') || document.createElement('div');
-                hint.id = 'brandDetectHint';
-                hint.className = 'text-xs text-blue-600 mt-1';
-                hint.textContent = `已从工作表名识别品牌：${window.pendingBrandName}`;
+            const detectedBrand = extractBrandFromSheetName(sheetName);
+            if (detectedBrand) {
+                window.pendingBrandName = detectedBrand;
+                const existing = document.getElementById('brandConfirmSection');
+                if (existing) existing.remove();
+                const section = document.createElement('div');
+                section.id = 'brandConfirmSection';
+                section.className = 'mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg';
+                section.innerHTML = `
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-600 whitespace-nowrap">品牌名：</span>
+                        <input type="text" id="brandConfirmInput" class="flex-1 border border-blue-300 rounded px-2 py-1 text-sm" value="${detectedBrand}">
+                        <button onclick="confirmBrandName()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 whitespace-nowrap">确认</button>
+                    </div>
+                    <div class="text-xs text-gray-400 mt-1">已从工作表名识别，可修改后确认</div>
+                `;
                 const fileInfo = document.getElementById('fileInfo');
-                if (fileInfo && !document.getElementById('brandDetectHint')) {
-                    fileInfo.appendChild(hint);
+                if (fileInfo) fileInfo.appendChild(section);
+            }
+        }
+
+        // 确认品牌名
+        function confirmBrandName() {
+            const input = document.getElementById('brandConfirmInput');
+            if (input) {
+                window.pendingBrandName = input.value.trim() || null;
+                const section = document.getElementById('brandConfirmSection');
+                if (section) {
+                    const confirmed = window.pendingBrandName || '(无品牌)';
+                    section.className = 'mt-2 p-2 bg-green-50 border border-green-200 rounded-lg';
+                    section.querySelector('button').textContent = '已确认';
+                    section.querySelector('button').className = 'px-3 py-1 bg-green-600 text-white rounded text-xs';
+                    section.querySelector('div:last-child').textContent = `品牌名已确认：${confirmed}`;
+                    section.querySelector('div:last-child').className = 'text-xs text-green-600 mt-1';
                 }
             }
         }
@@ -4317,6 +4344,8 @@
             pendingFileName = '';
             window.multiSheetContext = null;
             window.pendingBrandName = null;
+            const brandSection = document.getElementById('brandConfirmSection');
+            if (brandSection) brandSection.remove();
             document.getElementById('btnBackToSheetList').classList.add('hidden');
             document.getElementById('btnCancelImport').classList.remove('hidden');
             closeModal('modal-sheet-select');
@@ -4347,8 +4376,8 @@
             document.getElementById('btnCancelImport').classList.remove('hidden');
             const imageHint = document.getElementById('imageHint');
             if (imageHint) imageHint.remove();
-            const brandHint = document.getElementById('brandDetectHint');
-            if (brandHint) brandHint.remove();
+            const brandSection = document.getElementById('brandConfirmSection');
+            if (brandSection) brandSection.remove();
             showSheetSelectModal();
         }
 
@@ -5910,6 +5939,9 @@
             currentMappings = {};
             // 多sheet模式下保留pendingWorkbookData，返回工作表列表
             if (window.multiSheetContext && pendingWorkbookData) {
+                window.pendingBrandName = null;
+                const brandSection = document.getElementById('brandConfirmSection');
+                if (brandSection) brandSection.remove();
                 document.getElementById('btnBackToSheetList').classList.add('hidden');
                 document.getElementById('btnCancelImport').classList.remove('hidden');
                 window.multiSheetContext = null;
