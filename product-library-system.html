@@ -1058,7 +1058,7 @@
     <script>
         // ========== IndexedDB 数据库 ==========
         const DB_NAME = 'ProductLibraryDB';
-        const DB_VERSION = 3;
+        const DB_VERSION = 4;
         let db = null;
 
         // 初始化 IndexedDB
@@ -1102,8 +1102,11 @@
                     if (!database.objectStoreNames.contains('pptTemplates')) {
                         database.createObjectStore('pptTemplates', { keyPath: 'id' });
                     }
+                    if (!database.objectStoreNames.contains('excelTemplates')) {
+                        database.createObjectStore('excelTemplates', { keyPath: 'id' });
+                    }
 
-                    console.log('IndexedDB 数据库结构创建完成 (V3)');
+                    console.log('IndexedDB 数据库结构创建完成 (V4)');
                 };
             });
         }

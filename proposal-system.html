@@ -117,9 +117,15 @@
                 <div class="flex justify-between items-center mb-6">
                     <h2 class="text-xl font-bold">方案模板管理</h2>
                     <div class="flex gap-2">
-                        <button onclick="importTemplateExcel()" class="border rounded-lg px-4 py-2 text-sm hover:bg-gray-50">📥 导入模板</button>
+                        <button onclick="importTemplate('ppt')" class="border rounded-lg px-4 py-2 text-sm hover:bg-gray-50">📥 导入PPT模板</button>
+                        <button onclick="importTemplate('excel')" class="border rounded-lg px-4 py-2 text-sm hover:bg-gray-50">📥 导入Excel模板</button>
                         <button onclick="createNewTemplate()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ 新建模板</button>
                     </div>
+                </div>
+                <!-- 模板类型标签 -->
+                <div class="flex gap-1 mb-4">
+                    <button onclick="switchTemplateTab('ppt')" id="tab-ppt" class="px-4 py-2 rounded-t-lg text-sm font-medium bg-blue-600 text-white">📊 PPT模板</button>
+                    <button onclick="switchTemplateTab('excel')" id="tab-excel" class="px-4 py-2 rounded-t-lg text-sm font-medium bg-gray-200 text-gray-600">📑 Excel模板</button>
                 </div>
                 <div class="grid grid-cols-2 gap-6">
                     <div class="bg-white rounded-lg shadow p-6">
@@ -249,7 +255,7 @@
 <script>
 // ========== IndexedDB 数据库（与商品库共享） ==========
 const DB_NAME = 'ProductLibraryDB';
-const DB_VERSION = 3;
+const DB_VERSION = 4;
 let db = null;
 
 // ========== 数据变量 ==========
@@ -258,7 +264,8 @@ let suppliers = [];
 let templates = {};           // 字段映射模板（来自商品库）
 let projects = [];
 let proposals = [];
-let proposalTemplates = [];  // 方案PPT模板
+let pptTemplates = [];      // 方案PPT模板
+let excelTemplates = [];   // 方案Excel模板
 let nextProjectId = 1;
 let nextProposalId = 1;
 let nextTemplateId = 1;
@@ -266,6 +273,7 @@ let nextTemplateId = 1;
 // 当前编辑状态
 let currentProjectId = null;
 let currentEditingTemplateId = null;
+let currentEditingTemplateType = 'ppt'; // 'ppt' | 'excel'
 
 // ========== 数据库操作 ==========
 function initDB() {
@@ -282,6 +290,7 @@ function initDB() {
             if (!database.objectStoreNames.contains('projects')) database.createObjectStore('projects', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('proposals')) database.createObjectStore('proposals', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('pptTemplates')) database.createObjectStore('pptTemplates', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('excelTemplates')) database.createObjectStore('excelTemplates', { keyPath: 'id' });
             console.log('方案系统DB结构创建完成');
         };
     });
@@ -347,7 +356,8 @@ async function saveAllData() {
         await Promise.all([
             saveToDB('projects', projects),
             saveToDB('proposals', proposals),
-            saveToDB('pptTemplates', proposalTemplates),
+            saveToDB('pptTemplates', pptTemplates),
+            saveToDB('excelTemplates', excelTemplates),
             saveSetting('nextProjectId', nextProjectId),
             saveSetting('nextProposalId', nextProposalId),
             saveSetting('nextTemplateId', nextTemplateId)
@@ -375,7 +385,7 @@ function showPage(pageId) {
     }
     // 自动渲染
     if (pageId === 'page-projects') renderProjectList();
-    if (pageId === 'page-templates') renderTemplateList();
+    if (pageId === 'page-templates') { switchTemplateTab(currentEditingTemplateType); }
     if (pageId === 'page-ai-settings') showAISettingsForm();
 }
 
@@ -404,9 +414,29 @@ const DEFAULT_PPT_TEMPLATE = {
     createdAt: '', updatedAt: ''
 };
 
-// ========== 默认供应商模板（无实际作用，占位） ==========
-function getDefaultProposalTemplates() {
+const DEFAULT_EXCEL_TEMPLATE = {
+    id: 'default-excel',
+    name: '默认Excel模板',
+    isDefault: true,
+    source: 'system',
+    type: 'excel',
+    sheets: [
+        { name: '封面', fields: ['projectName', 'customerCompany', 'date'] },
+        { name: '方案概览', fields: ['proposalName', 'tagline', 'theme', 'totalPerPerson', 'totalPrice', 'overallMargin', 'budgetUtilization'] },
+        { name: '产品明细', fields: ['productName', 'brand', 'brandLevel', 'supplier', 'purchasePrice', 'quotePrice', 'margin', 'quantity', 'subtotal'] },
+        { name: '价格汇总', fields: ['priceTable', 'totalPrice', 'perPersonPrice'] },
+        { name: '需求分析', fields: ['requirementSummary'] }
+    ],
+    style: { primaryColor: '1a56db', fontFamily: '微软雅黑', showHeader: true, freezePane: true },
+    createdAt: '', updatedAt: ''
+};
+
+function getDefaultPptTemplates() {
     return [{ ...DEFAULT_PPT_TEMPLATE, createdAt: today(), updatedAt: today() }];
+}
+
+function getDefaultExcelTemplates() {
+    return [{ ...DEFAULT_EXCEL_TEMPLATE, createdAt: today(), updatedAt: today() }];
 }
 
 // ========== 初始化 ==========
@@ -422,8 +452,10 @@ async function init() {
     // 加载方案系统数据
     projects = await loadFromDB('projects') || [];
     proposals = await loadFromDB('proposals') || [];
-    proposalTemplates = await loadFromDB('pptTemplates') || [];
-    if (proposalTemplates.length === 0) proposalTemplates = getDefaultProposalTemplates();
+    pptTemplates = await loadFromDB('pptTemplates') || [];
+    if (pptTemplates.length === 0) pptTemplates = getDefaultPptTemplates();
+    excelTemplates = await loadFromDB('excelTemplates') || [];
+    if (excelTemplates.length === 0) excelTemplates = getDefaultExcelTemplates();
     nextProjectId = (await loadSetting('nextProjectId')) || 1;
     nextProposalId = (await loadSetting('nextProposalId')) || 1;
     nextTemplateId = (await loadSetting('nextTemplateId')) || 1;
@@ -465,6 +497,7 @@ function renderProjectList() {
                     <div class="flex items-center gap-3 mb-2">
                         <h3 class="font-medium">${p.name}</h3>
                         <span class="tag ${statusColors[p.status] || ''}">${statusLabels[p.status] || p.status}</span>
+                        ${p.proposalUsage ? `<span class="tag ${p.proposalUsage === '内部快速决策' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'}">${p.proposalUsage}</span>` : ''}
                     </div>
                     <div class="flex gap-4 text-sm text-gray-500">
                         <span>🏢 ${p.customerCompany || '-'}</span>
@@ -780,7 +813,7 @@ function collectProjectForm() {
         constraints: [],
         proposalCount: 6,
         status: 'drafting',
-        templateId: 'default',
+        templateId: getVal('np-proposalUsage') === '内部快速决策' ? 'default-excel' : 'default',
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
     };
@@ -1009,6 +1042,7 @@ function showRequirementConfirm(project) {
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
         </button>
         <h2 class="text-xl font-bold">${project.name}</h2>
+        ${project.proposalUsage ? `<span class="tag ${project.proposalUsage === '内部快速决策' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'}">${project.proposalUsage}</span>` : ''}
         <span class="tag bg-blue-100 text-blue-600">需求已确认</span>
     </div>
 
@@ -1333,8 +1367,13 @@ function viewProposal(proposalId) {
 
             <div class="flex justify-end gap-2 pt-4 border-t">
                 <button onclick="closeModal('modal-proposal')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">关闭</button>
-                <button onclick="exportProposalExcel(${pp.id})" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">📊 导出Excel</button>
-                <button onclick="exportProposalPPT(${pp.id})" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">📽 导出PPT</button>
+                ${project?.proposalUsage === '内部快速决策' ? `
+                <button onclick="exportProposalExcel(${pp.id})" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">📊 导出Excel（推荐）</button>
+                <button onclick="exportProposalPPT(${pp.id})" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">📽 导出PPT</button>
+                ` : `
+                <button onclick="exportProposalPPT(${pp.id})" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 font-medium">📽 导出PPT（推荐）</button>
+                <button onclick="exportProposalExcel(${pp.id})" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">📊 导出Excel</button>
+                `}
             </div>
         </div>`;
     openModal('modal-proposal');
@@ -1365,118 +1404,223 @@ function openProject(projectId) {
 }
 
 // ========== 方案模板管理 ==========
-function renderTemplateList() {
-    if (proposalTemplates.length === 0) proposalTemplates = getDefaultProposalTemplates();
+function switchTemplateTab(type) {
+    currentEditingTemplateType = type;
+    document.getElementById('tab-ppt').className = type === 'ppt' ? 'px-4 py-2 rounded-t-lg text-sm font-medium bg-blue-600 text-white' : 'px-4 py-2 rounded-t-lg text-sm font-medium bg-gray-200 text-gray-600';
+    document.getElementById('tab-excel').className = type === 'excel' ? 'px-4 py-2 rounded-t-lg text-sm font-medium bg-blue-600 text-white' : 'px-4 py-2 rounded-t-lg text-sm font-medium bg-gray-200 text-gray-600';
+    currentEditingTemplateId = null;
+    document.getElementById('template-editor').innerHTML = '<p class="text-gray-400 text-sm">请从左侧选择一个模板进行编辑</p>';
+    renderTemplateList();
+}
 
-    document.getElementById('template-list').innerHTML = proposalTemplates.map(t => `
+function renderTemplateList() {
+    const list = currentEditingTemplateType === 'excel' ? excelTemplates : pptTemplates;
+    if (currentEditingTemplateType === 'ppt' && pptTemplates.length === 0) { pptTemplates = getDefaultPptTemplates(); }
+    if (currentEditingTemplateType === 'excel' && excelTemplates.length === 0) { excelTemplates = getDefaultExcelTemplates(); }
+
+    const typeLabel = currentEditingTemplateType === 'excel' ? 'Excel' : 'PPT';
+    const itemCount = (t) => currentEditingTemplateType === 'excel' ? (t.sheets?.length || 0) + '个sheet' : (t.slides?.length || 0) + '页';
+
+    document.getElementById('template-list').innerHTML = list.map(t => `
         <div onclick="editTemplate('${t.id}')" class="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${t.isDefault ? 'border-blue-200 bg-blue-50' : ''}">
             <div class="flex justify-between items-center">
                 <span class="font-medium text-sm">${t.name}</span>
-                ${t.isDefault ? '<span class="text-blue-600 text-xs">默认</span>' : ''}
+                <div class="flex items-center gap-1">
+                    <span class="text-xs px-1.5 py-0.5 rounded ${currentEditingTemplateType === 'excel' ? 'bg-green-100 text-green-600' : 'bg-orange-100 text-orange-600'}">${typeLabel}</span>
+                    ${t.isDefault ? '<span class="text-blue-600 text-xs">默认</span>' : ''}
+                </div>
             </div>
-            <div class="text-xs text-gray-400 mt-1">${t.slides.length} 页 · ${t.source === 'system' ? '系统内置' : t.source === 'imported' ? '已导入' : '自定义'}</div>
+            <div class="text-xs text-gray-400 mt-1">${itemCount(t)} · ${t.source === 'system' ? '系统内置' : t.source === 'imported' ? '已导入' : '自定义'}</div>
         </div>
     `).join('');
 }
 
 function editTemplate(templateId) {
-    const t = proposalTemplates.find(tp => tp.id === templateId);
+    const list = currentEditingTemplateType === 'excel' ? excelTemplates : pptTemplates;
+    const t = list.find(tp => tp.id === templateId);
     if (!t) return;
     currentEditingTemplateId = templateId;
 
-    document.getElementById('template-editor').innerHTML = `
-        <div class="mb-4">
-            <div class="flex justify-between">
-                <h4 class="font-medium">${t.name}</h4>
-                <span class="text-xs text-gray-400">${t.source === 'system' ? '系统默认模板' : '自定义模板'}</span>
-            </div>
-            <div class="mt-3 space-y-3">
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">模板名称</label>
-                    <input type="text" id="tmpl-name" class="w-full border rounded px-3 py-2 text-sm" value="${t.name}">
+    const isExcel = currentEditingTemplateType === 'excel';
+
+    if (isExcel) {
+        document.getElementById('template-editor').innerHTML = `
+            <div class="mb-4">
+                <div class="flex justify-between">
+                    <h4 class="font-medium">${t.name}</h4>
+                    <span class="text-xs text-gray-400">${t.source === 'system' ? '系统默认模板' : '自定义模板'}</span>
                 </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">主题色</label>
-                    <input type="color" id="tmpl-color" value="${t.style.primaryColor}" class="w-16 h-8 border rounded">
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">字体</label>
-                    <select id="tmpl-font" class="w-full border rounded px-3 py-2 text-sm">
-                        <option ${t.style.fontFamily === '微软雅黑' ? 'selected' : ''}>微软雅黑</option>
-                        <option ${t.style.fontFamily === '宋体' ? 'selected' : ''}>宋体</option>
-                        <option ${t.style.fontFamily === '黑体' ? 'selected' : ''}>黑体</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">水印文字（可选）</label>
-                    <input type="text" id="tmpl-watermark" class="w-full border rounded px-3 py-2 text-sm" value="${t.style.watermark || ''}" placeholder="如：方案草稿、机密">
-                </div>
-                <div class="flex items-center gap-2">
-                    <input type="checkbox" id="tmpl-pagenum" ${t.style.showPageNumber ? 'checked' : ''}>
-                    <label class="text-sm">显示页码</label>
-                </div>
-                <h5 class="text-sm font-medium mt-4">页面结构</h5>
-                <div id="tmpl-slides" class="space-y-2 max-h-60 overflow-y-auto">
-                    ${t.slides.map((s, i) => `
-                    <div class="flex items-center gap-2 border rounded p-2 text-xs">
-                        <span class="text-gray-400 w-6">${i + 1}.</span>
-                        <select class="border rounded px-2 py-1 flex-1">
-                            <option ${s.type === 'cover' ? 'selected' : ''} value="cover">封面页</option>
-                            <option ${s.type === 'content' ? 'selected' : ''} value="content">内容页</option>
-                            <option ${s.type === 'product' ? 'selected' : ''} value="product">产品详情页</option>
-                            <option ${s.type === 'summary' ? 'selected' : ''} value="summary">价格汇总页</option>
-                            <option ${s.type === 'back' ? 'selected' : ''} value="back">封底</option>
+                <div class="mt-3 space-y-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">模板名称</label>
+                        <input type="text" id="tmpl-name" class="w-full border rounded px-3 py-2 text-sm" value="${t.name}">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">主题色</label>
+                        <input type="color" id="tmpl-color" value="${t.style.primaryColor}" class="w-16 h-8 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">字体</label>
+                        <select id="tmpl-font" class="w-full border rounded px-3 py-2 text-sm">
+                            <option ${t.style.fontFamily === '微软雅黑' ? 'selected' : ''}>微软雅黑</option>
+                            <option ${t.style.fontFamily === '宋体' ? 'selected' : ''}>宋体</option>
+                            <option ${t.style.fontFamily === '黑体' ? 'selected' : ''}>黑体</option>
                         </select>
-                        <input type="text" class="border rounded px-2 py-1 flex-1" value="${s.title}" placeholder="页标题">
-                        <button onclick="this.parentElement.remove()" class="text-red-500">×</button>
-                    </div>`).join('')}
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="tmpl-showheader" ${t.style.showHeader !== false ? 'checked' : ''}>
+                        <label class="text-sm">显示表头</label>
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="tmpl-freeze" ${t.style.freezePane !== false ? 'checked' : ''}>
+                        <label class="text-sm">冻结首行</label>
+                    </div>
+                    <h5 class="text-sm font-medium mt-4">Sheet 结构</h5>
+                    <div id="tmpl-slides" class="space-y-2 max-h-60 overflow-y-auto">
+                        ${(t.sheets || []).map((s, i) => `
+                        <div class="border rounded p-3 text-xs space-y-1">
+                            <div class="flex items-center gap-2">
+                                <span class="text-gray-400 w-6">${i + 1}.</span>
+                                <input type="text" class="border rounded px-2 py-1 flex-1 sheet-name" value="${s.name}" placeholder="Sheet名称">
+                                <button onclick="this.parentElement.parentElement.remove()" class="text-red-500">×</button>
+                            </div>
+                            <div class="flex items-center gap-2 ml-8">
+                                <span class="text-gray-400">字段：</span>
+                                <input type="text" class="border rounded px-2 py-1 flex-1 sheet-fields" value="${(s.fields || []).join(', ')}" placeholder="用逗号分隔，如：产品名称, 品牌, 集采价">
+                            </div>
+                        </div>`).join('')}
+                    </div>
+                    <button onclick="addTemplateSlide()" class="text-blue-600 text-xs hover:underline">+ 添加 Sheet</button>
                 </div>
-                <button onclick="addTemplateSlide()" class="text-blue-600 text-xs hover:underline">+ 添加页面</button>
             </div>
-        </div>
-        <div class="flex justify-end gap-2 pt-4 border-t">
-            <button onclick="saveTemplateConfig()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存模板</button>
-        </div>`;
+            <div class="flex justify-end gap-2 pt-4 border-t">
+                <button onclick="saveTemplateConfig()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存模板</button>
+            </div>`;
+    } else {
+        document.getElementById('template-editor').innerHTML = `
+            <div class="mb-4">
+                <div class="flex justify-between">
+                    <h4 class="font-medium">${t.name}</h4>
+                    <span class="text-xs text-gray-400">${t.source === 'system' ? '系统默认模板' : '自定义模板'}</span>
+                </div>
+                <div class="mt-3 space-y-3">
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">模板名称</label>
+                        <input type="text" id="tmpl-name" class="w-full border rounded px-3 py-2 text-sm" value="${t.name}">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">主题色</label>
+                        <input type="color" id="tmpl-color" value="${t.style.primaryColor}" class="w-16 h-8 border rounded">
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">字体</label>
+                        <select id="tmpl-font" class="w-full border rounded px-3 py-2 text-sm">
+                            <option ${t.style.fontFamily === '微软雅黑' ? 'selected' : ''}>微软雅黑</option>
+                            <option ${t.style.fontFamily === '宋体' ? 'selected' : ''}>宋体</option>
+                            <option ${t.style.fontFamily === '黑体' ? 'selected' : ''}>黑体</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs text-gray-500 mb-1">水印文字（可选）</label>
+                        <input type="text" id="tmpl-watermark" class="w-full border rounded px-3 py-2 text-sm" value="${t.style.watermark || ''}" placeholder="如：方案草稿、机密">
+                    </div>
+                    <div class="flex items-center gap-2">
+                        <input type="checkbox" id="tmpl-pagenum" ${t.style.showPageNumber ? 'checked' : ''}>
+                        <label class="text-sm">显示页码</label>
+                    </div>
+                    <h5 class="text-sm font-medium mt-4">页面结构</h5>
+                    <div id="tmpl-slides" class="space-y-2 max-h-60 overflow-y-auto">
+                        ${t.slides.map((s, i) => `
+                        <div class="flex items-center gap-2 border rounded p-2 text-xs">
+                            <span class="text-gray-400 w-6">${i + 1}.</span>
+                            <select class="border rounded px-2 py-1 flex-1 slide-type">
+                                <option ${s.type === 'cover' ? 'selected' : ''} value="cover">封面页</option>
+                                <option ${s.type === 'content' ? 'selected' : ''} value="content">内容页</option>
+                                <option ${s.type === 'product' ? 'selected' : ''} value="product">产品详情页</option>
+                                <option ${s.type === 'summary' ? 'selected' : ''} value="summary">价格汇总页</option>
+                                <option ${s.type === 'back' ? 'selected' : ''} value="back">封底</option>
+                            </select>
+                            <input type="text" class="border rounded px-2 py-1 flex-1 slide-title" value="${s.title}" placeholder="页标题">
+                            <button onclick="this.parentElement.remove()" class="text-red-500">×</button>
+                        </div>`).join('')}
+                    </div>
+                    <button onclick="addTemplateSlide()" class="text-blue-600 text-xs hover:underline">+ 添加页面</button>
+                </div>
+            </div>
+            <div class="flex justify-end gap-2 pt-4 border-t">
+                <button onclick="saveTemplateConfig()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存模板</button>
+            </div>`;
+    }
 }
 
 function addTemplateSlide() {
     const container = document.getElementById('tmpl-slides');
+    if (!container) return;
+    const isExcel = currentEditingTemplateType === 'excel';
     const idx = container.children.length + 1;
-    const div = document.createElement('div');
-    div.className = 'flex items-center gap-2 border rounded p-2 text-xs';
-    div.innerHTML = `
-        <span class="text-gray-400 w-6">${idx}.</span>
-        <select class="border rounded px-2 py-1 flex-1">
-            <option value="cover">封面页</option><option value="content">内容页</option>
-            <option value="product">产品详情页</option><option value="summary">价格汇总页</option>
-            <option value="back">封底</option>
-        </select>
-        <input type="text" class="border rounded px-2 py-1 flex-1" value="新页面" placeholder="页标题">
-        <button onclick="this.parentElement.remove()" class="text-red-500">×</button>`;
-    container.appendChild(div);
+
+    if (isExcel) {
+        const div = document.createElement('div');
+        div.className = 'border rounded p-3 text-xs space-y-1';
+        div.innerHTML = `
+            <div class="flex items-center gap-2">
+                <span class="text-gray-400 w-6">${idx}.</span>
+                <input type="text" class="border rounded px-2 py-1 flex-1 sheet-name" value="新建Sheet" placeholder="Sheet名称">
+                <button onclick="this.parentElement.parentElement.remove()" class="text-red-500">×</button>
+            </div>
+            <div class="flex items-center gap-2 ml-8">
+                <span class="text-gray-400">字段：</span>
+                <input type="text" class="border rounded px-2 py-1 flex-1 sheet-fields" value="" placeholder="用逗号分隔">
+            </div>`;
+        container.appendChild(div);
+    } else {
+        const div = document.createElement('div');
+        div.className = 'flex items-center gap-2 border rounded p-2 text-xs';
+        div.innerHTML = `
+            <span class="text-gray-400 w-6">${idx}.</span>
+            <select class="border rounded px-2 py-1 flex-1 slide-type">
+                <option value="cover">封面页</option><option value="content">内容页</option>
+                <option value="product">产品详情页</option><option value="summary">价格汇总页</option>
+                <option value="back">封底</option>
+            </select>
+            <input type="text" class="border rounded px-2 py-1 flex-1 slide-title" value="新页面" placeholder="页标题">
+            <button onclick="this.parentElement.remove()" class="text-red-500">×</button>`;
+        container.appendChild(div);
+    }
 }
 
 async function saveTemplateConfig() {
-    const t = proposalTemplates.find(tp => tp.id === currentEditingTemplateId);
+    const list = currentEditingTemplateType === 'excel' ? excelTemplates : pptTemplates;
+    const t = list.find(tp => tp.id === currentEditingTemplateId);
     if (!t) return;
 
     t.name = document.getElementById('tmpl-name')?.value || t.name;
     t.style.primaryColor = document.getElementById('tmpl-color')?.value || t.style.primaryColor;
     t.style.fontFamily = document.getElementById('tmpl-font')?.value || t.style.fontFamily;
-    t.style.watermark = document.getElementById('tmpl-watermark')?.value || '';
-    t.style.showPageNumber = document.getElementById('tmpl-pagenum')?.checked || false;
     t.updatedAt = new Date().toISOString();
 
-    // 收集页面
-    const slideDivs = document.querySelectorAll('#tmpl-slides > div');
-    t.slides = [];
-    slideDivs.forEach(div => {
-        const type = div.querySelector('select').value;
-        const title = div.querySelector('input').value;
-        t.slides.push({ type, title, layout: type === 'product' ? 'grid' : 'full', fields: [] });
-    });
+    if (currentEditingTemplateType === 'excel') {
+        t.style.showHeader = document.getElementById('tmpl-showheader')?.checked !== false;
+        t.style.freezePane = document.getElementById('tmpl-freeze')?.checked !== false;
+        const sheetDivs = document.querySelectorAll('#tmpl-slides > div');
+        t.sheets = [];
+        sheetDivs.forEach(div => {
+            const name = div.querySelector('.sheet-name')?.value || '';
+            const fieldsStr = div.querySelector('.sheet-fields')?.value || '';
+            t.sheets.push({ name, fields: fieldsStr.split(/[,，]/).map(f => f.trim()).filter(Boolean) });
+        });
+    } else {
+        t.style.watermark = document.getElementById('tmpl-watermark')?.value || '';
+        t.style.showPageNumber = document.getElementById('tmpl-pagenum')?.checked || false;
+        const slideDivs = document.querySelectorAll('#tmpl-slides > div');
+        t.slides = [];
+        slideDivs.forEach(div => {
+            const type = div.querySelector('.slide-type')?.value || 'content';
+            const title = div.querySelector('.slide-title')?.value || '';
+            t.slides.push({ type, title, layout: type === 'product' ? 'grid' : 'full', fields: [] });
+        });
+    }
 
-    // 如果修改了默认模板，保存为自定义副本
     if (t.isDefault && t.source === 'system') {
         t.isDefault = false;
         t.source = 'custom';
@@ -1490,9 +1634,24 @@ async function saveTemplateConfig() {
 }
 
 function createNewTemplate() {
-    const newTpl = {
+    const isExcel = currentEditingTemplateType === 'excel';
+    const newTpl = isExcel ? {
         id: 'tpl_' + Date.now(),
-        name: '新建模板',
+        name: '新建Excel模板',
+        isDefault: false,
+        source: 'custom',
+        type: 'excel',
+        sheets: [
+            { name: '封面', fields: ['projectName', 'customerCompany', 'date'] },
+            { name: '方案概览', fields: ['proposalName', 'tagline', 'totalPerPerson', 'totalPrice', 'overallMargin'] },
+            { name: '产品明细', fields: ['productName', 'brand', 'brandLevel', 'purchasePrice', 'quotePrice', 'margin'] },
+            { name: '价格汇总', fields: ['totalPrice', 'perPersonPrice'] }
+        ],
+        style: { primaryColor: '1a56db', fontFamily: '微软雅黑', showHeader: true, freezePane: true },
+        createdAt: today(), updatedAt: today()
+    } : {
+        id: 'tpl_' + Date.now(),
+        name: '新建PPT模板',
         isDefault: false,
         source: 'custom',
         slides: [
@@ -1505,22 +1664,24 @@ function createNewTemplate() {
         style: { primaryColor: '#1a56db', fontFamily: '微软雅黑', logoPosition: 'top-left', showPageNumber: true, watermark: '' },
         createdAt: today(), updatedAt: today()
     };
-    proposalTemplates.push(newTpl);
+
+    if (isExcel) {
+        excelTemplates.push(newTpl);
+    } else {
+        pptTemplates.push(newTpl);
+    }
     renderTemplateList();
     editTemplate(newTpl.id);
 }
 
-function importTemplateExcel() {
-    // 创建文件上传弹窗
+function importTemplate(type) {
+    const isExcel = type === 'excel' || (type !== 'ppt' && currentEditingTemplateType === 'excel');
     const input = document.createElement('input');
     input.type = 'file';
-    input.accept = '.xlsx,.xls,.pptx';
+    input.accept = isExcel ? '.xlsx,.xls' : '.xlsx,.xls,.pptx';
     input.onchange = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
-
-        // 简单版本：读取 Excel 结构的模板配置
-        // 完整版需要解析 PPT 文件结构，这里先用 Excel 配置模板
         try {
             const buffer = await file.arrayBuffer();
             const workbook = XLSX.read(buffer, { type: 'array' });
@@ -1529,26 +1690,52 @@ function importTemplateExcel() {
 
             if (rows.length === 0) { alert('模板文件为空'); return; }
 
-            const newTpl = {
-                id: 'tpl_' + Date.now(),
-                name: file.name.replace(/\.(xlsx|xls)$/, ''),
-                isDefault: false,
-                source: 'imported',
-                slides: rows.map((r, i) => ({
-                    type: r['页面类型'] || r['type'] || 'content',
-                    title: r['页标题'] || r['title'] || `第${i + 1}页`,
-                    layout: r['布局'] || r['layout'] || 'full',
-                    fields: (r['字段'] || r['fields'] || '').split(/[,，]/).filter(Boolean)
-                })),
-                style: { primaryColor: '#1a56db', fontFamily: '微软雅黑', logoPosition: 'top-left', showPageNumber: true, watermark: '' },
-                createdAt: today(), updatedAt: today()
-            };
-
-            proposalTemplates.push(newTpl);
-            await saveAllData();
-            renderTemplateList();
-            editTemplate(newTpl.id);
-            alert(`已导入模板"${newTpl.name}"，共 ${newTpl.slides.length} 页`);
+            if (isExcel) {
+                // 导入Excel模板：每个Sheet对应一个配置行，或读取sheet名作为字段
+                const newTpl = {
+                    id: 'tpl_' + Date.now(),
+                    name: file.name.replace(/\.(xlsx|xls)$/i, ''),
+                    isDefault: false,
+                    source: 'imported',
+                    type: 'excel',
+                    sheets: rows.map((r, i) => ({
+                        name: r['Sheet名称'] || r['name'] || r['sheetName'] || `Sheet${i + 1}`,
+                        fields: (r['字段'] || r['fields'] || '').split(/[,，]/).map(f => f.trim()).filter(Boolean)
+                    })),
+                    style: { primaryColor: '1a56db', fontFamily: '微软雅黑', showHeader: true, freezePane: true },
+                    createdAt: today(), updatedAt: today()
+                };
+                excelTemplates.push(newTpl);
+                currentEditingTemplateType = 'excel';
+                switchTemplateTab('excel');
+                await saveAllData();
+                renderTemplateList();
+                editTemplate(newTpl.id);
+                alert(`已导入Excel模板"${newTpl.name}"，共 ${newTpl.sheets.length} 个Sheet`);
+            } else {
+                // 导入PPT模板
+                const newTpl = {
+                    id: 'tpl_' + Date.now(),
+                    name: file.name.replace(/\.(xlsx|xls|pptx)$/i, ''),
+                    isDefault: false,
+                    source: 'imported',
+                    slides: rows.map((r, i) => ({
+                        type: r['页面类型'] || r['type'] || 'content',
+                        title: r['页标题'] || r['title'] || `第${i + 1}页`,
+                        layout: r['布局'] || r['layout'] || 'full',
+                        fields: (r['字段'] || r['fields'] || '').split(/[,，]/).filter(Boolean)
+                    })),
+                    style: { primaryColor: '#1a56db', fontFamily: '微软雅黑', logoPosition: 'top-left', showPageNumber: true, watermark: '' },
+                    createdAt: today(), updatedAt: today()
+                };
+                pptTemplates.push(newTpl);
+                currentEditingTemplateType = 'ppt';
+                switchTemplateTab('ppt');
+                await saveAllData();
+                renderTemplateList();
+                editTemplate(newTpl.id);
+                alert(`已导入PPT模板"${newTpl.name}"，共 ${newTpl.slides.length} 页`);
+            }
         } catch (e) {
             console.error('导入模板失败:', e);
             alert('导入失败：' + e.message);
