@@ -5921,9 +5921,9 @@
             hideImportOverlay();
         }
 
-        // 提取 DISPIMG 单元格内嵌图片
+        // 提取 DISPIMG 单元格内嵌图片（通过 metadata 链正确映射）
         async function extractDispimgImages(arrayBuffer, sheetName, jsonData, headerRow, rowImages) {
-            // 1. 扫描所有 DISPIMG 公式单元格
+            // 1. 扫描所有 DISPIMG 公式单元格 → { excelRow, guid }
             const dispimgCells = [];
             for (let i = 0; i < jsonData.length; i++) {
                 const row = jsonData[i];
@@ -5932,119 +5932,170 @@
                     const val = String(row[j] || '');
                     if (val.startsWith('=_xlfn.DISPIMG(')) {
                         const m = val.match(/ID_([A-F0-9]+)/i);
-                        if (m) {
-                            dispimgCells.push({ excelRow: i + 1, col: j, guid: m[1] });
-                        }
+                        if (m) dispimgCells.push({ excelRow: i + 1, guid: m[1] });
                     }
                 }
             }
             if (dispimgCells.length === 0) return;
 
-            // 2. 打开 XLSX 获取所有图片文件
+            // 2. 打开 XLSX
             const zip = await JSZip.loadAsync(arrayBuffer);
+
+            // 3. 找到对应 sheet 的 XML 文件路径
+            let sheetFilePath = null;
+            try {
+                const wbXml = await zip.file('xl/workbook.xml')?.async('text');
+                const wbRelsXml = await zip.file('xl/_rels/workbook.xml.rels')?.async('text');
+                if (wbXml && wbRelsXml) {
+                    // 查找 sheet 的 r:id
+                    const sheetRe = new RegExp(`<sheet[^>]*name="${escapeXml(sheetName)}"[^>]*r:id="([^"]*)"`);
+                    const sm = wbXml.match(sheetRe);
+                    if (sm) {
+                        const rId = sm[1];
+                        const relRe = new RegExp(`<Relationship[^>]*Id="${rId}"[^>]*Target="([^"]*)"`);
+                        const rm = wbRelsXml.match(relRe);
+                        if (rm) sheetFilePath = 'xl/' + rm[1].replace(/^xl\//, '');
+                    }
+                }
+            } catch (e) {}
+
+            // 4. 构建 vm → imageFilePath 的映射
+            const vmToImage = {}; // vm编号 → 图片文件路径
+
+            try {
+                // 4a. 解析 richData 关系：rId → 图片文件
+                const relIdToFile = {};
+                const relsPaths = ['xl/richData/richValueRel.xml.rels', 'xl/richData/richDataRel.xml.rels'];
+                for (const rp of relsPaths) {
+                    const relsFile = zip.file(rp);
+                    if (!relsFile) continue;
+                    const relsXml = await relsFile.async('text');
+                    for (const m of relsXml.matchAll(/<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"[^>]*\/?>/g)) {
+                        const target = m[2].replace(/^\.\.\//, 'xl/').replace(/\\/g, '/');
+                        if (/\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(target)) {
+                            relIdToFile[m[1]] = target;
+                        }
+                    }
+                    if (Object.keys(relIdToFile).length > 0) break;
+                }
+
+                // 4b. 解析 metadata.xml：vm → rId
+                if (Object.keys(relIdToFile).length > 0) {
+                    const metaFile = zip.file('xl/metadata.xml');
+                    if (metaFile) {
+                        const metaXml = await metaFile.async('text');
+                        // 匹配 <rcv vm="N" r:r="rIdX"/> 或 <rcv vm="N" ... r:id="rIdX"/>
+                        for (const m of metaXml.matchAll(/<rcv[^>]*\bvm="(\d+)"[^>]*\br:r="([^"]*)"[^>]*\/?>/g)) {
+                            const vm = m[1];
+                            const rId = m[2];
+                            if (relIdToFile[rId]) vmToImage[vm] = relIdToFile[rId];
+                        }
+                        // 也尝试 altova 命名空间变体
+                        if (Object.keys(vmToImage).length === 0) {
+                            for (const m of metaXml.matchAll(/<rcv[^>]*\bvm="(\d+)"[^>]*\br:id="([^"]*)"[^>]*\/?>/g)) {
+                                if (relIdToFile[m[2]]) vmToImage[m[1]] = relIdToFile[m[2]];
+                            }
+                        }
+                    }
+                }
+            } catch (e) {
+                console.warn('解析metadata链失败:', e);
+            }
+
+            // 5. 如果 metadata 链成功，从 sheet XML 中匹配 vm → 图片
+            if (Object.keys(vmToImage).length > 0 && sheetFilePath) {
+                const sheetXmlFile = zip.file(sheetFilePath);
+                if (sheetXmlFile) {
+                    try {
+                        const sheetXml = await sheetXmlFile.async('text');
+                        // 在当前 sheet 中找所有带 vm 属性的 <c> 元素
+                        const vmCells = new Map(); // vm → excelRow
+                        for (const m of sheetXml.matchAll(/<c[^>]*\br="([A-Z]+)(\d+)"[^>]*\bvm="(\d+)"[^>]*>/g)) {
+                            const excelRow = parseInt(m[2]);
+                            const vm = m[3];
+                            if (vmToImage[vm]) {
+                                vmCells.set(vm, { excelRow, filePath: vmToImage[vm] });
+                            }
+                        }
+                        // 也匹配行号在属性中的情况
+                        for (const m of sheetXml.matchAll(/<row\s+r="(\d+)"[^>]*>[\s\S]*?<c[^>]*\bvm="(\d+)"[^>]*>/g)) {
+                            // 用更简单的方式：遍历所有 c 元素
+                        }
+
+                        // 再扫一遍：匹配 row 标签的 r 属性
+                        if (vmCells.size === 0) {
+                            const rowRe = /<row\s+r="(\d+)"[^>]*>/g;
+                            let rowMatch;
+                            let currentRow = 1;
+                            while ((rowMatch = rowRe.exec(sheetXml)) !== null) {
+                                currentRow = parseInt(rowMatch[1]);
+                                const rowEndIdx = sheetXml.indexOf('</row>', rowMatch.index);
+                                const rowContent = sheetXml.substring(rowMatch.index, rowEndIdx);
+                                for (const cm of rowContent.matchAll(/<c[^>]*\bvm="(\d+)"[^>]*\/?>/g)) {
+                                    if (vmToImage[cm[1]]) {
+                                        vmCells.set(cm[1], { excelRow: currentRow, filePath: vmToImage[cm[1]] });
+                                    }
+                                }
+                            }
+                        }
+
+                        // 提取图片
+                        for (const [vm, info] of vmCells) {
+                            try {
+                                if (info.excelRow <= headerRow) continue;
+                                const file = zip.file(info.filePath);
+                                if (!file) continue;
+                                const data = await file.async('uint8array');
+                                const ext = info.filePath.split('.').pop().toLowerCase();
+                                const mime = ext === 'jpg' ? 'jpeg' : ext;
+                                const base64 = arrayBufferToBase64(data.buffer || data);
+                                const formattedBase64 = `data:image/${mime};base64,${base64}`;
+                                rowImages[info.excelRow] = rowImages[info.excelRow] || [];
+                                if (!rowImages[info.excelRow].some(img => img.base64 === formattedBase64)) {
+                                    rowImages[info.excelRow].push({ base64: formattedBase64, extension: ext });
+                                }
+                            } catch (e) {}
+                        }
+                        return; // metadata 链成功，无需回退
+                    } catch (e) {
+                        console.warn('解析sheet XML失败:', e);
+                    }
+                }
+            }
+
+            // 6. 回退：按顺序匹配（DISPIMG 图片通常在 media 文件夹末尾）
             const mediaFiles = Object.keys(zip.files)
                 .filter(f => f.startsWith('xl/media/') && /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(f))
                 .sort();
-
-            if (mediaFiles.length === 0) return;
-
-            // 3. 尝试从 richData 关系文件中解析 GUID → 图片文件名 的映射
-            const guidToFile = {};
-
-            try {
-                // 3a. 解析 xl/richData/richValueRel.xml.rels
-                const relsFile = zip.file('xl/richData/richValueRel.xml.rels');
-                if (relsFile) {
-                    const relsXml = await relsFile.async('text');
-                    const relMatches = [...relsXml.matchAll(/<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"/g)];
-                    // 同时解析 richValueRel.xml 获取 r:id → 内容 的对应关系
-                    const rvFile = zip.file('xl/richData/richValueRel.xml');
-                    if (rvFile) {
-                        const rvXml = await rvFile.async('text');
-                        // 尝试多种模式匹配
-                        const rvRelMatches = [...rvXml.matchAll(/<rvRel[^>]*r:id="([^"]*)"[^>]*>/g)];
-                        // 如果 richValueRel 有结构化数据，可能直接包含图片引用
-                    }
-                    // 简化处理：将关系文件中的映射存入，key 为 rId
-                    relMatches.forEach(rm => {
-                        const target = rm[2].replace(/^\.\.\//, 'xl/');
-                        if (/\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(target)) {
-                            // 无法直接关联 GUID，先收集所有 rId→file 映射
-                            guidToFile['_rel_' + rm[1]] = target;
-                        }
-                    });
-                }
-
-                // 3b. 尝试解析 workbook.xml 中的 definedName 获取 GUID→cell 映射
-                const wbXml = await zip.file('xl/workbook.xml')?.async('text');
-                if (wbXml) {
-                    // <definedName name="_xlfn.DISPIMG_<GUID>">Sheet1!$A$1</definedName>
-                    dispimgCells.forEach(cell => {
-                        const pattern = new RegExp(`_xlfn\\.DISPIMG_${cell.guid}[^"]*"[^>]*>[^<]*!?\\$?([A-Z]+)\\$?(\\d+)`);
-                        // 简化：仅验证 workbook.xml 中存在该 DISPIMG 定义
-                        if (wbXml.includes(`DISPIMG_${cell.guid}`)) {
-                            // 确认该 GUID 在 workbook 中有定义
-                        }
-                    });
-                }
-            } catch (e) {
-                console.warn('解析DISPIMG映射失败:', e);
-            }
-
-            // 4. 提取图片并匹配到行
-            // 策略：收集已由 ExcelJS 提取过的 media index，剩余的分给 DISPIMG
-            const existingImageCount = Object.values(rowImages).flat().length;
-            const dispimgMediaFiles = mediaFiles.filter((f, idx) => {
-                // 尝试通过 richData 映射匹配
-                const isDispimg = Object.values(guidToFile).some(target =>
-                    f.replace(/\\/g, '/').endsWith(target.replace(/\\/g, '/').split('/').pop())
-                );
-                // 也检查文件名是否包含 DISPIMG GUID
-                const hasGuid = dispimgCells.some(c => f.includes(c.guid));
-                return isDispimg || hasGuid || (existingImageCount > 0 && idx >= existingImageCount - Object.keys(guidToFile).length);
+            const alreadyExtracted = new Set();
+            Object.values(rowImages).flat().forEach(img => alreadyExtracted.add(img.base64));
+            const remaining = mediaFiles.filter(f => {
+                // 排除已通过 ExcelJS 提取的图片（通过文件名前缀粗略排除）
+                return true; // 保守：全部纳入候选
             });
-
-            // 如果富数据映射为空，回退：按顺序从现有图片之后取
-            if (Object.keys(guidToFile).length === 0 && dispimgMediaFiles.length === 0) {
-                const startIdx = Math.max(0, mediaFiles.length - dispimgCells.length);
-                dispimgMediaFiles.push(...mediaFiles.slice(startIdx));
-            }
-
-            // 如果还是没有匹配到，尝试所有图片中未匹配的
-            if (dispimgMediaFiles.length === 0 && existingImageCount === 0 && dispimgCells.length > 0) {
-                dispimgMediaFiles.push(...mediaFiles.slice(0, dispimgCells.length));
-            }
-
-            // 5. 提取图片并分配给行
+            const candidateFiles = remaining.slice(Math.max(0, remaining.length - dispimgCells.length));
             const cellsToFill = dispimgCells.filter(c => c.excelRow > headerRow);
-            const limit = Math.min(cellsToFill.length, dispimgMediaFiles.length);
 
-            for (let i = 0; i < limit; i++) {
+            for (let i = 0; i < Math.min(cellsToFill.length, candidateFiles.length); i++) {
                 try {
                     const cell = cellsToFill[i];
-                    const filePath = dispimgMediaFiles[i];
-                    const file = zip.file(filePath);
+                    const file = zip.file(candidateFiles[i]);
                     if (!file) continue;
-
                     const data = await file.async('uint8array');
-                    const ext = filePath.split('.').pop().toLowerCase();
+                    const ext = candidateFiles[i].split('.').pop().toLowerCase();
                     const mime = ext === 'jpg' ? 'jpeg' : ext;
                     const base64 = arrayBufferToBase64(data.buffer || data);
                     const formattedBase64 = `data:image/${mime};base64,${base64}`;
-
                     rowImages[cell.excelRow] = rowImages[cell.excelRow] || [];
-                    // 避免重复添加
-                    const exists = rowImages[cell.excelRow].some(img => img.base64 === formattedBase64);
-                    if (!exists) {
-                        rowImages[cell.excelRow].push({
-                            base64: formattedBase64,
-                            extension: ext
-                        });
+                    if (!rowImages[cell.excelRow].some(img => img.base64 === formattedBase64)) {
+                        rowImages[cell.excelRow].push({ base64: formattedBase64, extension: ext });
                     }
-                } catch (e) {
-                    console.warn('提取DISPIMG图片失败:', e);
-                }
+                } catch (e) {}
             }
+        }
+
+        function escapeXml(str) {
+            return String(str).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
         }
 
         function arrayBufferToBase64(buffer) {
@@ -6368,7 +6419,7 @@
         }
 
         // 压缩图片（异步）
-        function compressImage(base64Data, maxWidth = 400, quality = 0.7) {
+        function compressImage(base64Data, maxWidth = 1024, quality = 0.9) {
             return new Promise((resolve) => {
                 // 如果不是 base64 图片，直接返回
                 if (!base64Data || !base64Data.startsWith('data:image')) {
