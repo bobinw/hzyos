@@ -4823,6 +4823,20 @@
             return result;
         }
 
+        // 根据品牌候选列表，从单个商品名称中匹配品牌
+        function matchBrandForName(name, candidates) {
+            if (!name || !candidates || candidates.length === 0) return null;
+            const cleaned = name.trim();
+            // 按长度降序排列，优先匹配更长的品牌名（如"伊利纯牛奶"优先于"伊利"）
+            const sorted = [...candidates].sort((a, b) => b.length - a.length);
+            for (const brand of sorted) {
+                if (cleaned.startsWith(brand) && cleaned.length > brand.length) {
+                    return brand;
+                }
+            }
+            return null;
+        }
+
         // 手动触发：从商品名称分析品牌
         function detectBrandFromProductNames(sheetName) {
             const dataRows = window.pendingDataRows;
@@ -7050,6 +7064,19 @@
             const updateMap = window.updateExistingProducts || [];
             window.updateExistingProducts = null;
 
+            // 预先构建品牌候选列表，用于多品牌 sheet 的逐行匹配
+            const brandCandidates = (() => {
+                let nameIdx = null;
+                Object.entries(currentMappings).forEach(([idx, field]) => {
+                    if (field === '商品名称') nameIdx = parseInt(idx);
+                });
+                if (nameIdx === null) return null;
+                // 用"商品名称"做表头，逐行提取候选品牌
+                const fakeHeaders = ['商品名称'];
+                const fakeRows = parsedData.rows.map(r => [String(r[nameIdx] || '').trim()]);
+                return extractBrandFromProductNames(fakeHeaders, fakeRows);
+            })();
+
             for (let rowIndex = 0; rowIndex < parsedData.rows.length; rowIndex++) {
                 const row = parsedData.rows[rowIndex];
 
@@ -7209,9 +7236,11 @@
                     }
                 });
 
-                // 如果从工作表名检测到品牌且未通过字段映射设置，自动填充
-                if (window.pendingBrandName && !product.brand) {
-                    product.brand = window.pendingBrandName;
+                // 品牌未通过字段映射设置时，优先从商品名称逐行匹配，次选 sheet 名识别结果
+                if (!product.brand) {
+                    const rowBrand = brandCandidates ? matchBrandForName(product.name, brandCandidates) : null;
+                    const finalBrand = rowBrand || window.pendingBrandName || null;
+                    if (finalBrand) product.brand = finalBrand;
                 }
 
                 // 导入 Excel 中的嵌入图片
