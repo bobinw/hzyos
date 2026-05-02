@@ -5992,26 +5992,9 @@
             hideImportOverlay();
         }
 
-        // 提取 DISPIMG 单元格内嵌图片（通过 metadata 链正确映射）
+        // 提取 DISPIMG 单元格内嵌图片
         async function extractDispimgImages(arrayBuffer, sheetName, jsonData, headerRow, rowImages) {
-            // 1. 扫描所有 DISPIMG 公式单元格 → { excelRow, guid }
-            const dispimgCells = [];
-            for (let i = 0; i < jsonData.length; i++) {
-                const row = jsonData[i];
-                if (!row) continue;
-                for (let j = 0; j < row.length; j++) {
-                    const val = String(row[j] || '');
-                    if (val.startsWith('=_xlfn.DISPIMG(')) {
-                        const m = val.match(/ID_([A-F0-9]+)/i);
-                        if (m) dispimgCells.push({ excelRow: i + 1, guid: m[1] });
-                    }
-                }
-            }
-            if (dispimgCells.length === 0) return;
-
-            console.log(`[DISPIMG] 发现 ${dispimgCells.length} 个DISPIMG单元格`);
-
-            // 2. 打开 XLSX（优先使用缓存）
+            // 1. 打开 XLSX（优先使用缓存）
             let zip;
             if (pendingWorkbookData && pendingWorkbookData._zipPromise) {
                 zip = await pendingWorkbookData._zipPromise;
@@ -6019,14 +6002,13 @@
                 zip = await JSZip.loadAsync(arrayBuffer);
             }
 
-            // 诊断：列出ZIP中的关键文件结构
             const zipFiles = Object.keys(zip.files);
             const richDataFiles = zipFiles.filter(f => f.includes('richData') || f.includes('richValue'));
             const metaFiles = zipFiles.filter(f => f.includes('metadata'));
             const mediaFiles = zipFiles.filter(f => f.startsWith('xl/media/'));
             console.log(`[DISPIMG] ZIP结构: richData相关=${richDataFiles.join(',') || '无'}, metadata=${metaFiles.join(',') || '无'}, media图片=${mediaFiles.length}个`);
 
-            // 3. 找到对应 sheet 的 XML 文件路径
+            // 2. 找到对应 sheet 的 XML 文件路径
             let sheetFilePath = null;
             try {
                 const wbXml = await zip.file('xl/workbook.xml')?.async('text');
@@ -6043,6 +6025,53 @@
                 }
             } catch (e) {}
             console.log(`[DISPIMG] sheet文件路径: ${sheetFilePath || '未找到'}`);
+
+            // 3. 从 sheet XML 直接扫描 DISPIMG 公式（不依赖 SheetJS，因为它可能返回0而不是公式文本）
+            const dispimgCells = [];
+            if (sheetFilePath) {
+                try {
+                    const sheetXml = await zip.file(sheetFilePath)?.async('text');
+                    if (sheetXml) {
+                        // 匹配 <c r="A2"...><f>_xlfn.DISPIMG("ID_GUID",1)</f></c>
+                        const cellRe = /<c[^>]*\br="([A-Z]+)(\d+)"[^>]*>[\s\S]*?<f[^>]*>_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
+                        let m;
+                        while ((m = cellRe.exec(sheetXml)) !== null) {
+                            dispimgCells.push({ excelRow: parseInt(m[2]), guid: m[3] });
+                        }
+                        // 也尝试自闭合 <c/> 和跨行格式
+                        if (dispimgCells.length === 0) {
+                            // 宽松匹配：找所有包含 DISPIMG 的 <f> 元素，再回溯找父 <c> 的 r 属性
+                            const fRe = /<f[^>]*>_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
+                            while ((m = fRe.exec(sheetXml)) !== null) {
+                                // 向前搜索最近的 <c r="...">
+                                const before = sheetXml.substring(0, m.index);
+                                const cMatch = before.match(/<c[^>]*\br="([A-Z]+)(\d+)"[^>]*>$/);
+                                if (cMatch) {
+                                    dispimgCells.push({ excelRow: parseInt(cMatch[2]), guid: m[1] });
+                                }
+                            }
+                        }
+                    }
+                } catch (e) {}
+            }
+
+            // 如果 XML 扫描没找到，回退到 jsonData 扫描（兼容旧逻辑）
+            if (dispimgCells.length === 0) {
+                for (let i = 0; i < jsonData.length; i++) {
+                    const row = jsonData[i];
+                    if (!row) continue;
+                    for (let j = 0; j < row.length; j++) {
+                        const val = String(row[j] || '');
+                        if (val.startsWith('=_xlfn.DISPIMG(')) {
+                            const m = val.match(/ID_([A-F0-9]+)/i);
+                            if (m) dispimgCells.push({ excelRow: i + 1, guid: m[1] });
+                        }
+                    }
+                }
+            }
+
+            if (dispimgCells.length === 0) return;
+            console.log(`[DISPIMG] 发现 ${dispimgCells.length} 个DISPIMG单元格`);
 
             // 4. 尝试多种策略提取图片
             let extracted = false;
