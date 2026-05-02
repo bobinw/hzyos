@@ -6037,12 +6037,26 @@
             console.log(`[DISPIMG] sheet文件路径: ${sheetFilePath || '未找到'}`);
 
             // 3. 从 sheet XML 直接扫描 DISPIMG 公式
-            //    注意：XML 元素可能有命名空间前缀（如 <x:c> <x:f>），用 (?:<\w+:)? 兼容
             const dispimgCells = [];
             if (sheetFilePath) {
                 try {
                     const sheetXml = await zip.file(sheetFilePath)?.async('text');
                     if (sheetXml) {
+                        // 诊断：检查 XML 中是否包含 DISPIMG 相关内容
+                        const hasDispimg = /DISPIMG/i.test(sheetXml);
+                        const hasXlfn = /_xlfn/i.test(sheetXml);
+                        console.log(`[DISPIMG] sheet XML 诊断: 包含DISPIMG=${hasDispimg}, 包含_xlfn=${hasXlfn}, XML长度=${sheetXml.length}`);
+                        if (!hasDispimg && !hasXlfn) {
+                            // 检查是否 DISPIMG 以其他形式存在（如 xlfn 命名空间）
+                            const hasDispimgAnywhere = /DISPIMG/i.test(sheetXml);
+                            // 打印 XML 前 500 字符帮助诊断
+                            console.log(`[DISPIMG] sheet XML 开头: ${sheetXml.substring(0, 500)}`);
+                        } else {
+                            // 找到了，定位具体位置
+                            const idx = sheetXml.search(/DISPIMG/i);
+                            console.log(`[DISPIMG] 首个DISPIMG位置=${idx}, 上下文: ${sheetXml.substring(Math.max(0, idx - 100), idx + 200)}`);
+                        }
+
                         // 方法：找所有 _xlfn.DISPIMG 出现位置，向前回溯找最近的 r="行号" 属性
                         const dispimgRe = /_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
                         let m;
@@ -6068,6 +6082,7 @@
 
             // 如果 XML 扫描没找到，回退到 jsonData 扫描（兼容旧逻辑）
             if (dispimgCells.length === 0) {
+                let jsonHasDispimg = false;
                 for (let i = 0; i < jsonData.length; i++) {
                     const row = jsonData[i];
                     if (!row) continue;
@@ -6077,9 +6092,18 @@
                             const m = val.match(/ID_([A-F0-9]+)/i);
                             if (m) dispimgCells.push({ excelRow: i + 1, guid: m[1] });
                         }
+                        if (val.includes('DISPIMG')) jsonHasDispimg = true;
                     }
                 }
-                if (dispimgCells.length > 0) console.log(`[DISPIMG] jsonData回退: 找到 ${dispimgCells.length} 个DISPIMG`);
+                if (dispimgCells.length > 0) {
+                    console.log(`[DISPIMG] jsonData回退: 找到 ${dispimgCells.length} 个DISPIMG`);
+                } else {
+                    console.log(`[DISPIMG] jsonData中也未找到DISPIMG, jsonData行数=${jsonData.length}, 包含DISPIMG文本=${jsonHasDispimg}`);
+                    if (!jsonHasDispimg) {
+                        // 打印前几行数据帮助诊断
+                        console.log(`[DISPIMG] jsonData前3行: ${JSON.stringify(jsonData.slice(0, 3))}`);
+                    }
+                }
             }
 
             if (dispimgCells.length === 0) return;
