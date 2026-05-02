@@ -4096,6 +4096,8 @@
 
         // ========== 智能导入 ==========
         function initImportPage() {
+            // 重置文件输入框，确保浏览器能触发 change 事件（含选择同名文件场景）
+            document.getElementById('excelFile').value = '';
             // 始终刷新供应商列表（即使有未完成的多sheet导入）
             refreshSupplierDatalist();
 
@@ -4248,6 +4250,7 @@
             if (!file) return;
 
             pendingFileName = file.name;
+            event.target.value = ''; // 清空以确保重复选择同名文件也能触发 change 事件
 
             showImportOverlay('正在读取文件...', 0);
 
