@@ -4389,8 +4389,9 @@
                         <span class="text-xs text-gray-600 whitespace-nowrap">品牌名：</span>
                         <input type="text" id="brandConfirmInput" class="flex-1 border border-blue-300 rounded px-2 py-1 text-sm" value="${detectedBrand}">
                         <button onclick="confirmBrandName()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 whitespace-nowrap">确认</button>
+                        <button onclick="detectBrandFromExcelData()" class="px-3 py-1 bg-white border border-gray-300 text-gray-700 rounded text-xs hover:bg-gray-50 whitespace-nowrap">从商品名识别</button>
                     </div>
-                    <div class="text-xs text-gray-400 mt-1">已从工作表名识别，可修改后确认</div>
+                    <div class="text-xs text-gray-400 mt-1" id="brandSourceHint">已从工作表名识别，可修改后确认</div>
                 `;
                 const fileInfo = document.getElementById('fileInfo');
                 if (fileInfo) fileInfo.appendChild(section);
@@ -4411,6 +4412,34 @@
                     section.querySelector('div:last-child').textContent = `品牌名已确认：${confirmed}`;
                     section.querySelector('div:last-child').className = 'text-xs text-green-600 mt-1';
                 }
+            }
+        }
+
+        // 从已解析的Excel数据中提取品牌名（用于多sheet流程中替换sheet名识别结果）
+        function detectBrandFromExcelData() {
+            const ed = window.excelData;
+            if (!ed || !ed.headers || !ed.rows) {
+                alert('数据已失效，请重新加载工作表');
+                return;
+            }
+            const candidates = extractBrandFromProductNames(ed.headers, ed.rows);
+            const input = document.getElementById('brandConfirmInput');
+            const hint = document.getElementById('brandSourceHint');
+            if (!candidates || candidates.length === 0) {
+                if (hint) hint.innerHTML = '<span class="text-orange-500">未能从商品名称中识别出品牌，可手动输入</span>';
+                return;
+            }
+            const bestBrand = candidates[0];
+            if (input) input.value = bestBrand;
+            window.pendingBrandName = bestBrand;
+            if (hint) {
+                let html = `<span class="text-blue-600">已从商品名称识别：${bestBrand}（${ed.rows.length}个商品中分析）</span>`;
+                if (candidates.length > 1) {
+                    html += '<div class="mt-1">其他候选：' + candidates.slice(1).map(b =>
+                        `<span class="cursor-pointer text-blue-500 hover:underline" onclick="document.getElementById('brandConfirmInput').value='${b}';window.pendingBrandName='${b}';">${b}</span>`
+                    ).join('、') + '</div>';
+                }
+                hint.innerHTML = html;
             }
         }
 
