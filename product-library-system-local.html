@@ -6045,11 +6045,92 @@
             console.log(`[DISPIMG] sheet文件路径: ${sheetFilePath || '未找到'}`);
 
             // 4. 尝试多种策略提取图片
-
-            // 策略A: metadata → richData 链
             let extracted = false;
 
-            // 4a. 解析所有可能的 rels 文件，建立 rId→文件 映射
+            // 从ZIP提取图片的公共函数
+            async function extractImageFromZip(filePath, excelRow) {
+                try {
+                    const file = zip.file(filePath);
+                    if (!file) return false;
+                    const data = await file.async('uint8array');
+                    const ext = filePath.split('.').pop().toLowerCase();
+                    const mime = ext === 'jpg' ? 'jpeg' : ext;
+                    const base64 = arrayBufferToBase64(data.buffer || data);
+                    const formattedBase64 = `data:image/${mime};base64,${base64}`;
+                    rowImages[excelRow] = rowImages[excelRow] || [];
+                    if (!rowImages[excelRow].some(img => img.base64 === formattedBase64)) {
+                        rowImages[excelRow].push({ base64: formattedBase64, extension: ext });
+                    }
+                    return true;
+                } catch (e) { return false; }
+            }
+
+            // ── 策略0: WPS xl/cellimages.xml（最直接的映射：单元格→rId→图片）──
+            const cellImagesXmlPath = zipFiles.find(f => f.endsWith('cellimages.xml') || f.endsWith('cellImages.xml'));
+            if (cellImagesXmlPath) {
+                console.log(`[DISPIMG] 发现 cellimages.xml: ${cellImagesXmlPath}`);
+                try {
+                    const ciXml = await zip.file(cellImagesXmlPath)?.async('text');
+                    if (ciXml) {
+                        // 解析: <cellImage r="A2" image="rId1"/> 或 <cellImage r="A2" r:id="rId1"/>
+                        const cellRefToRid = new Map();
+                        for (const m of ciXml.matchAll(/<cellImage[^>]*\br="([A-Z]+)(\d+)"[^>]*\b(?:image|r:id)="([^"]*)"[^>]*\/?>/g)) {
+                            cellRefToRid.set(m[3], { col: m[1], row: parseInt(m[2]) });
+                        }
+                        console.log(`[DISPIMG] cellimages.xml: ${cellRefToRid.size} 条映射`);
+
+                        // 找 cellimages.xml 对应的 rels 文件
+                        let ciRelsPaths = [];
+                        // 标准路径: xl/_rels/cellimages.xml.rels
+                        const ciDir = cellImagesXmlPath.substring(0, cellImagesXmlPath.lastIndexOf('/'));
+                        const ciName = cellImagesXmlPath.substring(cellImagesXmlPath.lastIndexOf('/') + 1);
+                        ciRelsPaths.push(`${ciDir}/_rels/${ciName}.rels`);
+                        // 替代路径: xl/cellimages.xml.rels
+                        ciRelsPaths.push(`${cellImagesXmlPath}.rels`);
+                        // 在zip中搜索匹配的rels
+                        ciRelsPaths = [...ciRelsPaths, ...zipFiles.filter(f =>
+                            f.endsWith('.rels') && f.includes('cellimage')
+                        )];
+
+                        const ridToFile = {};
+                        for (const rp of ciRelsPaths) {
+                            try {
+                                const relsXml = await zip.file(rp)?.async('text');
+                                if (!relsXml) continue;
+                                for (const m of relsXml.matchAll(/<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"[^>]*\/?>/g)) {
+                                    let target = m[2].replace(/^\.\.\//, 'xl/');
+                                    if (!target.startsWith('xl/')) target = 'xl/' + target;
+                                    ridToFile[m[1]] = target;
+                                }
+                                if (Object.keys(ridToFile).length > 0) {
+                                    console.log(`[DISPIMG] cellimages rels (${rp}): ${Object.keys(ridToFile).length} 条`);
+                                    break;
+                                }
+                            } catch (e) {}
+                        }
+
+                        // 匹配并提取
+                        let cellimagesExtracted = 0;
+                        for (const [rid, cellInfo] of cellRefToRid) {
+                            const filePath = ridToFile[rid];
+                            if (!filePath) continue;
+                            if (cellInfo.row <= headerRow) continue;
+                            if (await extractImageFromZip(filePath, cellInfo.row)) {
+                                cellimagesExtracted++;
+                            }
+                        }
+                        if (cellimagesExtracted > 0) {
+                            extracted = true;
+                            console.log(`[DISPIMG] cellimages.xml 成功提取 ${cellimagesExtracted} 张图片`);
+                        }
+                    }
+                } catch (e) {
+                    console.warn('[DISPIMG] cellimages.xml 策略失败:', e);
+                }
+            }
+
+            // ── 策略A: metadata → richData 链
+            // 解析所有可能的 rels 文件，建立 rId→文件 映射
             const relIdToFile = {};
             const relsFilePaths = zipFiles.filter(f => f.endsWith('.rels') && (f.includes('richData') || f.includes('richValue')));
             for (const rp of relsFilePaths) {
@@ -6206,19 +6287,7 @@
                 }
 
                 for (const { cell, file } of allPairs) {
-                    try {
-                        const zf = zip.file(file);
-                        if (!zf) continue;
-                        const data = await zf.async('uint8array');
-                        const ext = file.split('.').pop().toLowerCase();
-                        const mime = ext === 'jpg' ? 'jpeg' : ext;
-                        const base64 = arrayBufferToBase64(data.buffer || data);
-                        const formattedBase64 = `data:image/${mime};base64,${base64}`;
-                        rowImages[cell.excelRow] = rowImages[cell.excelRow] || [];
-                        if (!rowImages[cell.excelRow].some(img => img.base64 === formattedBase64)) {
-                            rowImages[cell.excelRow].push({ base64: formattedBase64, extension: ext });
-                        }
-                    } catch (e) {}
+                    await extractImageFromZip(file, cell.excelRow);
                 }
                 if (allPairs.length > 0) extracted = true;
             }
