@@ -129,8 +129,22 @@
                 </div>
 
                 <!-- 分页 - 固定底部 -->
-                <div class="flex justify-between items-center py-3 text-sm text-gray-500 flex-shrink-0 border-t bg-white mt-2 rounded-lg">
+                <div class="flex justify-between items-center py-3 text-sm text-gray-500 flex-shrink-0 border-t bg-white mt-2 rounded-lg" id="listPagination">
                     <div>共 <span id="listCount">0</span> 条记录</div>
+                    <div class="flex items-center gap-3" id="listPageControls">
+                        <span class="text-xs text-gray-400">每页</span>
+                        <select id="listPageSize" class="border rounded px-1 py-0.5 text-xs" onchange="changePageSize()">
+                            <option value="50">50</option>
+                            <option value="100">100</option>
+                            <option value="200">200</option>
+                        </select>
+                        <span class="text-xs text-gray-400">条</span>
+                        <button onclick="goToPage(1)" class="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-30" id="btnFirstPage" disabled>«</button>
+                        <button onclick="goToPage(listCurrentPage - 1)" class="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-30" id="btnPrevPage" disabled>‹</button>
+                        <span class="text-xs px-1">第 <span id="pageCurrent" class="font-medium">1</span>/<span id="pageTotal">1</span> 页</span>
+                        <button onclick="goToPage(listCurrentPage + 1)" class="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-30" id="btnNextPage" disabled>›</button>
+                        <button onclick="goToPage(listTotalPages)" class="px-2 py-1 border rounded text-xs hover:bg-gray-50 disabled:opacity-30" id="btnLastPage" disabled>»</button>
+                    </div>
                 </div>
             </div>
 
@@ -2158,6 +2172,10 @@
         let nextProductId = 1;
         let requiredFields = [...DEFAULT_REQUIRED_FIELDS];
         let requiredGroups = JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
+        let listCurrentPage = 1;
+        let listTotalPages = 1;
+        let listPageSize = 50;
+        let listFiltered = []; // 当前筛选后的全部结果，分页仅取其中一页渲染
         let customProductFields = [];
         let customSupplierFields = [];
         let deletedSystemProductFields = [];
@@ -2679,12 +2697,12 @@
 
             switch (def.type) {
                 case 'select':
-                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList(true)">
                         ${def.options.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
                     </select>`;
 
                 case 'dynamicSelect':
-                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList()">
+                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList(true)">
                         <option value="">全部${def.label}</option>
                     </select>`;
 
@@ -2733,7 +2751,8 @@
         }
 
         // ========== 商品列表 ==========
-        function renderList() {
+        function renderList(resetPage = true) {
+            if (resetPage) listCurrentPage = 1;
             // 刷新动态筛选选项（品牌、供应商、发货地、产地等）
             initFilterOptions();
 
@@ -2789,23 +2808,53 @@
                 return true;
             });
 
+            // 保存筛选结果，计算分页
+            listFiltered = filtered;
+            listTotalPages = Math.ceil(filtered.length / listPageSize) || 1;
+            if (listCurrentPage > listTotalPages) listCurrentPage = listTotalPages;
+
+            // 仅取当前页数据
+            const startIdx = (listCurrentPage - 1) * listPageSize;
+            const pageData = filtered.slice(startIdx, startIdx + listPageSize);
+
             // 渲染表格
             const tbody = document.getElementById('productList');
-            if (!tbody) return; // 如果不在商品列表页面，直接返回
+            if (!tbody) return;
 
             const priceType = document.getElementById('priceTypeSelect')?.value || 'jc';
-
-            tbody.innerHTML = filtered.map(p => renderTableRow(p, priceType)).join('');
+            tbody.innerHTML = pageData.map(p => renderTableRow(p, priceType)).join('');
 
             // 更新统计
             const listCount = document.getElementById('listCount');
-            if (listCount) {
-                listCount.textContent = filtered.length;
-            }
+            if (listCount) listCount.textContent = filtered.length;
+
+            // 更新分页控件
+            updatePaginationControls();
             updateStats();
 
             // 重置选择状态
             updateSelection();
+        }
+
+        function updatePaginationControls() {
+            document.getElementById('pageCurrent').textContent = listCurrentPage;
+            document.getElementById('pageTotal').textContent = listTotalPages;
+            document.getElementById('listPageSize').value = String(listPageSize);
+            const btns = ['btnFirstPage', 'btnPrevPage', 'btnNextPage', 'btnLastPage'];
+            const disabled = [listCurrentPage <= 1, listCurrentPage <= 1, listCurrentPage >= listTotalPages, listCurrentPage >= listTotalPages];
+            btns.forEach((id, i) => document.getElementById(id).disabled = disabled[i]);
+        }
+
+        function goToPage(page) {
+            if (page < 1 || page > listTotalPages) return;
+            listCurrentPage = page;
+            renderList(false);
+        }
+
+        function changePageSize() {
+            listPageSize = parseInt(document.getElementById('listPageSize').value);
+            listCurrentPage = 1;
+            renderList();
         }
 
         function renderTableRow(p, priceType) {
@@ -2901,7 +2950,7 @@
                 }
                 if (colId === 'costPrice') {
                     return `<th class="px-4 py-3 text-left font-medium text-gray-500">
-                        <select id="priceTypeSelect" onchange="renderList()" class="border rounded px-1 py-0.5 text-xs font-medium">
+                        <select id="priceTypeSelect" onchange="renderList(true)" class="border rounded px-1 py-0.5 text-xs font-medium">
                             <option value="jc">集采价</option>
                             <option value="df">代发价</option>
                         </select>
