@@ -20,8 +20,8 @@ sudo mkdir -p /var/www/hzyos/libs
 
 # 复制文件（假设文件已上传到 /tmp/hzyos/）
 echo "[4/5] 复制文件..."
-if [ -f "/tmp/hzyos/product-library-test.html" ]; then
-    sudo cp /tmp/hzyos/product-library-test.html /var/www/hzyos/
+if [ -f "/tmp/hzyos/product-library-cloud.html" ]; then
+    sudo cp /tmp/hzyos/product-library-cloud.html /var/www/hzyos/
     sudo cp -r /tmp/hzyos/libs/* /var/www/hzyos/libs/
     echo "文件复制完成"
 else

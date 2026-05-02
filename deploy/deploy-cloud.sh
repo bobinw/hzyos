@@ -34,8 +34,8 @@ sudo mkdir -p /var/www/hzyos/data
 
 # 复制前端文件
 echo "[6/6] 复制文件..."
-if [ -f "/tmp/hzyos/product-library-test.html" ]; then
-    sudo cp /tmp/hzyos/product-library-test.html /var/www/hzyos/public/
+if [ -f "/tmp/hzyos/product-library-cloud.html" ]; then
+    sudo cp /tmp/hzyos/product-library-cloud.html /var/www/hzyos/public/
     sudo cp -r /tmp/hzyos/libs/* /var/www/hzyos/public/libs/
     sudo cp -r /tmp/hzyos/server/* /var/www/hzyos/server/
     echo "文件复制完成"
