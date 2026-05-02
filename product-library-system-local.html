@@ -4376,27 +4376,66 @@
             document.getElementById('btnBackToSheetList').classList.remove('hidden');
             document.getElementById('btnCancelImport').classList.add('hidden');
             await processExcelSheet(pendingWorkbookData.workbook, sheetName, pendingWorkbookData.arrayBuffer);
-            // 从工作表名自动检测品牌名
-            const detectedBrand = extractBrandFromSheetName(sheetName);
-            if (detectedBrand) {
-                window.pendingBrandName = detectedBrand;
-                const existing = document.getElementById('brandConfirmSection');
-                if (existing) existing.remove();
-                const section = document.createElement('div');
-                section.id = 'brandConfirmSection';
-                section.className = 'mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg';
-                section.innerHTML = `
-                    <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-600 whitespace-nowrap">品牌名：</span>
-                        <input type="text" id="brandConfirmInput" class="flex-1 border border-blue-300 rounded px-2 py-1 text-sm" value="${detectedBrand}">
-                        <button onclick="confirmBrandName()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 whitespace-nowrap">确认</button>
-                        <button onclick="detectBrandFromExcelData()" class="px-3 py-1 bg-white border border-gray-300 text-gray-700 rounded text-xs hover:bg-gray-50 whitespace-nowrap">从商品名识别</button>
-                    </div>
-                    <div class="text-xs text-gray-400 mt-1" id="brandSourceHint">已从工作表名识别，可修改后确认</div>
-                `;
-                const fileInfo = document.getElementById('fileInfo');
-                if (fileInfo) fileInfo.appendChild(section);
+            // 品牌名识别：让用户选择识别方式
+            showBrandChoicePanel(sheetName);
+        }
+
+        // 显示品牌识别方式选择面板
+        function showBrandChoicePanel(sheetName) {
+            const existing = document.getElementById('brandConfirmSection');
+            if (existing) existing.remove();
+            const section = document.createElement('div');
+            section.id = 'brandConfirmSection';
+            section.className = 'mt-2 p-2 bg-blue-50 border border-blue-200 rounded-lg';
+            section.innerHTML = `
+                <div class="text-xs text-gray-500 mb-2">品牌识别方式：</div>
+                <div class="flex gap-1 mb-2">
+                    <button onclick="runSheetNameDetection('${sheetName}')" class="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs hover:bg-blue-50 whitespace-nowrap">从sheet名</button>
+                    <button onclick="runProductNameDetection()" class="flex-1 px-2 py-1 bg-white border border-gray-300 rounded text-xs hover:bg-blue-50 whitespace-nowrap">从商品名</button>
+                    <button onclick="runAutoDetection('${sheetName}')" class="flex-1 px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 whitespace-nowrap">系统决定</button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <span class="text-xs text-gray-600 whitespace-nowrap">品牌名：</span>
+                    <input type="text" id="brandConfirmInput" class="flex-1 border border-blue-300 rounded px-2 py-1 text-sm" placeholder="选择识别方式或手动输入">
+                    <button onclick="confirmBrandName()" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700 whitespace-nowrap">确认</button>
+                </div>
+                <div class="text-xs text-gray-400 mt-1" id="brandSourceHint">请选择识别方式，或直接手动输入品牌名</div>
+            `;
+            const fileInfo = document.getElementById('fileInfo');
+            if (fileInfo) fileInfo.appendChild(section);
+        }
+
+        // 从sheet名识别
+        function runSheetNameDetection(sheetName) {
+            const brand = extractBrandFromSheetName(sheetName);
+            const input = document.getElementById('brandConfirmInput');
+            const hint = document.getElementById('brandSourceHint');
+            if (input) input.value = brand;
+            window.pendingBrandName = brand;
+            if (hint) hint.innerHTML = `<span class="text-blue-600">已从工作表名识别：${brand}</span>`;
+        }
+
+        // 从商品名识别
+        function runProductNameDetection() {
+            detectBrandFromExcelData();
+        }
+
+        // 系统决定：先试商品名，再试sheet名
+        function runAutoDetection(sheetName) {
+            const ed = window.excelData;
+            if (ed && ed.headers && ed.rows) {
+                const candidates = extractBrandFromProductNames(ed.headers, ed.rows);
+                if (candidates && candidates.length > 0) {
+                    detectBrandFromExcelData();
+                    const hint = document.getElementById('brandSourceHint');
+                    if (hint) hint.innerHTML = hint.innerHTML.replace('已从商品名称识别', '系统决定（商品名优先）：');
+                    return;
+                }
             }
+            // 商品名没识别到，用sheet名
+            runSheetNameDetection(sheetName);
+            const hint = document.getElementById('brandSourceHint');
+            if (hint) hint.innerHTML = hint.innerHTML.replace('已从工作表名识别', '系统决定（回退sheet名）：');
         }
 
         // 确认品牌名
@@ -4408,10 +4447,19 @@
                 if (section) {
                     const confirmed = window.pendingBrandName || '(无品牌)';
                     section.className = 'mt-2 p-2 bg-green-50 border border-green-200 rounded-lg';
-                    section.querySelector('button').textContent = '已确认';
-                    section.querySelector('button').className = 'px-3 py-1 bg-green-600 text-white rounded text-xs';
-                    section.querySelector('div:last-child').textContent = `品牌名已确认：${confirmed}`;
-                    section.querySelector('div:last-child').className = 'text-xs text-green-600 mt-1';
+                    // 隐藏选择按钮行，保留确认按钮和输入框
+                    const btnRow = section.querySelector('.flex.gap-1');
+                    if (btnRow) btnRow.style.display = 'none';
+                    const confirmBtn = section.querySelector('button[onclick="confirmBrandName()"]');
+                    if (confirmBtn) {
+                        confirmBtn.textContent = '已确认';
+                        confirmBtn.className = 'px-3 py-1 bg-green-600 text-white rounded text-xs';
+                    }
+                    const hint = document.getElementById('brandSourceHint');
+                    if (hint) {
+                        hint.textContent = `品牌名已确认：${confirmed}`;
+                        hint.className = 'text-xs text-green-600 mt-1';
+                    }
                 }
             }
         }
@@ -4628,9 +4676,11 @@
                             <div class="flex justify-between items-center mb-2">
                                 <label class="text-sm font-medium">品牌识别</label>
                                 <div class="flex gap-1">
-                                    <button onclick="detectBrandFromSheetName('${sheetName}')" class="text-xs text-blue-600 hover:underline">从工作表名识别</button>
+                                    <button onclick="detectBrandFromSheetName('${sheetName}')" class="text-xs text-blue-600 hover:underline">从sheet名</button>
                                     <span class="text-gray-300">|</span>
-                                    <button onclick="detectBrandFromProductNames('${sheetName}')" class="text-xs text-blue-600 hover:underline">从商品名称分析</button>
+                                    <button onclick="detectBrandFromProductNames('${sheetName}')" class="text-xs text-blue-600 hover:underline">从商品名</button>
+                                    <span class="text-gray-300">|</span>
+                                    <button onclick="autoDetectBrand('${sheetName}')" class="text-xs text-blue-600 hover:underline font-medium">系统决定</button>
                                 </div>
                             </div>
                             <div class="bg-gray-50 rounded-lg p-3 text-sm">
@@ -4696,11 +4746,9 @@
                 });
             }
 
-            // 自动识别品牌名（多sheet时优先从sheet名提取）
-            autoDetectBrand(sheetName);
         }
 
-        // 自动识别品牌名（优先从商品名称，其次从sheet名）
+        // 系统决定品牌（优先从商品名称，其次从sheet名）
         function autoDetectBrand(sheetName) {
             // 检查是否已映射品牌字段
             const brandMapped = [...document.querySelectorAll('.sheet-field-select')].some(s => s.value === '品牌');
@@ -4732,7 +4780,7 @@
                 if (input && brandFound) {
                     input.value = brandFound;
                     if (hint) {
-                        hint.innerHTML = `<span class="text-blue-600">${brandSource}品牌：${brandFound}，请确认后点击"应用到品牌字段"</span>`;
+                        hint.innerHTML = `<span class="text-blue-600">系统决定：${brandSource} → 品牌：${brandFound}，请确认后点击"应用到品牌字段"</span>`;
                     }
                 }
             }
