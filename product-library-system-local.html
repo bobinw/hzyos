@@ -6933,8 +6933,12 @@
             else if (fieldName === '价格有效期') product.priceExpiry = val;
 
             // 图片媒体
-            else if (fieldName === '产品图片') product.mainImage = val;
-            else if (fieldName === '详情图') product.detailImages = val;
+            else if (fieldName === '产品图片') {
+                if (!String(val).startsWith('=_xlfn.DISPIMG(')) product.mainImage = val;
+            }
+            else if (fieldName === '详情图') {
+                if (!String(val).startsWith('=_xlfn.DISPIMG(')) product.detailImages = val;
+            }
 
             // 电商参考
             else if (fieldName === '京东链接') product.jdLink = val;
