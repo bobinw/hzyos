@@ -6137,6 +6137,8 @@
                 try {
                     const ciXml = await zip.file(cellImagesXmlPath)?.async('text');
                     if (ciXml) {
+                        // 诊断：打印 cellimages.xml 前800字符查看格式
+                        console.log(`[DISPIMG] cellimages.xml 开头: ${ciXml.substring(0, 800)}`);
                         // 解析: <cellImage r="A2" image="rId1"/> 或 <cellImage r="A2" r:id="rId1"/>
                         const cellRefToRid = new Map();
                         for (const m of ciXml.matchAll(/<cellImage[^>]*\br="([A-Z]+)(\d+)"[^>]*\b(?:image|r:id)="([^"]*)"[^>]*\/?>/g)) {
@@ -6333,22 +6335,36 @@
 
             // 策略C: 回退 - 按顺序匹配
             if (!extracted && mediaFiles.length > 0) {
-                console.log(`[DISPIMG] 回退到顺序匹配: ${mediaFiles.length}个媒体文件, ${dispimgCells.length}个DISPIMG单元格`);
+                // 按数字顺序排序（修复字符串排序导致 image1→image10→image100 错乱）
+                const numSort = (a, b) => {
+                    const na = parseInt(a.match(/(\d+)(?!.*\d)/)?.[1] || '0');
+                    const nb = parseInt(b.match(/(\d+)(?!.*\d)/)?.[1] || '0');
+                    return na - nb;
+                };
+                const sortedMedia = [...mediaFiles].sort(numSort);
+
+                console.log(`[DISPIMG] 回退到顺序匹配: ${sortedMedia.length}个媒体文件(已按数字排序), ${dispimgCells.length}个DISPIMG单元格`);
                 const cellsToFill = dispimgCells.filter(c => c.excelRow > headerRow);
+                // 按excelRow排序确保行顺序一致
+                cellsToFill.sort((a, b) => a.excelRow - b.excelRow);
+
                 // DISPIMG图片的media文件名可能包含GUID
                 const matched = [];
                 cellsToFill.forEach(cell => {
-                    const matchFile = mediaFiles.find(f => f.includes(cell.guid.substring(0, 8)) || f.includes(cell.guid));
+                    const matchFile = sortedMedia.find(f => f.includes(cell.guid.substring(0, 8)) || f.includes(cell.guid));
                     if (matchFile) matched.push({ cell, file: matchFile });
                 });
                 // 没匹配到的按顺序取
                 const usedFiles = new Set(matched.map(m => m.file));
-                const remaining = mediaFiles.filter(f => !usedFiles.has(f));
+                const remaining = sortedMedia.filter(f => !usedFiles.has(f));
                 const unmatched = cellsToFill.filter(c => !matched.some(m => m.cell === c));
 
+                // 诊断前5对匹配
+                console.log(`[DISPIMG] 顺序匹配: GUID匹配=${matched.length}对, 剩余文件=${remaining.length}, 未匹配单元格=${unmatched.length}`);
                 const allPairs = [...matched];
                 for (let i = 0; i < Math.min(unmatched.length, remaining.length); i++) {
                     allPairs.push({ cell: unmatched[i], file: remaining[i] });
+                    if (i < 5) console.log(`[DISPIMG] 配对 #${i}: 行${unmatched[i].excelRow} → ${remaining[i]}`);
                 }
 
                 for (const { cell, file } of allPairs) {
