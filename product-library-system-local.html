@@ -6130,62 +6130,70 @@
                 } catch (e) { return false; }
             }
 
-            // ── 策略0: WPS xl/cellimages.xml（最直接的映射：单元格→rId→图片）──
+            // ── 策略0: WPS xl/cellimages.xml（GUID精确匹配，结果缓存到pendingWorkbookData）──
             const cellImagesXmlPath = zipFiles.find(f => f.endsWith('cellimages.xml') || f.endsWith('cellImages.xml'));
             if (cellImagesXmlPath) {
-                console.log(`[DISPIMG] 发现 cellimages.xml: ${cellImagesXmlPath}`);
                 try {
-                    const ciXml = await zip.file(cellImagesXmlPath)?.async('text');
-                    if (ciXml) {
-                        // WPS 实际格式：
-                        // <etc:cellImage><xdr:pic><xdr:nvPicPr><xdr:cNvPr name="ID_GUID"/>
-                        // ...<a:blip r:embed="rId1"/>...
-                        // 提取 GUID → rId 映射
-                        const guidToRid = new Map();
-                        // 匹配每个 <etc:cellImage> 块中的 name="ID_GUID" 和 r:embed="rIdX"
-                        const ciBlockRe = /<etc:cellImage>[\s\S]*?<\/etc:cellImage>/g;
-                        let blockMatch;
-                        while ((blockMatch = ciBlockRe.exec(ciXml)) !== null) {
-                            const block = blockMatch[0];
-                            const guidMatch = block.match(/name="ID_([A-F0-9]+)"/i);
-                            const ridMatch = block.match(/r:embed="([^"]*)"/);
-                            if (guidMatch && ridMatch) {
-                                guidToRid.set(guidMatch[1].toUpperCase(), ridMatch[1]);
+                    // 优先使用缓存的解析结果（多sheet复用）
+                    let guidToRid, ridToFile;
+                    if (pendingWorkbookData && pendingWorkbookData._cellImagesGuidToRid) {
+                        guidToRid = pendingWorkbookData._cellImagesGuidToRid;
+                        ridToFile = pendingWorkbookData._cellImagesRidToFile;
+                        console.log(`[DISPIMG] cellimages.xml 使用缓存: ${guidToRid.size}条GUID→rId, ${Object.keys(ridToFile).length}条rId→文件`);
+                    } else {
+                        const ciXml = await zip.file(cellImagesXmlPath)?.async('text');
+                        if (ciXml) {
+                            // 提取 GUID → rId 映射
+                            guidToRid = new Map();
+                            const ciBlockRe = /<etc:cellImage>[\s\S]*?<\/etc:cellImage>/g;
+                            let blockMatch;
+                            while ((blockMatch = ciBlockRe.exec(ciXml)) !== null) {
+                                const block = blockMatch[0];
+                                const guidMatch = block.match(/name="ID_([A-F0-9]+)"/i);
+                                const ridMatch = block.match(/r:embed="([^"]*)"/);
+                                if (guidMatch && ridMatch) {
+                                    guidToRid.set(guidMatch[1].toUpperCase(), ridMatch[1]);
+                                }
+                            }
+                            console.log(`[DISPIMG] cellimages.xml: ${guidToRid.size} 条 GUID→rId 映射`);
+
+                            // 找 cellimages.xml 对应的 rels 文件
+                            let ciRelsPaths = [];
+                            const ciDir = cellImagesXmlPath.substring(0, cellImagesXmlPath.lastIndexOf('/'));
+                            const ciName = cellImagesXmlPath.substring(cellImagesXmlPath.lastIndexOf('/') + 1);
+                            ciRelsPaths.push(`${ciDir}/_rels/${ciName}.rels`);
+                            ciRelsPaths.push(`${cellImagesXmlPath}.rels`);
+                            ciRelsPaths = [...ciRelsPaths, ...zipFiles.filter(f =>
+                                f.endsWith('.rels') && f.includes('cellimage')
+                            )];
+
+                            ridToFile = {};
+                            for (const rp of ciRelsPaths) {
+                                try {
+                                    const relsXml = await zip.file(rp)?.async('text');
+                                    if (!relsXml) continue;
+                                    for (const m of relsXml.matchAll(/<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"[^>]*\/?>/g)) {
+                                        let target = m[2].replace(/^\.\.\//, 'xl/');
+                                        if (!target.startsWith('xl/')) target = 'xl/' + target;
+                                        ridToFile[m[1]] = target;
+                                    }
+                                    if (Object.keys(ridToFile).length > 0) {
+                                        console.log(`[DISPIMG] cellimages rels (${rp}): ${Object.keys(ridToFile).length} 条`);
+                                        break;
+                                    }
+                                } catch (e) {}
+                            }
+
+                            // 缓存到 pendingWorkbookData，后续sheet直接复用
+                            if (pendingWorkbookData) {
+                                pendingWorkbookData._cellImagesGuidToRid = guidToRid;
+                                pendingWorkbookData._cellImagesRidToFile = ridToFile;
                             }
                         }
-                        console.log(`[DISPIMG] cellimages.xml: ${guidToRid.size} 条 GUID→rId 映射`);
+                    }
 
-                        // 找 cellimages.xml 对应的 rels 文件
-                        let ciRelsPaths = [];
-                        // 标准路径: xl/_rels/cellimages.xml.rels
-                        const ciDir = cellImagesXmlPath.substring(0, cellImagesXmlPath.lastIndexOf('/'));
-                        const ciName = cellImagesXmlPath.substring(cellImagesXmlPath.lastIndexOf('/') + 1);
-                        ciRelsPaths.push(`${ciDir}/_rels/${ciName}.rels`);
-                        // 替代路径: xl/cellimages.xml.rels
-                        ciRelsPaths.push(`${cellImagesXmlPath}.rels`);
-                        // 在zip中搜索匹配的rels
-                        ciRelsPaths = [...ciRelsPaths, ...zipFiles.filter(f =>
-                            f.endsWith('.rels') && f.includes('cellimage')
-                        )];
-
-                        const ridToFile = {};
-                        for (const rp of ciRelsPaths) {
-                            try {
-                                const relsXml = await zip.file(rp)?.async('text');
-                                if (!relsXml) continue;
-                                for (const m of relsXml.matchAll(/<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"[^>]*\/?>/g)) {
-                                    let target = m[2].replace(/^\.\.\//, 'xl/');
-                                    if (!target.startsWith('xl/')) target = 'xl/' + target;
-                                    ridToFile[m[1]] = target;
-                                }
-                                if (Object.keys(ridToFile).length > 0) {
-                                    console.log(`[DISPIMG] cellimages rels (${rp}): ${Object.keys(ridToFile).length} 条`);
-                                    break;
-                                }
-                            } catch (e) {}
-                        }
-
-                        // 匹配：DISPIMG单元格GUID → cellimages.xml的rId → rels图片文件
+                    // 匹配：DISPIMG单元格GUID → cellimages.xml的rId → rels图片文件
+                    if (guidToRid && ridToFile) {
                         let cellimagesExtracted = 0;
                         for (const cell of dispimgCells) {
                             if (cell.excelRow <= headerRow) continue;
@@ -6200,8 +6208,6 @@
                         if (cellimagesExtracted > 0) {
                             extracted = true;
                             console.log(`[DISPIMG] cellimages.xml 成功提取 ${cellimagesExtracted}/${dispimgCells.length} 张图片（GUID精确匹配）`);
-                        } else {
-                            console.log(`[DISPIMG] cellimages.xml 未匹配: GUID→rId=${guidToRid.size}条, rId→文件=${Object.keys(ridToFile).length}条, DISPIMG单元格=${dispimgCells.length}个`);
                         }
                     }
                 } catch (e) {
