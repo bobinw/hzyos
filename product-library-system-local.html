@@ -7,6 +7,7 @@
     <script src="libs/tailwind.min.js"></script>
     <script src="libs/xlsx.full.min.js"></script>
     <script src="libs/exceljs.min.js"></script>
+    <script src="libs/jszip.min.js"></script>
     <style>
         .tag { display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.75rem; }
         .page { display: none !important; }
@@ -5152,6 +5153,9 @@
                     console.warn('图片提取失败:', e);
                 }
 
+                // 提取 DISPIMG 嵌入图片（单元格内置图片）
+                await extractDispimgImages(pendingWorkbookData.arrayBuffer, sheetName, jsonData, 1, rowImages);
+
                 updateImportOverlay('导入数据...', 60);
 
                 // 导入数据
@@ -5771,6 +5775,13 @@
                     }
                 }
 
+                // 提取 DISPIMG 嵌入图片（单元格内置图片）
+                try {
+                    await extractDispimgImages(arrayBuffer, sheetName, jsonData, 1, window.excelData.rowImages);
+                } catch (e) {
+                    console.warn('DISPIMG图片提取失败:', e);
+                }
+
             } catch (imgErr) {
                 // 图片提取失败不影响数据导入
             }
@@ -5860,6 +5871,132 @@
                 window.excelData.rows.map(row => row.join('\t')).join('\n');
 
             hideImportOverlay();
+        }
+
+        // 提取 DISPIMG 单元格内嵌图片
+        async function extractDispimgImages(arrayBuffer, sheetName, jsonData, headerRow, rowImages) {
+            // 1. 扫描所有 DISPIMG 公式单元格
+            const dispimgCells = [];
+            for (let i = 0; i < jsonData.length; i++) {
+                const row = jsonData[i];
+                if (!row) continue;
+                for (let j = 0; j < row.length; j++) {
+                    const val = String(row[j] || '');
+                    if (val.startsWith('=_xlfn.DISPIMG(')) {
+                        const m = val.match(/ID_([A-F0-9]+)/i);
+                        if (m) {
+                            dispimgCells.push({ excelRow: i + 1, col: j, guid: m[1] });
+                        }
+                    }
+                }
+            }
+            if (dispimgCells.length === 0) return;
+
+            // 2. 打开 XLSX 获取所有图片文件
+            const zip = await JSZip.loadAsync(arrayBuffer);
+            const mediaFiles = Object.keys(zip.files)
+                .filter(f => f.startsWith('xl/media/') && /\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(f))
+                .sort();
+
+            if (mediaFiles.length === 0) return;
+
+            // 3. 尝试从 richData 关系文件中解析 GUID → 图片文件名 的映射
+            const guidToFile = {};
+
+            try {
+                // 3a. 解析 xl/richData/richValueRel.xml.rels
+                const relsFile = zip.file('xl/richData/richValueRel.xml.rels');
+                if (relsFile) {
+                    const relsXml = await relsFile.async('text');
+                    const relMatches = [...relsXml.matchAll(/<Relationship[^>]*Id="([^"]*)"[^>]*Target="([^"]*)"/g)];
+                    // 同时解析 richValueRel.xml 获取 r:id → 内容 的对应关系
+                    const rvFile = zip.file('xl/richData/richValueRel.xml');
+                    if (rvFile) {
+                        const rvXml = await rvFile.async('text');
+                        // 尝试多种模式匹配
+                        const rvRelMatches = [...rvXml.matchAll(/<rvRel[^>]*r:id="([^"]*)"[^>]*>/g)];
+                        // 如果 richValueRel 有结构化数据，可能直接包含图片引用
+                    }
+                    // 简化处理：将关系文件中的映射存入，key 为 rId
+                    relMatches.forEach(rm => {
+                        const target = rm[2].replace(/^\.\.\//, 'xl/');
+                        if (/\.(png|jpg|jpeg|gif|bmp|webp)$/i.test(target)) {
+                            // 无法直接关联 GUID，先收集所有 rId→file 映射
+                            guidToFile['_rel_' + rm[1]] = target;
+                        }
+                    });
+                }
+
+                // 3b. 尝试解析 workbook.xml 中的 definedName 获取 GUID→cell 映射
+                const wbXml = await zip.file('xl/workbook.xml')?.async('text');
+                if (wbXml) {
+                    // <definedName name="_xlfn.DISPIMG_<GUID>">Sheet1!$A$1</definedName>
+                    dispimgCells.forEach(cell => {
+                        const pattern = new RegExp(`_xlfn\\.DISPIMG_${cell.guid}[^"]*"[^>]*>[^<]*!?\\$?([A-Z]+)\\$?(\\d+)`);
+                        // 简化：仅验证 workbook.xml 中存在该 DISPIMG 定义
+                        if (wbXml.includes(`DISPIMG_${cell.guid}`)) {
+                            // 确认该 GUID 在 workbook 中有定义
+                        }
+                    });
+                }
+            } catch (e) {
+                console.warn('解析DISPIMG映射失败:', e);
+            }
+
+            // 4. 提取图片并匹配到行
+            // 策略：收集已由 ExcelJS 提取过的 media index，剩余的分给 DISPIMG
+            const existingImageCount = Object.values(rowImages).flat().length;
+            const dispimgMediaFiles = mediaFiles.filter((f, idx) => {
+                // 尝试通过 richData 映射匹配
+                const isDispimg = Object.values(guidToFile).some(target =>
+                    f.replace(/\\/g, '/').endsWith(target.replace(/\\/g, '/').split('/').pop())
+                );
+                // 也检查文件名是否包含 DISPIMG GUID
+                const hasGuid = dispimgCells.some(c => f.includes(c.guid));
+                return isDispimg || hasGuid || (existingImageCount > 0 && idx >= existingImageCount - Object.keys(guidToFile).length);
+            });
+
+            // 如果富数据映射为空，回退：按顺序从现有图片之后取
+            if (Object.keys(guidToFile).length === 0 && dispimgMediaFiles.length === 0) {
+                const startIdx = Math.max(0, mediaFiles.length - dispimgCells.length);
+                dispimgMediaFiles.push(...mediaFiles.slice(startIdx));
+            }
+
+            // 如果还是没有匹配到，尝试所有图片中未匹配的
+            if (dispimgMediaFiles.length === 0 && existingImageCount === 0 && dispimgCells.length > 0) {
+                dispimgMediaFiles.push(...mediaFiles.slice(0, dispimgCells.length));
+            }
+
+            // 5. 提取图片并分配给行
+            const cellsToFill = dispimgCells.filter(c => c.excelRow > headerRow);
+            const limit = Math.min(cellsToFill.length, dispimgMediaFiles.length);
+
+            for (let i = 0; i < limit; i++) {
+                try {
+                    const cell = cellsToFill[i];
+                    const filePath = dispimgMediaFiles[i];
+                    const file = zip.file(filePath);
+                    if (!file) continue;
+
+                    const data = await file.async('uint8array');
+                    const ext = filePath.split('.').pop().toLowerCase();
+                    const mime = ext === 'jpg' ? 'jpeg' : ext;
+                    const base64 = arrayBufferToBase64(data.buffer || data);
+                    const formattedBase64 = `data:image/${mime};base64,${base64}`;
+
+                    rowImages[cell.excelRow] = rowImages[cell.excelRow] || [];
+                    // 避免重复添加
+                    const exists = rowImages[cell.excelRow].some(img => img.base64 === formattedBase64);
+                    if (!exists) {
+                        rowImages[cell.excelRow].push({
+                            base64: formattedBase64,
+                            extension: ext
+                        });
+                    }
+                } catch (e) {
+                    console.warn('提取DISPIMG图片失败:', e);
+                }
+            }
         }
 
         function arrayBufferToBase64(buffer) {
@@ -7207,8 +7344,12 @@
                     else if (field === '备货状态') product.stockStatus = value;
 
                     // 图片媒体
-                    else if (field === '产品图片') product.mainImage = value;
-                    else if (field === '详情图') product.detailImages = value;
+                    else if (field === '产品图片') {
+                        if (!String(value).startsWith('=_xlfn.DISPIMG(')) product.mainImage = value;
+                    }
+                    else if (field === '详情图') {
+                        if (!String(value).startsWith('=_xlfn.DISPIMG(')) product.detailImages = value;
+                    }
                     else if (field === '备货周期') product.leadTime = value;
                     else if (field === '最小起订量') product.moq = value;
                     else if (field === '包销产品') product.isExclusive = value === '是' || value === 'true';
