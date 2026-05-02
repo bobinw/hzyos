@@ -4788,7 +4788,19 @@
             alert(`已设置品牌名：${brandName}\n导入时将为所有商品填充此品牌名`);
         }
 
-        // 保存sheet映射模板
+        // 合并映射到供应商模板（保留已有映射，新增/覆盖当前sheet的映射）
+        function mergeTemplateMappings(supplierId, newMappings) {
+            const existing = templates[supplierId]?.mappings || {};
+            const merged = { ...existing, ...newMappings };
+            templates[supplierId] = {
+                supplierId: supplierId,
+                mappings: merged,
+                updatedAt: new Date().toISOString()
+            };
+            return merged;
+        }
+
+        // 保存sheet映射模板（合并模式）
         async function saveSheetMapping(sheetName) {
             const supplierId = document.getElementById('singleSheetSupplier').value.trim();
             if (!supplierId) {
@@ -4796,23 +4808,22 @@
                 return;
             }
 
-            const mappings = {};
+            const newMappings = {};
             document.querySelectorAll('.sheet-field-select').forEach(select => {
                 const header = select.dataset.header;
                 const field = select.value;
                 if (header && field) {
-                    mappings[header] = field;
+                    newMappings[header] = field;
                 }
             });
 
-            templates[supplierId] = {
-                supplierId: supplierId,
-                mappings: mappings,
-                updatedAt: new Date().toISOString()
-            };
+            const existingCount = Object.keys(templates[supplierId]?.mappings || {}).length;
+            const merged = mergeTemplateMappings(supplierId, newMappings);
+            const newCount = Object.keys(merged).length;
+            const addedCount = newCount - existingCount;
 
             await saveDataAsync();
-            alert(`已保存供应商「${supplierId}」的映射模板（${Object.keys(mappings).length}个字段）`);
+            alert(`已保存供应商「${supplierId}」的映射模板（${newCount}个字段${addedCount > 0 ? `，本次新增 ${addedCount} 个` : ''}）`);
         }
 
         // 执行单个sheet导入
@@ -4823,14 +4834,19 @@
                 return;
             }
 
-            // 从弹窗获取字段映射
+            // 从弹窗获取字段映射（在DOM移除前捕获）
             const fieldToIndex = {};
+            const headerToField = {};  // {Excel列名: 系统字段} 用于自动积累模板
             const headers = pendingWorkbookData.sheets[sheetName].headers;
             document.querySelectorAll('.sheet-field-select').forEach(select => {
                 const index = parseInt(select.dataset.index);
                 const field = select.value;
+                const header = select.dataset.header;
                 if (field && index >= 0) {
                     fieldToIndex[field] = index;
+                }
+                if (header && field) {
+                    headerToField[header] = field;
                 }
             });
 
@@ -5083,6 +5099,20 @@
 
                 // 标记已导入
                 pendingWorkbookData.sheets[sheetName].imported = true;
+
+                // 自动累积字段映射到供应商模板（只新增不覆盖已有）
+                if (Object.keys(headerToField).length > 0) {
+                    const existingMappings = templates[supplierId]?.mappings || {};
+                    const newMappings = {};
+                    for (const [header, field] of Object.entries(headerToField)) {
+                        if (!existingMappings[header]) {
+                            newMappings[header] = field;
+                        }
+                    }
+                    if (Object.keys(newMappings).length > 0) {
+                        mergeTemplateMappings(supplierId, newMappings);
+                    }
+                }
 
                 saveData();
                 updateImportOverlay('完成', 100);
@@ -7779,15 +7809,14 @@
                 return;
             }
 
-            // 保存模板
-            templates[supplierId] = {
-                supplierId: supplierId,
-                mappings: mappings
-            };
+            // 合并保存模板（保留已有映射，新增/覆盖当前映射）
+            const existingCount = Object.keys(templates[supplierId]?.mappings || {}).length;
+            const merged = mergeTemplateMappings(supplierId, mappings);
+            const newCount = Object.keys(merged).length;
 
             await saveDataAsync();
 
-            alert(`已保存为「${supplierId}」的映射模板`);
+            alert(`已保存「${supplierId}」的映射模板（${newCount}个字段${newCount > existingCount ? `，本次新增 ${newCount - existingCount} 个` : ''}）`);
         }
 
         // ========== 系统设置 ==========
