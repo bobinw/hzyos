@@ -4468,6 +4468,10 @@
             const headers = jsonData[0] || [];
             const dataRows = jsonData.slice(1).filter(row => row && row.some(cell => cell !== undefined && cell !== ''));
 
+            // 存储到window供品牌识别函数使用
+            window.pendingDataRows = dataRows;
+            window.pendingSheetHeaders = headers;
+
             // 获取供应商列表
             const productSuppliers = products.map(p => p.supplierId).filter(Boolean);
             const manualSuppliers = suppliers.map(s => s.name).filter(Boolean);
@@ -4590,7 +4594,11 @@
                         <div id="brandDetectionSection">
                             <div class="flex justify-between items-center mb-2">
                                 <label class="text-sm font-medium">品牌识别</label>
-                                <button onclick="detectBrandFromSheetName('${sheetName}')" class="text-xs text-blue-600 hover:underline">从工作表名识别</button>
+                                <div class="flex gap-1">
+                                    <button onclick="detectBrandFromSheetName('${sheetName}')" class="text-xs text-blue-600 hover:underline">从工作表名识别</button>
+                                    <span class="text-gray-300">|</span>
+                                    <button onclick="detectBrandFromProductNames('${sheetName}')" class="text-xs text-blue-600 hover:underline">从商品名称分析</button>
+                                </div>
                             </div>
                             <div class="bg-gray-50 rounded-lg p-3 text-sm">
                                 <div class="flex items-center gap-2">
@@ -4598,7 +4606,7 @@
                                     <input type="text" id="detectedBrandName" class="flex-1 border rounded px-2 py-1 text-sm" placeholder="输入或确认品牌名称">
                                     <button onclick="applyBrandToMapping('${sheetName}')" class="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">应用到品牌字段</button>
                                 </div>
-                                <div id="brandHint" class="text-xs text-gray-400 mt-1">点击"从工作表名识别"自动提取品牌名</div>
+                                <div id="brandHint" class="text-xs text-gray-400 mt-1">点击上方按钮自动识别品牌，可手动修改后确认</div>
                             </div>
                         </div>
 
@@ -4659,21 +4667,157 @@
             autoDetectBrand(sheetName);
         }
 
-        // 自动识别品牌名
+        // 自动识别品牌名（优先从商品名称，其次从sheet名）
         function autoDetectBrand(sheetName) {
             // 检查是否已映射品牌字段
             const brandMapped = [...document.querySelectorAll('.sheet-field-select')].some(s => s.value === '品牌');
 
             if (!brandMapped) {
-                // 没有品牌字段映射，自动从sheet名识别
-                const detectedBrand = extractBrandFromSheetName(sheetName);
                 const input = document.getElementById('detectedBrandName');
-                if (input && detectedBrand) {
-                    input.value = detectedBrand;
-                    const hint = document.getElementById('brandHint');
-                    if (hint) {
-                        hint.innerHTML = `<span class="text-blue-600">已从工作表名识别品牌：${detectedBrand}，请确认后点击"应用到品牌字段"</span>`;
+                const hint = document.getElementById('brandHint');
+
+                // 先尝试从商品名称分析
+                const dataRows = window.pendingDataRows;
+                const headers = window.pendingSheetHeaders;
+                let brandFound = null;
+                let brandSource = '';
+
+                if (dataRows && headers) {
+                    const candidates = extractBrandFromProductNames(headers, dataRows);
+                    if (candidates && candidates.length > 0) {
+                        brandFound = candidates[0];
+                        brandSource = `从商品名称识别（${dataRows.length}个商品中分析，${candidates.length}个候选）`;
                     }
+                }
+
+                // 如果商品名称没识别到，从sheet名识别
+                if (!brandFound) {
+                    brandFound = extractBrandFromSheetName(sheetName);
+                    brandSource = '从工作表名识别';
+                }
+
+                if (input && brandFound) {
+                    input.value = brandFound;
+                    if (hint) {
+                        hint.innerHTML = `<span class="text-blue-600">${brandSource}品牌：${brandFound}，请确认后点击"应用到品牌字段"</span>`;
+                    }
+                }
+            }
+        }
+
+        // 从商品名称分析提取品牌名（分析多个商品名的共同前缀）
+        function extractBrandFromProductNames(headers, dataRows) {
+            // 找产品名称列：优先字段映射，其次header关键词
+            let nameColIndex = -1;
+
+            const nameSelectEl = document.querySelector('.sheet-field-select[data-header]');
+            if (nameSelectEl) {
+                document.querySelectorAll('.sheet-field-select').forEach(select => {
+                    if (select.value === '产品名称') {
+                        nameColIndex = parseInt(select.dataset.index);
+                    }
+                });
+            }
+
+            if (nameColIndex === -1) {
+                const nameKeywords = ['产品名称', '商品名称', '品名', '名称', '货品名称', '产品名', '货名'];
+                headers.forEach((h, idx) => {
+                    const hStr = String(h || '').trim();
+                    if (nameKeywords.some(k => hStr.includes(k) || hStr === k)) {
+                        nameColIndex = idx;
+                    }
+                });
+            }
+
+            if (nameColIndex === -1) return null;
+
+            // 常见无意义词/后缀，排除
+            const stopWords = ['礼盒', '套装', '组合', '精选', '有机', '进口', '原味', '经典',
+                '包装', '礼袋', '手提', '大礼包', '特级', '一级', '甄选', '尊享', '豪华',
+                '年货', '春节', '中秋', '端午', '福利', '团购', '员工', '企业', '定制',
+                '新款', '爆款', '热销', '推荐', '新品', '限量', '促销', '特价', '批发',
+                '克', '千克', '公斤', '斤', '毫升', '升', '盒', '袋', '箱', '个', '包', '罐'];
+
+            // 分割符号
+            const separators = ['-', '—', ' ', '·', '|', '/', '（', '(', '【', '['];
+
+            // 统计每个候选品牌的频率
+            const candidates = {};
+
+            dataRows.forEach(row => {
+                const rawName = String(row[nameColIndex] || '').trim();
+                if (!rawName || rawName.length < 2) return;
+
+                // 提取品牌前缀（分隔符之前的部分）
+                let brandPart = rawName;
+                for (const sep of separators) {
+                    const idx = brandPart.indexOf(sep);
+                    if (idx >= 2) {
+                        brandPart = brandPart.substring(0, idx).trim();
+                        break;
+                    }
+                }
+
+                // 移除末尾的停用词
+                let cleaned = brandPart;
+                for (const sw of stopWords) {
+                    if (cleaned.endsWith(sw) && cleaned.length > sw.length + 1) {
+                        cleaned = cleaned.substring(0, cleaned.length - sw.length);
+                    }
+                }
+
+                if (cleaned.length >= 2) {
+                    candidates[cleaned] = (candidates[cleaned] || 0) + 1;
+                }
+            });
+
+            // 过滤：至少出现在2个商品中
+            const sorted = Object.entries(candidates)
+                .filter(([_, count]) => count >= 2)
+                .sort((a, b) => b[1] - a[1]);
+
+            if (sorted.length === 0) return [];
+
+            // 返回前5个候选（去重：更长的如果包含更短的且频率相同，保留更长的）
+            const result = [];
+            for (const [brand, count] of sorted) {
+                if (result.length >= 5) break;
+                // 检查是否被已有结果包含
+                const isSubset = result.some(r => r.includes(brand) && r !== brand);
+                if (!isSubset) {
+                    result.push(brand);
+                }
+            }
+            return result;
+        }
+
+        // 手动触发：从商品名称分析品牌
+        function detectBrandFromProductNames(sheetName) {
+            const dataRows = window.pendingDataRows;
+            const headers = window.pendingSheetHeaders;
+            if (!dataRows || !headers) {
+                alert('数据已失效，请重新打开导入窗口');
+                return;
+            }
+
+            const candidates = extractBrandFromProductNames(headers, dataRows);
+            const input = document.getElementById('detectedBrandName');
+            const hint = document.getElementById('brandHint');
+
+            if (!candidates || candidates.length === 0) {
+                if (hint) hint.innerHTML = '<span class="text-orange-500">未能从商品名称中识别出品牌，请手动输入</span>';
+                return;
+            }
+
+            // 选最高频的作为默认
+            const bestBrand = candidates[0];
+            if (input) input.value = bestBrand;
+
+            if (hint) {
+                const others = candidates.slice(1).map(b => `<span class="cursor-pointer text-blue-500 hover:underline" onclick="document.getElementById('detectedBrandName').value='${b}';document.getElementById('brandHint').querySelector('span').textContent='已选择：${b}'">${b}</span>`).join('、');
+                hint.innerHTML = `<span class="text-green-600">已从商品名称识别品牌：${bestBrand}（${dataRows.length}个商品中分析）</span>`;
+                if (others) {
+                    hint.innerHTML += `<div class="mt-1">其他候选：${others}</div>`;
                 }
             }
         }
