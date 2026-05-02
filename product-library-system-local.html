@@ -6057,11 +6057,11 @@
                             console.log(`[DISPIMG] 首个DISPIMG位置=${idx}, 上下文: ${sheetXml.substring(Math.max(0, idx - 100), idx + 200)}`);
                         }
 
-                        // 方法：找所有 _xlfn.DISPIMG 出现位置，向前回溯找最近的 r="行号" 属性
-                        const dispimgRe = /_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
+                        // 方法：找所有 DISPIMG 公式（兼容 &quot; 和 " 两种引号格式）
+                        const dispimgRe = /_xlfn\.DISPIMG\(&quot;ID_([A-F0-9]+)&quot;|_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
                         let m;
                         while ((m = dispimgRe.exec(sheetXml)) !== null) {
-                            const guid = m[1];
+                            const guid = m[1] || m[2];
                             // 向前搜索最近的 r="列号行号" 属性（通用，不依赖标签名）
                             const before = sheetXml.substring(0, m.index);
                             const rMatch = before.match(/r="([A-Z]+)(\d+)"/g);
@@ -6088,7 +6088,7 @@
                     if (!row) continue;
                     for (let j = 0; j < row.length; j++) {
                         const val = String(row[j] || '');
-                        if (val.startsWith('=_xlfn.DISPIMG(')) {
+                        if (val.startsWith('=_xlfn.DISPIMG(') || val.startsWith('=DISPIMG(')) {
                             const m = val.match(/ID_([A-F0-9]+)/i);
                             if (m) dispimgCells.push({ excelRow: i + 1, guid: m[1] });
                         }
@@ -6970,10 +6970,10 @@
 
             // 图片媒体
             else if (fieldName === '产品图片') {
-                if (!String(val).startsWith('=_xlfn.DISPIMG(')) product.mainImage = val;
+                if (!val.startsWith('=_xlfn.DISPIMG(') && !val.startsWith('=DISPIMG(')) product.mainImage = val;
             }
             else if (fieldName === '详情图') {
-                if (!String(val).startsWith('=_xlfn.DISPIMG(')) product.detailImages = val;
+                if (!val.startsWith('=_xlfn.DISPIMG(') && !val.startsWith('=DISPIMG(')) product.detailImages = val;
             }
 
             // 电商参考
@@ -7714,10 +7714,10 @@
 
                     // 图片媒体
                     else if (field === '产品图片') {
-                        if (!String(value).startsWith('=_xlfn.DISPIMG(')) product.mainImage = value;
+                        if (!String(value).startsWith('=_xlfn.DISPIMG(') && !String(value).startsWith('=DISPIMG(')) product.mainImage = value;
                     }
                     else if (field === '详情图') {
-                        if (!String(value).startsWith('=_xlfn.DISPIMG(')) product.detailImages = value;
+                        if (!String(value).startsWith('=_xlfn.DISPIMG(') && !String(value).startsWith('=DISPIMG(')) product.detailImages = value;
                     }
                     else if (field === '备货周期') product.leadTime = value;
                     else if (field === '最小起订量') product.moq = value;
