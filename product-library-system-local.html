@@ -5895,10 +5895,20 @@
                 }
 
                 // 提取 DISPIMG 嵌入图片（单元格内置图片）
+                const beforeDispimgCount = Object.values(window.excelData.rowImages).flat().length;
                 try {
                     await extractDispimgImages(arrayBuffer, sheetName, jsonData, 1, window.excelData.rowImages);
                 } catch (e) {
                     console.warn('DISPIMG图片提取失败:', e);
+                }
+                const afterDispimgCount = Object.values(window.excelData.rowImages).flat().length;
+                const dispimgAdded = afterDispimgCount - beforeDispimgCount;
+                if (dispimgAdded > 0) {
+                    console.log(`[DISPIMG] 成功新增 ${dispimgAdded} 张图片到 rowImages`);
+                    document.getElementById('fileStats').textContent =
+                        `${window.excelData.rows.length} 行数据 · ${window.excelData.headers.length} 列 · ${afterDispimgCount} 张图片（含${dispimgAdded}张DISPIMG）`;
+                } else if (afterDispimgCount === 0) {
+                    console.warn('[DISPIMG] 未提取到任何图片，请确认：1)文件由WPS生成 2)文件未经过Office打开保存 3)打开控制台查看详细日志');
                 }
 
             } catch (imgErr) {
@@ -6026,33 +6036,34 @@
             } catch (e) {}
             console.log(`[DISPIMG] sheet文件路径: ${sheetFilePath || '未找到'}`);
 
-            // 3. 从 sheet XML 直接扫描 DISPIMG 公式（不依赖 SheetJS，因为它可能返回0而不是公式文本）
+            // 3. 从 sheet XML 直接扫描 DISPIMG 公式
+            //    注意：XML 元素可能有命名空间前缀（如 <x:c> <x:f>），用 (?:<\w+:)? 兼容
             const dispimgCells = [];
             if (sheetFilePath) {
                 try {
                     const sheetXml = await zip.file(sheetFilePath)?.async('text');
                     if (sheetXml) {
-                        // 匹配 <c r="A2"...><f>_xlfn.DISPIMG("ID_GUID",1)</f></c>
-                        const cellRe = /<c[^>]*\br="([A-Z]+)(\d+)"[^>]*>[\s\S]*?<f[^>]*>_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
+                        // 方法：找所有 _xlfn.DISPIMG 出现位置，向前回溯找最近的 r="行号" 属性
+                        const dispimgRe = /_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
                         let m;
-                        while ((m = cellRe.exec(sheetXml)) !== null) {
-                            dispimgCells.push({ excelRow: parseInt(m[2]), guid: m[3] });
-                        }
-                        // 也尝试自闭合 <c/> 和跨行格式
-                        if (dispimgCells.length === 0) {
-                            // 宽松匹配：找所有包含 DISPIMG 的 <f> 元素，再回溯找父 <c> 的 r 属性
-                            const fRe = /<f[^>]*>_xlfn\.DISPIMG\("ID_([A-F0-9]+)"/g;
-                            while ((m = fRe.exec(sheetXml)) !== null) {
-                                // 向前搜索最近的 <c r="...">
-                                const before = sheetXml.substring(0, m.index);
-                                const cMatch = before.match(/<c[^>]*\br="([A-Z]+)(\d+)"[^>]*>$/);
-                                if (cMatch) {
-                                    dispimgCells.push({ excelRow: parseInt(cMatch[2]), guid: m[1] });
+                        while ((m = dispimgRe.exec(sheetXml)) !== null) {
+                            const guid = m[1];
+                            // 向前搜索最近的 r="列号行号" 属性（通用，不依赖标签名）
+                            const before = sheetXml.substring(0, m.index);
+                            const rMatch = before.match(/r="([A-Z]+)(\d+)"/g);
+                            if (rMatch && rMatch.length > 0) {
+                                const lastR = rMatch[rMatch.length - 1];
+                                const rowMatch = lastR.match(/r="[A-Z]+(\d+)"/);
+                                if (rowMatch) {
+                                    dispimgCells.push({ excelRow: parseInt(rowMatch[1]), guid });
                                 }
                             }
                         }
+                        console.log(`[DISPIMG] XML扫描: 找到 ${dispimgCells.length} 个DISPIMG公式`);
                     }
-                } catch (e) {}
+                } catch (e) {
+                    console.warn('[DISPIMG] XML扫描失败:', e);
+                }
             }
 
             // 如果 XML 扫描没找到，回退到 jsonData 扫描（兼容旧逻辑）
@@ -6068,6 +6079,7 @@
                         }
                     }
                 }
+                if (dispimgCells.length > 0) console.log(`[DISPIMG] jsonData回退: 找到 ${dispimgCells.length} 个DISPIMG`);
             }
 
             if (dispimgCells.length === 0) return;
