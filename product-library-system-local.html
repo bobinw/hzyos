@@ -422,6 +422,7 @@
                         <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
                     </button>
                     <h2 class="text-xl font-bold">智能导入商品</h2>
+                    <span id="ai-status-badge" class="text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-500">AI 未配置</span>
                 </div>
 
                 <!-- 步骤指示 -->
@@ -470,6 +471,11 @@
                         </button>
                         <button onclick="switchImportMode('paste')" id="btn-import-paste" class="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">粘贴数据</button>
                         <button onclick="switchImportMode('sample')" id="btn-import-sample" class="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">加载示例</button>
+                        <span class="text-gray-300 mx-1">|</span>
+                        <button onclick="switchImportMode('pdf')" id="btn-import-pdf" class="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">⧉ PDF</button>
+                        <button onclick="switchImportMode('word')" id="btn-import-word" class="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">📝 Word</button>
+                        <button onclick="switchImportMode('ppt')" id="btn-import-ppt" class="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">📊 PPT</button>
+                        <button onclick="switchImportMode('screenshot')" id="btn-import-screenshot" class="px-4 py-2 text-sm rounded-lg bg-gray-100 text-gray-600 hover:bg-gray-200">📸 截图</button>
                     </div>
 
                     <!-- Excel上传区域 -->
@@ -508,6 +514,82 @@
                         </div>
                     </div>
 
+                    <!-- PDF上传区域 -->
+                    <div id="import-pdf" class="hidden">
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-red-400 hover:bg-red-50 transition-colors cursor-pointer" onclick="document.getElementById('pdfFile').click()">
+                            <input type="file" id="pdfFile" class="hidden" accept=".pdf" onchange="handleMultiFormatFile(event, 'pdf')">
+                            <svg class="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            <div class="text-gray-600 mb-1">点击或拖拽 PDF 文件到此处</div>
+                            <div class="text-xs text-gray-400">AI 自动提取表格数据</div>
+                        </div>
+                        <div id="pdfFileInfo" class="hidden mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-6 h-6 text-red-500" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/></svg>
+                                    <div><div class="text-sm font-medium" id="pdfFileName">-</div></div>
+                                </div>
+                                <button onclick="clearFile()" class="text-red-500 text-sm hover:underline">移除</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Word上传区域 -->
+                    <div id="import-word" class="hidden">
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-blue-400 hover:bg-blue-50 transition-colors cursor-pointer" onclick="document.getElementById('wordFile').click()">
+                            <input type="file" id="wordFile" class="hidden" accept=".docx,.doc" onchange="handleMultiFormatFile(event, 'word')">
+                            <svg class="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            <div class="text-gray-600 mb-1">点击或拖拽 Word 文件到此处</div>
+                            <div class="text-xs text-gray-400">AI 自动提取表格数据</div>
+                        </div>
+                        <div id="wordFileInfo" class="hidden mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-6 h-6 text-blue-500" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/></svg>
+                                    <div><div class="text-sm font-medium" id="wordFileName">-</div></div>
+                                </div>
+                                <button onclick="clearFile()" class="text-red-500 text-sm hover:underline">移除</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- PPT上传区域 -->
+                    <div id="import-ppt" class="hidden">
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-orange-400 hover:bg-orange-50 transition-colors cursor-pointer" onclick="document.getElementById('pptFile').click()">
+                            <input type="file" id="pptFile" class="hidden" accept=".pptx,.ppt" onchange="handleMultiFormatFile(event, 'ppt')">
+                            <svg class="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+                            <div class="text-gray-600 mb-1">点击或拖拽 PPT 文件到此处</div>
+                            <div class="text-xs text-gray-400">AI 自动提取文本并结构化</div>
+                        </div>
+                        <div id="pptFileInfo" class="hidden mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-2">
+                                    <svg class="w-6 h-6 text-orange-500" fill="currentColor" viewBox="0 0 24 24"><path d="M6 2h9l5 5v13a2 2 0 01-2 2H6a2 2 0 01-2-2V4a2 2 0 012-2z"/></svg>
+                                    <div><div class="text-sm font-medium" id="pptFileName">-</div></div>
+                                </div>
+                                <button onclick="clearFile()" class="text-red-500 text-sm hover:underline">移除</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- 截图上传区域 -->
+                    <div id="import-screenshot" class="hidden">
+                        <div class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-purple-400 hover:bg-purple-50 transition-colors cursor-pointer" onclick="document.getElementById('screenshotFile').click()">
+                            <input type="file" id="screenshotFile" class="hidden" accept="image/*" onchange="handleMultiFormatFile(event, 'screenshot')">
+                            <svg class="w-12 h-12 text-gray-400 mx-auto mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16l4.586-4.586a2 2 0 012.828 0L16 16m-2-2l1.586-1.586a2 2 0 012.828 0L20 14m-6-6h.01M6 20h12a2 2 0 002-2V6a2 2 0 00-2-2H6a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+                            <div class="text-gray-600 mb-1">点击或拖拽产品表格截图</div>
+                            <div class="text-xs text-gray-400">AI 视觉识别，自动提取产品信息</div>
+                        </div>
+                        <div id="screenshotFileInfo" class="hidden mt-3 p-3 bg-gray-50 rounded-lg">
+                            <div class="flex items-center justify-between">
+                                <div class="flex items-center gap-4">
+                                    <img id="screenshotPreview" class="w-16 h-16 object-cover rounded border">
+                                    <div><div class="text-sm font-medium" id="screenshotFileName">-</div></div>
+                                </div>
+                                <button onclick="clearFile()" class="text-red-500 text-sm hover:underline">移除</button>
+                            </div>
+                        </div>
+                    </div>
+
                     <!-- 粘贴区域 -->
                     <div id="import-paste" class="hidden">
                         <textarea id="importData" class="w-full h-48 border rounded-lg p-3 text-sm font-mono resize-none" placeholder="粘贴 Excel 复制的数据（Tab 分隔）&#10;&#10;格式示例：&#10;SKU	商品名称	规格	价格	产品条码	箱规	零售价"></textarea>
@@ -538,7 +620,10 @@
                     </div>
 
                     <div class="flex justify-between mt-4">
-                        <button onclick="saveAsTemplate()" class="px-4 py-2 text-blue-600 hover:underline text-sm">💾 保存为映射模板</button>
+                        <div class="flex gap-2">
+                            <button onclick="saveAsTemplate()" class="px-4 py-2 text-blue-600 hover:underline text-sm">💾 保存为映射模板</button>
+                            <button id="btnAIMapping" onclick="runAIMappingForCurrent()" class="px-4 py-2 text-purple-600 border border-purple-300 rounded-lg text-sm hover:bg-purple-50">🤖 AI 智能映射</button>
+                        </div>
                         <div class="flex gap-2">
                             <button id="btnBackToSheetList" onclick="backToSheetList()" class="px-6 py-2 border rounded-lg text-sm hover:bg-gray-50 hidden">返回工作表列表</button>
                             <button id="btnCancelImport" onclick="showPage('page-list')" class="px-6 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
@@ -1081,6 +1166,70 @@
                     </div>
                 </div>
 
+                <!-- AI 智能映射设置 -->
+                <div class="bg-white rounded-lg shadow p-6 mb-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-medium">🤖 AI 智能映射设置</h3>
+                        <button onclick="testAIConnection()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">🔌 测试连接</button>
+                    </div>
+                    <p class="text-sm text-gray-500 mb-4">配置 AI 接口以启用智能字段映射和多格式导入（PDF/Word/PPT/截图）</p>
+                    <div id="ai-settings-form" class="space-y-4">
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">API 类型</label>
+                                <select id="ai-api-type" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="updateAIEndpoint()">
+                                    <option value="deepseek">DeepSeek API</option>
+                                    <option value="claude">Anthropic Claude API</option>
+                                    <option value="openai">OpenAI API</option>
+                                    <option value="custom">自定义兼容 API</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">API Endpoint</label>
+                                <input type="text" id="ai-endpoint" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="https://api.deepseek.com/chat/completions">
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-2 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">API Key</label>
+                                <div class="flex gap-2">
+                                    <input type="password" id="ai-api-key" class="flex-1 border rounded-lg px-3 py-2 text-sm" placeholder="sk-...">
+                                    <button onclick="toggleAIKeyVisibility()" class="px-3 py-2 border rounded-lg text-sm hover:bg-gray-100" id="btn-toggle-ai-key">👁</button>
+                                </div>
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">模型</label>
+                                <input type="text" id="ai-model" class="w-full border rounded-lg px-3 py-2 text-sm" list="ai-model-datalist" placeholder="选择或输入模型名">
+                                <datalist id="ai-model-datalist"></datalist>
+                            </div>
+                        </div>
+                        <div class="grid grid-cols-3 gap-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">Max Tokens</label>
+                                <input type="number" id="ai-max-tokens" class="w-full border rounded-lg px-3 py-2 text-sm" value="4096" min="256" max="64000">
+                            </div>
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">Temperature</label>
+                                <input type="number" id="ai-temperature" class="w-full border rounded-lg px-3 py-2 text-sm" value="0.1" min="0" max="2" step="0.1">
+                            </div>
+                        </div>
+                        <div class="border-t pt-3">
+                            <label class="flex items-center gap-2 cursor-pointer">
+                                <input type="checkbox" id="ai-enable-import-mapping" checked>
+                                <span class="text-sm">启用 AI 智能字段映射（导入时自动匹配表头）</span>
+                            </label>
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <span id="ai-test-result" class="text-sm"></span>
+                        </div>
+                        <div id="ai-test-detail" class="hidden mt-2 p-3 bg-gray-50 rounded text-xs font-mono max-h-40 overflow-auto"></div>
+                    </div>
+                    <div class="flex justify-end gap-2 mt-4">
+                        <button onclick="resetAISettings()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">恢复默认</button>
+                        <button onclick="saveAISettings()" class="px-6 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">保存设置</button>
+                    </div>
+                </div>
+
                 <!-- 本地文件存储 -->
                 <div class="bg-white rounded-lg shadow p-6 mb-6">
                     <h3 class="font-medium mb-4">本地文件存储</h3>
@@ -1329,6 +1478,163 @@
             });
         }
 
+        // ========== AI 设置 ==========
+        let aiSettings = {
+            apiType: 'deepseek',
+            endpoint: 'https://api.deepseek.com/chat/completions',
+            apiKey: '',
+            model: 'deepseek-chat',
+            maxTokens: 4096,
+            temperature: 0.1,
+            enableImportMapping: true
+        };
+
+        async function loadAISettings() {
+            try {
+                const saved = await loadSettingFromDB('aiSettings');
+                if (saved) aiSettings = { ...aiSettings, ...saved };
+            } catch (e) { /* use defaults */ }
+        }
+
+        async function saveAISettingsInternal() {
+            await saveSettingToDB('aiSettings', aiSettings);
+        }
+
+        function updateAIEndpoint() {
+            const typeEl = document.getElementById('ai-api-type');
+            const endpointEl = document.getElementById('ai-endpoint');
+            const modelDatalist = document.getElementById('ai-model-datalist');
+            if (!typeEl || !endpointEl) return;
+            const type = typeEl.value;
+            const endpoints = {
+                'deepseek': 'https://api.deepseek.com/chat/completions',
+                'claude': 'https://api.anthropic.com/v1/messages',
+                'openai': 'https://api.openai.com/v1/chat/completions',
+                'custom': ''
+            };
+            const models = {
+                'deepseek': ['deepseek-chat', 'deepseek-reasoner'],
+                'claude': ['claude-sonnet-4-6', 'claude-opus-4-7', 'claude-haiku-4-5'],
+                'openai': ['gpt-4o', 'gpt-4o-mini', 'gpt-4.1'],
+                'custom': []
+            };
+            endpointEl.value = endpoints[type] || '';
+            if (modelDatalist) {
+                modelDatalist.innerHTML = (models[type] || []).map(m => `<option value="${m}">`).join('');
+            }
+        }
+
+        function toggleAIKeyVisibility() {
+            const input = document.getElementById('ai-api-key');
+            const btn = document.getElementById('btn-toggle-ai-key');
+            if (!input || !btn) return;
+            if (input.type === 'password') {
+                input.type = 'text'; btn.textContent = '🙈';
+            } else {
+                input.type = 'password'; btn.textContent = '👁';
+            }
+        }
+
+        function showAISettingsForm() {
+            const typeEl = document.getElementById('ai-api-type');
+            if (!typeEl) return;
+            typeEl.value = aiSettings.apiType;
+            document.getElementById('ai-endpoint').value = aiSettings.endpoint;
+            document.getElementById('ai-api-key').value = aiSettings.apiKey;
+            document.getElementById('ai-model').value = aiSettings.model;
+            document.getElementById('ai-max-tokens').value = aiSettings.maxTokens;
+            document.getElementById('ai-temperature').value = aiSettings.temperature;
+            document.getElementById('ai-enable-import-mapping').checked = aiSettings.enableImportMapping;
+            updateAIEndpoint();
+            updateAIStatusBadge();
+        }
+
+        async function saveAISettings() {
+            aiSettings.apiType = document.getElementById('ai-api-type').value;
+            aiSettings.endpoint = document.getElementById('ai-endpoint').value.trim();
+            aiSettings.apiKey = document.getElementById('ai-api-key').value.trim();
+            aiSettings.model = document.getElementById('ai-model').value;
+            aiSettings.maxTokens = parseInt(document.getElementById('ai-max-tokens').value) || 4096;
+            aiSettings.temperature = parseFloat(document.getElementById('ai-temperature').value) || 0.1;
+            aiSettings.enableImportMapping = document.getElementById('ai-enable-import-mapping').checked;
+            await saveAISettingsInternal();
+            updateAIStatusBadge();
+            alert('AI 设置已保存');
+        }
+
+        function resetAISettings() {
+            aiSettings = {
+                apiType: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '',
+                model: 'deepseek-chat', maxTokens: 4096, temperature: 0.1, enableImportMapping: true
+            };
+            showAISettingsForm();
+        }
+
+        async function testAIConnection() {
+            const resultEl = document.getElementById('ai-test-result');
+            const detailEl = document.getElementById('ai-test-detail');
+            if (!resultEl) return;
+            resultEl.textContent = '测试中...';
+            resultEl.className = 'text-sm text-blue-600';
+
+            const apiKey = document.getElementById('ai-api-key').value.trim() || aiSettings.apiKey;
+            const endpoint = document.getElementById('ai-endpoint').value.trim() || aiSettings.endpoint;
+            const apiType = document.getElementById('ai-api-type').value || aiSettings.apiType;
+            const model = document.getElementById('ai-model').value || aiSettings.model;
+
+            try {
+                if (!apiKey) {
+                    resultEl.textContent = '请先填写 API Key';
+                    resultEl.className = 'text-sm text-red-500';
+                    return;
+                }
+                const isOpenAIFormat = apiType === 'openai' || apiType === 'deepseek' || apiType === 'custom';
+                const body = {
+                    model, messages: [{ role: 'user', content: 'Hello' }], max_tokens: 10
+                };
+                const headers = isOpenAIFormat
+                    ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${apiKey}` }
+                    : { 'Content-Type': 'application/json', 'x-api-key': apiKey, 'anthropic-version': '2023-06-01' };
+
+                const resp = await fetch(endpoint, { method: 'POST', headers, body: JSON.stringify(body) });
+                if (resp.ok) {
+                    resultEl.textContent = '连接成功';
+                    resultEl.className = 'text-sm text-green-600';
+                    if (detailEl) {
+                        detailEl.classList.remove('hidden');
+                        detailEl.textContent = JSON.stringify(await resp.json(), null, 2);
+                    }
+                } else {
+                    const errText = await resp.text();
+                    resultEl.textContent = `连接失败 (${resp.status})`;
+                    resultEl.className = 'text-sm text-red-500';
+                    if (detailEl) {
+                        detailEl.classList.remove('hidden');
+                        detailEl.textContent = errText.substring(0, 500);
+                    }
+                }
+            } catch (e) {
+                resultEl.textContent = '网络错误：' + e.message;
+                resultEl.className = 'text-sm text-red-500';
+            }
+        }
+
+        function updateAIStatusBadge() {
+            const badge = document.getElementById('ai-status-badge');
+            if (!badge) return;
+            if (aiSettings.apiKey && aiSettings.enableImportMapping) {
+                badge.className = 'text-xs px-2 py-0.5 rounded-full bg-green-100 text-green-700';
+                badge.textContent = 'AI 就绪';
+            } else {
+                badge.className = 'text-xs px-2 py-0.5 rounded-full bg-gray-200 text-gray-500';
+                badge.textContent = 'AI 未配置';
+            }
+        }
+
+        function isAIAvailable() {
+            return navigator.onLine && aiSettings.apiKey && aiSettings.enableImportMapping;
+        }
+
         // ========== 数据模型 ==========
 
         // 系统标准字段
@@ -1465,6 +1771,7 @@
             products: 'product_library_products',
             suppliers: 'product_library_suppliers',
             templates: 'product_library_templates',
+            globalTemplate: 'product_library_global_template',
             nextId: 'product_library_next_id',
             requiredFields: 'product_library_required_fields',
             requiredGroups: 'product_library_required_groups'
@@ -1499,10 +1806,11 @@
         // 异步加载数据（从 IndexedDB）
         async function loadDataAsync() {
             try {
-                const [savedProducts, savedSuppliers, savedTemplates, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords, savedUserFilterConfig, savedUserColumnConfig] = await Promise.all([
+                const [savedProducts, savedSuppliers, savedTemplates, savedGlobalTemplate, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords, savedUserFilterConfig, savedUserColumnConfig] = await Promise.all([
                     loadFromDB('products'),
                     loadFromDB('suppliers'),
                     loadFromDB('templates'),
+                    loadSettingFromDB('globalTemplate'),
                     loadSettingFromDB('nextProductId'),
                     loadSettingFromDB('requiredFields'),
                     loadSettingFromDB('requiredGroups'),
@@ -1530,6 +1838,7 @@
                     products: savedProducts || null,
                     suppliers: savedSuppliers || null,
                     templates: templatesObj,
+                    globalTemplate: savedGlobalTemplate || null,
                     nextId: savedNextId,
                     requiredFields: savedRequiredFields,
                     requiredGroups: savedRequiredGroups,
@@ -1562,6 +1871,7 @@
                     saveToDB('products', products),
                     saveToDB('suppliers', suppliers),
                     saveToDB('templates', templatesArray),
+                    saveSettingToDB('globalTemplate', globalTemplate),
                     saveSettingToDB('nextProductId', nextProductId),
                     saveSettingToDB('requiredFields', requiredFields),
                     saveSettingToDB('requiredGroups', requiredGroups),
@@ -1752,6 +2062,14 @@
                 products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
                 suppliers = JSON.parse(JSON.stringify(DEFAULT_SUPPLIERS));
                 templates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
+                // 重置全局模板：从默认模板汇总
+                globalTemplate = {};
+                for (const [sid, tpl] of Object.entries(DEFAULT_TEMPLATES)) {
+                    if (!tpl || !tpl.mappings) continue;
+                    for (const [header, field] of Object.entries(tpl.mappings)) {
+                        if (header && field && field !== '(忽略)') globalTemplate[header] = field;
+                    }
+                }
                 nextProductId = 5;
                 saveData();
                 renderList();
@@ -1790,6 +2108,7 @@
                 products,
                 suppliers,
                 templates,
+                globalTemplate,
                 nextProductId,
                 requiredFields,
                 requiredGroups,
@@ -1823,6 +2142,7 @@
                     products = data.products;
                     suppliers = data.suppliers;
                     templates = data.templates || {};
+                    globalTemplate = data.globalTemplate || {};
                     nextProductId = data.nextProductId || products.length + 1;
                     requiredFields = data.requiredFields || [...DEFAULT_REQUIRED_FIELDS];
                     requiredGroups = data.requiredGroups || JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
@@ -1844,6 +2164,7 @@
                 products = [];
                 suppliers = [];
                 templates = {};
+                globalTemplate = {};
                 importRecords = [];
                 nextProductId = 1;
                 saveData();
@@ -2262,6 +2583,7 @@
         let products = [];
         let suppliers = [];
         let templates = {};
+        let globalTemplate = {};
         let nextProductId = 1;
         let requiredFields = [...DEFAULT_REQUIRED_FIELDS];
         let requiredGroups = JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
@@ -2312,6 +2634,33 @@
                     templates = JSON.parse(JSON.stringify(DEFAULT_TEMPLATES));
                 }
 
+                // 全局模板：优先用已保存的，其次从旧模板迁移，最后用默认汇总
+                if (savedData.globalTemplate !== null && savedData.globalTemplate !== undefined) {
+                    globalTemplate = savedData.globalTemplate;
+                } else {
+                    // 从旧 per-supplier templates 汇总迁移到 globalTemplate
+                    globalTemplate = {};
+                    for (const [sid, tpl] of Object.entries(templates)) {
+                        if (!tpl || !tpl.mappings) continue;
+                        for (const [header, field] of Object.entries(tpl.mappings)) {
+                            if (header && field && field !== '(忽略)') {
+                                globalTemplate[header] = field;
+                            }
+                        }
+                    }
+                    // 如果 templates 为空但 globalTemplate 也为空，从默认模板汇总
+                    if (Object.keys(globalTemplate).length === 0) {
+                        for (const [sid, tpl] of Object.entries(DEFAULT_TEMPLATES)) {
+                            if (!tpl || !tpl.mappings) continue;
+                            for (const [header, field] of Object.entries(tpl.mappings)) {
+                                if (header && field && field !== '(忽略)') {
+                                    globalTemplate[header] = field;
+                                }
+                            }
+                        }
+                    }
+                }
+
                 nextProductId = savedData.nextId || 5;
                 requiredFields = savedData.requiredFields || [...DEFAULT_REQUIRED_FIELDS];
                 requiredGroups = savedData.requiredGroups || JSON.parse(JSON.stringify(DEFAULT_REQUIRED_GROUPS));
@@ -2322,6 +2671,7 @@
                 productFieldOrder = savedData.productFieldOrder || [];
                 supplierFieldOrder = savedData.supplierFieldOrder || [];
                 importRecords = savedData.importRecords || [];
+                await loadAISettings();
 
                 // 加载用户自定义显示配置
                 if (savedData.userFilterConfig) {
@@ -2669,7 +3019,7 @@
 
                 // 页面初始化
                 if (pageId === 'page-list') renderList();
-                if (pageId === 'page-import') initImportPage();
+                if (pageId === 'page-import') { initImportPage(); updateAIStatusBadge(); }
                 if (pageId === 'page-template') renderTemplatePage();
                 if (pageId === 'page-suppliers') renderSupplierPage();
                 if (pageId === 'page-settings') renderSettingsPage();
@@ -4928,6 +5278,187 @@
             }
         }
 
+        // ========== 多格式导入（PDF/Word/PPT/截图） ==========
+        const CDN_LIBS = {
+            pdfjs: 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.0.379/pdf.min.mjs',
+            mammoth: 'https://cdnjs.cloudflare.com/ajax/libs/mammoth/1.6.0/mammoth.browser.min.js'
+        };
+
+        async function loadLibrary(name) {
+            if (window[`_libLoaded_${name}`]) return;
+            if (name === 'pdfjs' && window.pdfjsLib) { window[`_libLoaded_pdfjs`] = true; return; }
+            if (name === 'mammoth' && window.mammoth) { window[`_libLoaded_mammoth`] = true; return; }
+            return new Promise((resolve, reject) => {
+                const script = document.createElement('script');
+                script.src = CDN_LIBS[name];
+                script.onload = () => { window[`_libLoaded_${name}`] = true; resolve(); };
+                script.onerror = () => reject(new Error(`加载 ${name} 失败`));
+                document.head.appendChild(script);
+            });
+        }
+
+        async function extractTextFromPDF(file) {
+            await loadLibrary('pdfjs');
+            if (!window.pdfjsLib) throw new Error('PDF.js 加载失败');
+            const arrayBuffer = await file.arrayBuffer();
+            const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+            let fullText = '';
+            for (let i = 1; i <= pdf.numPages; i++) {
+                const page = await pdf.getPage(i);
+                const content = await page.getTextContent();
+                const pageText = content.items.map(item => item.str).join(' ');
+                fullText += pageText + '\n';
+            }
+            return fullText;
+        }
+
+        async function extractTextFromWord(file) {
+            await loadLibrary('mammoth');
+            if (!window.mammoth) throw new Error('Mammoth.js 加载失败');
+            const arrayBuffer = await file.arrayBuffer();
+            const result = await mammoth.extractRawText({ arrayBuffer });
+            return result.value;
+        }
+
+        async function extractTextFromPPT(file) {
+            // Reuse already-loaded JSZip
+            const arrayBuffer = await file.arrayBuffer();
+            const zip = await JSZip.loadAsync(arrayBuffer);
+            const slideFiles = Object.keys(zip.files)
+                .filter(name => /^ppt\/slides\/slide\d+\.xml$/.test(name))
+                .sort();
+            let fullText = '';
+            for (const filename of slideFiles) {
+                const xmlContent = await zip.files[filename].async('text');
+                const matches = xmlContent.match(/<a:t[^>]*>([^<]+)<\/a:t>/g) || [];
+                const slideText = matches.map(m => m.replace(/<[^>]+>/g, '')).join(' ');
+                fullText += slideText + '\n';
+            }
+            return fullText;
+        }
+
+        async function extractTextFromImage(file) {
+            if (!isAIAvailable()) throw new Error('截图识别需要配置 AI 接口');
+            const base64 = await new Promise((resolve) => {
+                const reader = new FileReader();
+                reader.onload = () => resolve(reader.result);
+                reader.readAsDataURL(file);
+            });
+            const isOpenAIFormat = aiSettings.apiType === 'deepseek' || aiSettings.apiType === 'openai' || aiSettings.apiType === 'custom';
+            const messages = [{
+                role: 'user',
+                content: [
+                    { type: 'text', text: '识别图片中的所有产品信息（表格式数据），以JSON返回。每行是一个产品，包含字段：商品名称, 供应商SKU, 规格型号, 单位, 产品条码, 集采价, 零售价, 品牌, 产地。如果图片不含产品表格数据，返回空数组。只返回JSON，不要解释。格式：{"headers":["商品名称","供应商SKU",...],"rows":[["值1","值2",...],...]}' },
+                    { type: 'image_url', image_url: { url: base64 } }
+                ]
+            }];
+            const body = {
+                model: aiSettings.model, messages, max_tokens: aiSettings.maxTokens, temperature: 0.1
+            };
+            const headers = isOpenAIFormat
+                ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiSettings.apiKey}` }
+                : { 'Content-Type': 'application/json', 'x-api-key': aiSettings.apiKey, 'anthropic-version': '2023-06-01' };
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 60000);
+            try {
+                const response = await fetch(aiSettings.endpoint, {
+                    method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal
+                });
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`AI API 错误 (${response.status}): ${errText.substring(0, 200)}`);
+                }
+                const data = await response.json();
+                const content = isOpenAIFormat
+                    ? data.choices?.[0]?.message?.content
+                    : data.content?.[0]?.text;
+                if (!content) throw new Error('AI 返回格式异常');
+                return extractJSONFromAIResponse(content);
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        async function parseStructuredTextToTable(rawText) {
+            if (!isAIAvailable()) throw new Error('非表格格式文本需要 AI 进行结构化解析，请先配置 AI 接口');
+            const fieldList = SYSTEM_FIELDS.core.join(', ');
+            const prompt = `从以下文档文本中识别产品信息（表格数据），将每行产品解析为JSON。系统字段：${fieldList}。如果文本不包含产品数据，返回hasProductData:false。只返回JSON。\n文本内容：\n${rawText.substring(0, 6000)}`;
+            const isOpenAIFormat = aiSettings.apiType === 'deepseek' || aiSettings.apiType === 'openai' || aiSettings.apiType === 'custom';
+            const body = isOpenAIFormat ? {
+                model: aiSettings.model, messages: [{ role: 'user', content: prompt }],
+                max_tokens: aiSettings.maxTokens, temperature: 0.1,
+                response_format: { type: 'json_object' }
+            } : {
+                model: aiSettings.model, max_tokens: aiSettings.maxTokens,
+                temperature: 0.1, messages: [{ role: 'user', content: prompt }]
+            };
+            const reqHeaders = isOpenAIFormat
+                ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiSettings.apiKey}` }
+                : { 'Content-Type': 'application/json', 'x-api-key': aiSettings.apiKey, 'anthropic-version': '2023-06-01' };
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 60000);
+            try {
+                const response = await fetch(aiSettings.endpoint, {
+                    method: 'POST', headers: reqHeaders, body: JSON.stringify(body), signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`AI API 错误 (${response.status})`);
+                const data = await response.json();
+                const content = isOpenAIFormat ? data.choices?.[0]?.message?.content : data.content?.[0]?.text;
+                if (!content) throw new Error('AI 返回格式异常');
+                const result = extractJSONFromAIResponse(content);
+                if (!result.hasProductData || !result.rows || result.rows.length === 0) {
+                    return { hasProductData: false, headers: [], rows: [] };
+                }
+                return result;
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        async function handleNonExcelFile(file, mode) {
+            showImportOverlay(`正在解析${mode === 'pdf' ? 'PDF' : mode === 'word' ? 'Word' : mode === 'ppt' ? 'PPT' : '截图'}文件...`, 20);
+            try {
+                let rawText;
+                if (mode === 'pdf') {
+                    rawText = await extractTextFromPDF(file);
+                } else if (mode === 'word') {
+                    rawText = await extractTextFromWord(file);
+                } else if (mode === 'ppt') {
+                    rawText = await extractTextFromPPT(file);
+                } else if (mode === 'screenshot') {
+                    const result = await extractTextFromImage(file);
+                    if (result.headers && result.rows && result.rows.length > 0) {
+                        window.excelData = { allRows: result.rows, headerRow: 0, headers: result.headers, rows: result.rows, rowIndexToExcelRow: {}, rowImages: {}, sheetName: file.name };
+                        hideImportOverlay();
+                        return true;
+                    }
+                    throw new Error('未能识别到产品数据');
+                }
+                // For PDF/Word/PPT: try AI structured parsing
+                updateImportOverlay('AI 结构化解析中...', 60);
+                try {
+                    const structured = await parseStructuredTextToTable(rawText);
+                    if (structured && structured.hasProductData && structured.rows && structured.rows.length > 0) {
+                        window.excelData = { allRows: structured.rows, headerRow: 0, headers: structured.headers, rows: structured.rows, rowIndexToExcelRow: {}, rowImages: {}, sheetName: file.name };
+                        hideImportOverlay();
+                        return true;
+                    }
+                } catch (aiErr) {
+                    console.warn('AI 结构化解析失败，尝试基础文本分割:', aiErr.message);
+                }
+                // Fallback: basic text splitting
+                const lines = rawText.split('\n').filter(l => l.trim());
+                if (lines.length < 2) throw new Error('未能从文件中提取到产品数据');
+                const tabLines = lines.map(l => l.split(/\t|\s{2,}/));
+                window.excelData = { allRows: tabLines.slice(1), headerRow: 0, headers: tabLines[0] || [], rows: tabLines.slice(1), rowIndexToExcelRow: {}, rowImages: {}, sheetName: file.name };
+                hideImportOverlay();
+                return true;
+            } catch (e) {
+                hideImportOverlay();
+                throw e;
+            }
+        }
+
         // ========== 智能导入 ==========
         function initImportPage() {
             // 重置文件输入框，确保浏览器能触发 change 事件（含选择同名文件场景）
@@ -4983,11 +5514,11 @@
             // 恢复之前选择的供应商
             if (selectedSupplierId) {
                 existingInput.value = selectedSupplierId;
-                // 检查是否有模板
-                const hasTemplate = templates[selectedSupplierId] && Object.keys(templates[selectedSupplierId].mappings || {}).length > 0;
+                // 检查全局模板
+                const templateCount = Object.keys(globalTemplate).length;
                 const hint = document.getElementById('templateHint');
-                if (hasTemplate) {
-                    hint.innerHTML = `<span class="text-green-600">✓ 已配置映射模板</span>`;
+                if (templateCount > 0) {
+                    hint.innerHTML = `<span class="text-green-600">✓ 全局映射模板已就绪（${templateCount}个字段）</span>`;
                 } else {
                     hint.innerHTML = `<span class="text-gray-400">选择已有供应商或输入新名称</span>`;
                 }
@@ -5026,17 +5557,54 @@
         }
 
         function switchImportMode(mode) {
-            document.getElementById('btn-import-upload').className = `px-4 py-2 text-sm rounded-lg flex items-center gap-1 ${mode === 'upload' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`;
-            document.getElementById('btn-import-paste').className = `px-4 py-2 text-sm rounded-lg ${mode === 'paste' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`;
-            document.getElementById('btn-import-sample').className = `px-4 py-2 text-sm rounded-lg ${mode === 'sample' ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`;
-
-            document.getElementById('import-upload').classList.toggle('hidden', mode !== 'upload');
-            document.getElementById('import-paste').classList.toggle('hidden', mode !== 'paste');
+            const modes = ['upload', 'paste', 'sample', 'pdf', 'word', 'ppt', 'screenshot'];
+            modes.forEach(m => {
+                const btn = document.getElementById(`btn-import-${m}`);
+                if (btn) {
+                    btn.className = `px-4 py-2 text-sm rounded-lg ${m === 'upload' ? 'flex items-center gap-1' : ''} ${mode === m ? 'bg-blue-600 text-white' : 'bg-gray-100 text-gray-600 hover:bg-gray-200'}`;
+                }
+                const pane = document.getElementById(`import-${m}`);
+                if (pane) pane.classList.toggle('hidden', mode !== m);
+            });
 
             if (mode === 'sample') {
                 loadSampleData();
                 document.getElementById('import-paste').classList.remove('hidden');
-                document.getElementById('import-upload').classList.add('hidden');
+            }
+        }
+
+        async function handleMultiFormatFile(event, mode) {
+            const file = event.target.files[0];
+            if (!file) return;
+            // Update file info display
+            const infoEl = document.getElementById(`${mode}FileInfo`);
+            const nameEl = document.getElementById(`${mode}FileName`);
+            if (infoEl) infoEl.classList.remove('hidden');
+            if (nameEl) nameEl.textContent = file.name;
+            // Screenshot preview
+            if (mode === 'screenshot') {
+                const previewEl = document.getElementById('screenshotPreview');
+                if (previewEl) {
+                    const reader = new FileReader();
+                    reader.onload = (e) => { previewEl.src = e.target.result; };
+                    reader.readAsDataURL(file);
+                }
+            }
+            try {
+                const success = await handleNonExcelFile(file, mode);
+                if (success) {
+                    document.getElementById('step2').classList.remove('opacity-50');
+                    // Show Step 3 mapping
+                    const supplierId = getCurrentSupplierId();
+                    if (!supplierId) {
+                        alert('请先输入供应商名称');
+                        return;
+                    }
+                    selectedSupplierId = supplierId;
+                    await parseImportData();
+                }
+            } catch (e) {
+                alert(`文件解析失败：${e.message}`);
             }
         }
 
@@ -5073,6 +5641,553 @@
             const barEl = document.getElementById('import-loading-bar');
             if (textEl) textEl.textContent = text;
             if (barEl) barEl.style.width = percent + '%';
+        }
+
+        // ========== 自动化批量导入 ==========
+        // 汇总所有供应商模板，构建多对一字段映射字典
+        // 获取所有可用字段名（系统字段 + 用户自定义/重命名字段）
+        function getAllFieldNames() {
+            const names = new Set(['(忽略)']);
+            const allFields = getAllProductFields();
+            if (allFields && allFields.length) {
+                allFields.forEach(f => names.add(f.name));
+            }
+            return [...names];
+        }
+
+        // 全局模板标准化查找（key: 去空格下划线小写 → field）
+        function getNormalizedTemplate() {
+            const norm = {};
+            for (const [header, field] of Object.entries(globalTemplate)) {
+                if (!field || field === '(忽略)') continue;
+                norm[String(header).toLowerCase().replace(/[_\s]/g, '')] = field;
+            }
+            return norm;
+        }
+
+        // 自动检测表头行：逐行评分，匹配已知字段最多的行即为表头
+        function detectBestHeaderRow(allRows, normTemplate) {
+            const maxRows = Math.min(allRows.length, 12);
+            let bestRow = 0, bestScore = 0;
+            for (let r = 0; r < maxRows; r++) {
+                const row = allRows[r] || [];
+                let score = 0;
+                for (const cell of row) {
+                    const key = String(cell || '').toLowerCase().replace(/[_\s]/g, '');
+                    if (normTemplate[key]) score += 1;
+                }
+                if (score > bestScore) { bestScore = score; bestRow = r; }
+            }
+            return bestScore >= 5 ? bestRow : 0;
+        }
+
+        // 用全局模板匹配表头（三阶段：精确 → 子串包含 → 关键词）
+        function matchHeadersWithGlobalTemplate(headers, normTemplate) {
+            const mappings = {};
+            const templateKeys = Object.keys(normTemplate);
+            headers.forEach((h, i) => {
+                const raw = String(h || '').trim();
+                const key = raw.toLowerCase().replace(/[_\s]/g, '');
+                // 1. 精确匹配
+                if (normTemplate[key]) { mappings[i] = resolveFieldName(normTemplate[key]); return; }
+                // 2. 子串包含匹配：取最长命中
+                let bestKey = null, bestLen = 0;
+                for (const tk of templateKeys) {
+                    const shorter = key.length < tk.length ? key : tk;
+                    const longer = key.length < tk.length ? tk : key;
+                    if (shorter.length >= 3 && longer.includes(shorter) && shorter.length > bestLen) {
+                        bestKey = tk; bestLen = shorter.length;
+                    }
+                }
+                if (bestKey) { mappings[i] = resolveFieldName(normTemplate[bestKey]); return; }
+                // 3. 回退关键词匹配
+                mappings[i] = resolveFieldName(smartMatchField(raw, '集采价'));
+            });
+            return mappings;
+        }
+
+        async function autoProcessAllSheets() {
+            if (!pendingWorkbookData || !pendingWorkbookData.workbook) return;
+            const sheetNames = Object.keys(pendingWorkbookData.sheets);
+            showImportOverlay('正在解析所有工作表...', 20);
+
+            const normTemplate = getNormalizedTemplate();
+            const sheetsData = [];
+            const headerRows = {};
+
+            for (const name of sheetNames) {
+                const sheet = pendingWorkbookData.workbook.Sheets[name];
+                const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                // 自动检测表头行
+                const headerIdx = detectBestHeaderRow(jsonData, normTemplate);
+                const headers = (jsonData[headerIdx] || []).map(h => String(h || ''));
+                const dataRows = jsonData.slice(headerIdx + 1).filter(r => r && r.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
+                const sampleRows = dataRows.slice(0, 3);
+                headerRows[name] = headerIdx + 1; // 1-based
+                sheetsData.push({ name, headers, sampleRows, dataRows, rowCount: dataRows.length, allRows: jsonData });
+            }
+
+            // 用汇总模板匹配字段
+            updateImportOverlay('正在匹配字段...', 70);
+            const mappings = {};
+            for (const sd of sheetsData) {
+                mappings[sd.name] = matchHeadersWithGlobalTemplate(sd.headers, normTemplate);
+            }
+
+            // 从sheet名自动提取品牌
+            const sheetBrands = {};
+            sheetNames.forEach(name => {
+                const brand = extractBrandFromSheetName(name);
+                if (brand && brand !== name) sheetBrands[name] = brand;
+            });
+
+            updateImportOverlay('完成', 100);
+            setTimeout(() => {
+                hideImportOverlay();
+                showBatchAutoImportModal(sheetsData, mappings, sheetBrands, headerRows);
+            }, 300);
+        }
+
+        function showBatchAutoImportModal(sheetsData, mappings, sheetBrands, headerRows) {
+            window._batchWizard = { step: 1, sheetsData, mappings, sheetBrands, headerRows: headerRows || {}, originalHeaderRows: { ...headerRows } };
+            // 读取导入页面已选择的供应商
+            const importSupplier = document.getElementById('importSupplier');
+            if (importSupplier && importSupplier.value.trim()) {
+                window._batchWizard.preselectedSupplier = importSupplier.value.trim();
+            }
+            renderWizardStep1();
+        }
+
+        // ===== Step 1: 确认表头行 =====
+        function renderWizardStep1() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            const { sheetsData, headerRows } = wizard;
+            const modal = document.getElementById('modal-sheet-select');
+            const totalRows = sheetsData.reduce((sum, sd) => sum + sd.rowCount, 0);
+            const sheetCount = sheetsData.length;
+
+            let sheetsHTML = sheetsData.map((sd) => {
+                const previewRows = sd.allRows.slice(0, 8);
+                const currentHeader = headerRows[sd.name] || 1;
+                const rowOptions = [1,2,3,4,5,6,7,8].map(r => `<option value="${r}" ${r === currentHeader ? 'selected' : ''}>第${r}行</option>`).join('');
+
+                // 渲染前8行预览，高亮当前表头行
+                const previewHTML = previewRows.map((row, ri) => {
+                    const rowNum = ri + 1;
+                    const isHeader = rowNum === currentHeader;
+                    const cells = (row || []).slice(0, 8).map(c => String(c || '').substring(0, 20)).join(' | ');
+                    return `<div class="flex items-center gap-2 text-xs py-0.5 ${isHeader ? 'bg-blue-100 font-medium rounded px-1' : ''}">
+                        <span class="w-10 text-gray-400 text-right flex-shrink-0">${rowNum}</span>
+                        <span class="truncate ${isHeader ? 'text-blue-700' : 'text-gray-500'}">${escapeHtml(cells || '(空行)')}</span>
+                        ${isHeader ? '<span class="text-blue-500 text-xs flex-shrink-0">← 表头</span>' : ''}
+                    </div>`;
+                }).join('');
+
+                return `<div class="p-3 border rounded-lg bg-gray-50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-medium text-sm">${escapeHtml(sd.name)}</span>
+                        <div class="flex items-center gap-2">
+                            <span class="text-xs text-gray-500">表头行：</span>
+                            <select class="border rounded px-1.5 py-0.5 text-xs wizard-header-select" data-sheet="${escapeHtml(sd.name)}" onchange="wizardHeaderRowChanged(this)">${rowOptions}</select>
+                        </div>
+                    </div>
+                    <div class="text-xs text-gray-500 mb-1">行预览（前8行）：</div>
+                    <div class="border rounded bg-white overflow-hidden">${previewHTML}</div>
+                </div>`;
+            }).join('');
+
+            modal.querySelector('.modal-content').innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold">步骤 1/3：确认表头行</h3>
+                    <button onclick="finishMultiSheetImport()" class="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <p class="text-sm text-gray-500 mb-2">请确认每个工作表的表头所在行。点击"下一步"将按所选行解析表头。</p>
+                <p class="text-xs text-gray-400 mb-4">共 ${sheetCount} 个工作表，${totalRows} 行数据</p>
+                <div class="space-y-2 mb-4 max-h-96 overflow-y-auto">${sheetsHTML}</div>
+                <div class="flex justify-between items-center pt-4 border-t">
+                    <button onclick="batchWizardGoManual()" class="px-3 py-2 border border-orange-300 rounded-lg text-sm text-orange-600 hover:bg-orange-50">切换到手动导入</button>
+                    <div class="flex gap-2">
+                        <button onclick="finishMultiSheetImport()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                        <button onclick="wizardGoStep2()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">下一步 →</button>
+                    </div>
+                </div>
+            `;
+            modal.classList.add('active');
+        }
+
+        // 表头行下拉改变时，实时更新高亮
+        function wizardHeaderRowChanged(sel) {
+            const sheetName = sel.dataset.sheet;
+            const newRow = parseInt(sel.value);
+            if (window._batchWizard) {
+                window._batchWizard.headerRows[sheetName] = newRow;
+            }
+            // 重新渲染当前步骤以更新高亮
+            renderWizardStep1();
+        }
+
+        // ===== Step 2: 确认字段映射 =====
+        function wizardGoStep2() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            const { sheetsData, mappings, headerRows } = wizard;
+
+            // 根据用户选择的表头行，重新解析每个sheet的headers和dataRows
+            for (const sd of sheetsData) {
+                const headerRow = headerRows[sd.name] || 1;
+                const originalRow = wizard.originalHeaderRows[sd.name] || 1;
+                if (headerRow === originalRow) continue;
+
+                const headerIdx = headerRow - 1;
+                const allRows = sd.allRows;
+                const newHeaders = (allRows[headerIdx] || []).map(h => String(h || ''));
+                const newDataRows = allRows.slice(headerIdx + 1).filter(r => r && r.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
+
+                sd.headers = newHeaders;
+                sd.dataRows = newDataRows;
+                sd.rowCount = newDataRows.length;
+                sd.sampleRows = newDataRows.slice(0, 3);
+
+                // 表头行变了，用汇总模板+关键词重建映射
+                if (newHeaders.length > 0) {
+                    const normTemplate = getNormalizedTemplate();
+                    mappings[sd.name] = matchHeadersWithGlobalTemplate(newHeaders, normTemplate);
+                }
+            }
+
+            wizard.step = 2;
+            renderWizardStep2();
+        }
+
+        function renderWizardStep2() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            const { sheetsData, mappings } = wizard;
+            const modal = document.getElementById('modal-sheet-select');
+            const totalRows = sheetsData.reduce((sum, sd) => sum + sd.rowCount, 0);
+            const sheetCount = sheetsData.length;
+            const fieldOptions = getAllFieldNames().map(f => `<option value="${f}">${f}</option>`).join('');
+
+            let sheetsHTML = sheetsData.map((sd) => {
+                const mapping = mappings[sd.name] || {};
+                const headersHTML = sd.headers.map((h, hi) => {
+                    const target = mapping[hi] || smartMatchField(String(h || ''), '集采价');
+                    const options = fieldOptions.replace(`value="${target}"`, `value="${target}" selected`);
+                    return `<div class="flex items-center gap-2 text-xs py-0.5">
+                        <span class="w-28 truncate text-gray-600 text-right" title="${escapeHtml(String(h || ''))}">${escapeHtml(String(h || '').substring(0, 14))}</span>
+                        <span class="text-gray-400">→</span>
+                        <select class="border rounded px-1 py-0.5 text-xs flex-1 batch-mapping-select" data-sheet="${escapeHtml(sd.name)}" data-idx="${hi}">${options}</select>
+                    </div>`;
+                }).join('');
+                return `<div class="p-3 border rounded-lg bg-gray-50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-medium text-sm">${escapeHtml(sd.name)}</span>
+                        <span class="text-xs text-gray-500">${sd.rowCount} 行 × ${sd.headers.length} 列</span>
+                    </div>
+                    <div class="max-h-56 overflow-y-auto border-t pt-2">${headersHTML}</div>
+                </div>`;
+            }).join('');
+
+            modal.querySelector('.modal-content').innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold">步骤 2/3：确认字段映射</h3>
+                    <button onclick="finishMultiSheetImport()" class="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <p class="text-sm text-gray-500 mb-2">确认每个表头对应的系统字段，可在下拉框中修改。点击"下一步"确认品牌和供应商。</p>
+                <p class="text-xs text-gray-400 mb-4">共 ${sheetCount} 个工作表，${totalRows} 行数据</p>
+                <div class="space-y-2 mb-4 max-h-96 overflow-y-auto">${sheetsHTML}</div>
+                <div class="flex justify-between items-center pt-4 border-t">
+                    <button onclick="batchWizardGoManual()" class="px-3 py-2 border border-orange-300 rounded-lg text-sm text-orange-600 hover:bg-orange-50">切换到手动导入</button>
+                    <div class="flex gap-2">
+                        <button onclick="wizardBackStep1()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">← 上一步</button>
+                        <button onclick="finishMultiSheetImport()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                        <button onclick="wizardGoStep3()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">下一步 →</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ===== Step 3: 确认品牌并导入 =====
+        function wizardGoStep3() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            // 从 Step 2 的 DOM 中收集用户修改过的映射
+            document.querySelectorAll('.batch-mapping-select').forEach(sel => {
+                const sheetName = sel.dataset.sheet;
+                const idx = sel.dataset.idx;
+                if (!wizard.mappings[sheetName]) wizard.mappings[sheetName] = {};
+                wizard.mappings[sheetName][idx] = sel.value;
+            });
+            wizard.step = 3;
+            renderWizardStep3();
+        }
+
+        function renderWizardStep3() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            const { sheetsData, mappings, sheetBrands } = wizard;
+            const modal = document.getElementById('modal-sheet-select');
+            const supplierOptions = [...new Set(products.map(p => p.supplierId).filter(Boolean).sort())].map(s => `<option value="${s}">`).join('');
+            const totalRows = sheetsData.reduce((sum, sd) => sum + sd.rowCount, 0);
+            const sheetCount = sheetsData.length;
+
+            let sheetsHTML = sheetsData.map((sd) => {
+                const mapping = mappings[sd.name] || {};
+                const brand = sheetBrands[sd.name] || '';
+                const mappingSummary = sd.headers.slice(0, 6).map((h, i) => {
+                    const target = mapping[i] || smartMatchField(String(h || ''), '集采价');
+                    return `${escapeHtml(String(h || '').substring(0, 6))}→${target}`;
+                }).join(', ') + (sd.headers.length > 6 ? ` +${sd.headers.length - 6}列` : '');
+                return `<div class="p-3 border rounded-lg bg-gray-50">
+                    <div class="flex items-center justify-between mb-2">
+                        <span class="font-medium text-sm">${escapeHtml(sd.name)}</span>
+                        <span class="text-xs text-gray-500">${sd.rowCount} 行 × ${sd.headers.length} 列</span>
+                    </div>
+                    <div class="text-xs text-gray-600 mb-2">${mappingSummary}</div>
+                    <div class="flex items-center gap-2">
+                        <span class="text-xs text-gray-500">品牌：</span>
+                        <input type="text" class="border rounded px-2 py-1 text-xs flex-1 batch-brand-input" data-sheet="${escapeHtml(sd.name)}" value="${escapeHtml(brand)}" placeholder="输入品牌名">
+                    </div>
+                </div>`;
+            }).join('');
+
+            modal.querySelector('.modal-content').innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-lg font-bold">步骤 3/3：确认品牌并导入</h3>
+                    <button onclick="finishMultiSheetImport()" class="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">确认品牌名和供应商后点击"开始导入"。共 ${sheetCount} 个工作表，${totalRows} 行数据。</p>
+                <div class="mb-3">
+                    <label class="text-sm text-gray-500 mb-1 block">供应商</label>
+                    <input type="text" id="batchSupplierInput" class="w-full border rounded-lg px-3 py-2 text-sm" list="batch-supplier-list" placeholder="输入供应商名称" value="${escapeHtml(wizard.preselectedSupplier || '')}">
+                    <datalist id="batch-supplier-list">${supplierOptions}</datalist>
+                </div>
+                <div class="space-y-2 mb-4 max-h-80 overflow-y-auto">${sheetsHTML}</div>
+                <div class="flex justify-between items-center pt-4 border-t">
+                    <button onclick="batchWizardGoManual()" class="px-3 py-2 border border-orange-300 rounded-lg text-sm text-orange-600 hover:bg-orange-50">切换到手动导入</button>
+                    <div class="flex gap-2">
+                        <button onclick="wizardBackStep2()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">← 上一步</button>
+                        <button onclick="finishMultiSheetImport()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                        <button onclick="executeBatchImportFromWizard()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">开始导入</button>
+                    </div>
+                </div>
+            `;
+        }
+
+        // ===== 步骤导航 =====
+        function wizardBackStep1() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            wizard.step = 1;
+            renderWizardStep1();
+        }
+
+        function wizardBackStep2() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            wizard.step = 2;
+            renderWizardStep2();
+        }
+
+        function batchWizardGoManual() {
+            window._batchWizard = null;
+            document.getElementById('modal-sheet-select').classList.remove('active');
+            showSheetSelectModal();
+        }
+
+        function executeBatchImportFromWizard() {
+            const wizard = window._batchWizard;
+            if (!wizard) return;
+            window._batchImportData = { sheetsData: wizard.sheetsData, mappings: wizard.mappings };
+            executeBatchImport();
+        }
+
+        // 提取单个sheet的ExcelJS浮动图片（复用 _exceljsPromise）
+        async function extractExcelJSImages(sheetName) {
+            const rowImages = {};
+            if (!pendingWorkbookData || !pendingWorkbookData._exceljsPromise) return rowImages;
+            try {
+                const wb = await pendingWorkbookData._exceljsPromise;
+                const ws = wb.getWorksheet(sheetName);
+                if (!ws) return rowImages;
+                let images = ws._images || [];
+                if (images.length === 0 && typeof ws.getImages === 'function') {
+                    try { images = ws.getImages() || []; } catch (e) {}
+                }
+                if (images.length === 0 && ws.model && ws.model.media) {
+                    images = ws.model.media;
+                }
+                for (const img of images) {
+                    try {
+                        let rowNum = 1;
+                        if (img.range && img.range.tl) rowNum = Math.floor(img.range.tl.row) + 1;
+                        else if (img.range && img.range.br) rowNum = Math.floor(img.range.br.row) + 1;
+                        let base64 = null, mime = 'image/png';
+                        if (img.imageId !== undefined && wb.media && wb.media[img.imageId]) {
+                            const m = wb.media[img.imageId];
+                            if (m.buffer) base64 = arrayBufferToBase64(m.buffer);
+                            if (m.extension) mime = `image/${m.extension}`;
+                        }
+                        if (!base64 && img.base64EncodedData) base64 = img.base64EncodedData;
+                        if (!base64 && img.base64) base64 = img.base64;
+                        if (!base64 && img.buffer) base64 = arrayBufferToBase64(img.buffer);
+                        if (base64) {
+                            if (typeof base64 !== 'string') base64 = String(base64);
+                            rowImages[rowNum] = rowImages[rowNum] || [];
+                            rowImages[rowNum].push({
+                                base64: base64.startsWith('data:') ? base64 : `data:${mime};base64,${base64}`,
+                                extension: img.extension || 'png'
+                            });
+                        }
+                    } catch (e) {}
+                }
+            } catch (e) { console.warn('图片提取失败:', e); }
+            return rowImages;
+        }
+
+        async function executeBatchImport() {
+            const supplierId = document.getElementById('batchSupplierInput')?.value?.trim();
+            if (!supplierId) { alert('请输入供应商名称'); return; }
+            const batchData = window._batchImportData;
+            if (!batchData) { alert('批量导入数据已丢失'); return; }
+            const { sheetsData, mappings } = batchData;
+            closeModal('modal-sheet-select');
+
+            // Collect brand names from the batch modal inputs
+            const sheetBrands = {};
+            document.querySelectorAll('.batch-brand-input').forEach(input => {
+                sheetBrands[input.dataset.sheet] = input.value.trim();
+            });
+
+            let totalAdded = 0, totalUpdated = 0, totalErrors = 0;
+            const importedSheets = [];
+
+            for (const sd of sheetsData) {
+                try {
+                    showImportOverlay(`正在导入 ${sd.name}...`, Math.round((importedSheets.length / sheetsData.length) * 100));
+                    const sheet = pendingWorkbookData.workbook.Sheets[sd.name];
+                    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                    const headers = sd.headers;
+                    const rows = sd.dataRows;
+                    const headerRow = (window._batchWizard && window._batchWizard.headerRows && window._batchWizard.headerRows[sd.name]) || 1;
+                    const rowIndexToExcelRow = {};
+                    rows.forEach((r, i) => { rowIndexToExcelRow[i] = headerRow + 1 + i; });
+
+                    // 提取图片：ExcelJS 浮动图 + DISPIMG 嵌入图
+                    const rowImages = await extractExcelJSImages(sd.name);
+                    try { await extractDispimgImages(pendingWorkbookData.arrayBuffer, sd.name, jsonData, headerRow, rowImages); } catch (e) {}
+
+                    window.excelData = { allRows: rows, headerRow, headers, rows, rowIndexToExcelRow, rowImages, sheetName: sd.name };
+
+                    // Apply mappings
+                    const sheetMapping = mappings[sd.name] || {};
+                    currentMappings = sheetMapping;
+                    parsedData = { headers, rows, mappings: currentMappings };
+
+                    // Set up supplier context
+                    selectedSupplierId = supplierId;
+                    window.multiSheetContext = { activeSheet: sd.name };
+                    window.pendingBrandName = sheetBrands[sd.name] || '';
+
+                    const result = await executeBatchSingleSheetImport(sd.name, supplierId, sheetBrands[sd.name] || '');
+                    if (result) {
+                        totalAdded += result.added || 0;
+                        totalUpdated += result.updated || 0;
+                        importedSheets.push(sd.name);
+                    }
+                } catch (e) {
+                    console.error(`导入 ${sd.name} 失败:`, e);
+                    totalErrors++;
+                }
+            }
+
+            hideImportOverlay();
+            window._batchImportData = null;
+            window._batchWizard = null;
+
+            // Show summary
+            let summary = `导入完成！\n`;
+            summary += `成功：${importedSheets.length}/${sheetsData.length} 个工作表\n`;
+            summary += `新增 ${totalAdded} 个产品，更新 ${totalUpdated} 个产品`;
+            if (totalErrors > 0) summary += `\n${totalErrors} 个工作表导入失败`;
+            alert(summary);
+
+            // Cleanup
+            window.excelData = null;
+            window.multiSheetContext = null;
+            pendingWorkbookData = null;
+            clearFile();
+            showPage('page-list');
+        }
+
+        // 批量导入中的单个 sheet 导入（复用 executeSingleSheetImport 的核心逻辑）
+        async function executeBatchSingleSheetImport(sheetName, supplierId, brandName) {
+            if (!window.excelData || !window.excelData.rows.length) return null;
+            const headers = window.excelData.headers;
+            const rows = window.excelData.rows;
+            const mappings = currentMappings;
+            let added = 0, updated = 0;
+
+            for (let ri = 0; ri < rows.length; ri++) {
+                const row = rows[ri];
+                const rowData = {};
+                let barcode = '', sku = '';
+
+                // Build product data from mappings
+                Object.entries(mappings).forEach(([colIdx, fieldName]) => {
+                    if (fieldName === '(忽略)' || !fieldName) return;
+                    const val = row[parseInt(colIdx)];
+                    const strVal = val !== undefined && val !== null ? String(val).trim() : '';
+                    setProductField(rowData, fieldName, strVal);
+                    if (fieldName === '产品条码') barcode = strVal;
+                    if (fieldName === '供应商SKU') sku = strVal;
+                });
+
+                // Apply images from extraction
+                const excelRow = window.excelData.rowIndexToExcelRow[ri];
+                const rowImgs = window.excelData.rowImages && window.excelData.rowImages[excelRow];
+                if (rowImgs && rowImgs.length > 0) {
+                    rowData.mainImage = rowImgs[0].base64;
+                    if (rowImgs.length > 1) {
+                        rowData.detailImages = rowImgs.slice(1).map(img => img.base64).join(',');
+                    }
+                }
+
+                rowData.supplierId = supplierId;
+                rowData.status = rowData.status || '上架中';
+                rowData.source = rowData.source || '批量导入';
+                rowData.createdAt = rowData.createdAt || new Date().toISOString().split('T')[0];
+
+                // Apply brand
+                if (brandName && !rowData.brand) rowData.brand = brandName;
+
+                // Skip empty rows
+                if (!rowData.name && !sku && !barcode) continue;
+
+                // Duplicate detection
+                let existingProduct = null;
+                if (sku) existingProduct = products.find(p => p.sku === sku && p.supplierId === supplierId);
+                if (!existingProduct && barcode) existingProduct = products.find(p => p.barcode === barcode && p.supplierId === supplierId);
+
+                if (existingProduct) {
+                    // 不覆盖已有的图片
+                    if (rowData.mainImage && !existingProduct.mainImage) existingProduct.mainImage = rowData.mainImage;
+                    if (rowData.detailImages && !existingProduct.detailImages) existingProduct.detailImages = rowData.detailImages;
+                    Object.assign(existingProduct, rowData);
+                    existingProduct.updatedAt = new Date().toISOString().split('T')[0];
+                    updated++;
+                } else {
+                    const newProduct = { id: nextProductId++, ...rowData };
+                    products.push(newProduct);
+                    added++;
+                }
+            }
+
+            await saveDataAsync();
+            addImportRecord(pendingFileName, sheetName, supplierId, added, updated);
+            if (pendingWorkbookData) pendingWorkbookData.sheets[sheetName].imported = true;
+            return { added, updated };
         }
 
         function hideImportOverlay() {
@@ -5140,9 +6255,9 @@
                         });
 
                         updateImportOverlay('完成', 100);
-                        setTimeout(() => {
+                        setTimeout(async () => {
                             hideImportOverlay();
-                            showSheetSelectModal();
+                            await autoProcessAllSheets();
                         }, 300);
                     } else {
                         updateImportOverlay('完成', 100);
@@ -5338,6 +6453,8 @@
             pendingFileName = '';
             window.multiSheetContext = null;
             window.pendingBrandName = null;
+            window._batchWizard = null;
+            window._batchImportData = null;
             const brandSection = document.getElementById('brandConfirmSection');
             if (brandSection) brandSection.remove();
             document.getElementById('btnBackToSheetList').classList.add('hidden');
@@ -5546,21 +6663,17 @@
 
             // 绑定供应商选择事件 - 自动加载模板映射
             document.getElementById('singleSheetSupplier').addEventListener('change', function() {
-                const supplierId = this.value.trim();
-                const template = templates[supplierId];
-                const hasTemplate = template && Object.keys(template.mappings || {}).length > 0;
-
-                document.getElementById('singleSheetTemplateHint').innerHTML = hasTemplate
-                    ? `<span class="text-green-600">✓ 已配置映射模板（${Object.keys(template.mappings).length}个字段）</span>`
-                    : `<span class="text-gray-400">未配置映射模板</span>`;
+                const templateCount = Object.keys(globalTemplate).length;
+                document.getElementById('singleSheetTemplateHint').innerHTML = templateCount > 0
+                    ? `<span class="text-green-600">✓ 全局映射模板已就绪（${templateCount}个字段）</span>`
+                    : `<span class="text-gray-400">暂无映射模板</span>`;
 
                 // 如果有模板，自动应用映射
-                if (hasTemplate) {
-                    const savedMappings = template.mappings;
+                if (templateCount > 0) {
                     document.querySelectorAll('.sheet-field-select').forEach(select => {
                         const header = select.dataset.header;
-                        if (savedMappings[header]) {
-                            select.value = savedMappings[header];
+                        if (globalTemplate[header]) {
+                            select.value = globalTemplate[header];
                         }
                     });
                     updateMappingStatus();
@@ -5867,26 +6980,18 @@
             alert(`已设置品牌名：${brandName}\n导入时将为所有商品填充此品牌名`);
         }
 
-        // 合并映射到供应商模板（保留已有映射，新增/覆盖当前sheet的映射）
-        function mergeTemplateMappings(supplierId, newMappings) {
-            const existing = templates[supplierId]?.mappings || {};
-            const merged = { ...existing, ...newMappings };
-            templates[supplierId] = {
-                supplierId: supplierId,
-                mappings: merged,
-                updatedAt: new Date().toISOString()
-            };
-            return merged;
+        // 合并映射到全局模板（保留已有映射，新增/覆盖当前映射）
+        function mergeTemplateMappings(newMappings) {
+            for (const [header, field] of Object.entries(newMappings)) {
+                if (header && field) {
+                    globalTemplate[header] = field;
+                }
+            }
+            return globalTemplate;
         }
 
         // 保存sheet映射模板（合并模式）
         async function saveSheetMapping(sheetName) {
-            const supplierId = document.getElementById('singleSheetSupplier').value.trim();
-            if (!supplierId) {
-                alert('请先选择供应商');
-                return;
-            }
-
             const newMappings = {};
             document.querySelectorAll('.sheet-field-select').forEach(select => {
                 const header = select.dataset.header;
@@ -5896,13 +7001,13 @@
                 }
             });
 
-            const existingCount = Object.keys(templates[supplierId]?.mappings || {}).length;
-            const merged = mergeTemplateMappings(supplierId, newMappings);
-            const newCount = Object.keys(merged).length;
+            const existingCount = Object.keys(globalTemplate).length;
+            mergeTemplateMappings(newMappings);
+            const newCount = Object.keys(globalTemplate).length;
             const addedCount = newCount - existingCount;
 
             await saveDataAsync();
-            alert(`已保存供应商「${supplierId}」的映射模板（${newCount}个字段${addedCount > 0 ? `，本次新增 ${addedCount} 个` : ''}）`);
+            alert(`已保存映射模板（共${newCount}个字段${addedCount > 0 ? `，本次新增 ${addedCount} 个` : ''}）`);
         }
 
         // 执行单个sheet导入
@@ -6187,17 +7292,16 @@
                 // 标记已导入
                 pendingWorkbookData.sheets[sheetName].imported = true;
 
-                // 自动累积字段映射到供应商模板（只新增不覆盖已有）
+                // 自动累积字段映射到全局模板（只新增不覆盖已有）
                 if (Object.keys(headerToField).length > 0) {
-                    const existingMappings = templates[supplierId]?.mappings || {};
                     const newMappings = {};
                     for (const [header, field] of Object.entries(headerToField)) {
-                        if (!existingMappings[header]) {
+                        if (!globalTemplate[header]) {
                             newMappings[header] = field;
                         }
                     }
                     if (Object.keys(newMappings).length > 0) {
-                        mergeTemplateMappings(supplierId, newMappings);
+                        mergeTemplateMappings(newMappings);
                     }
                 }
 
@@ -6784,6 +7888,19 @@
                 window.excelData.rows.map(row => row.join('\t')).join('\n');
 
             hideImportOverlay();
+
+            // 单 sheet 且 AI 可用：自动解析和映射，无需用户手动点击
+            if (!window.multiSheetContext && isAIAvailable()) {
+                // 显示进度提示然后自动解析
+                setTimeout(async () => {
+                    try {
+                        // 如果已有默认供应商或可从数据推断
+                        await parseImportData();
+                    } catch (e) {
+                        console.warn('自动解析失败，请手动点击"解析数据":', e.message);
+                    }
+                }, 500);
+            }
         }
 
         // 提取 DISPIMG 单元格内嵌图片
@@ -7556,8 +8673,14 @@
             document.getElementById('fileStats').textContent = '';
             document.getElementById('fileName').textContent = '';
             document.getElementById('headerPreview').textContent = '';
-            // 重置表头行选择器
             document.getElementById('headerRowSelect').value = '1';
+            // 清理多格式文件面板
+            ['pdf', 'word', 'ppt', 'screenshot'].forEach(m => {
+                const input = document.getElementById(`${m}File`);
+                const info = document.getElementById(`${m}FileInfo`);
+                if (input) input.value = '';
+                if (info) info.classList.add('hidden');
+            });
             // 清理图片数据，释放内存
             if (window.excelData && window.excelData.rowImages) {
                 Object.keys(window.excelData.rowImages).forEach(key => {
@@ -7594,7 +8717,7 @@
             document.getElementById('importData').value = samples[supplierId] || 'SKU\t商品名称\t规格\t价格\t产品条码\t箱规\nP001\t测试商品\t500g\t25\t6901234567890\t24';
         }
 
-        function parseImportData() {
+        async function parseImportData() {
             let headers, rows;
 
             // 优先使用 Excel 数据
@@ -7622,19 +8745,26 @@
             // 同步全局变量
             selectedSupplierId = supplierId;
 
-            const template = templates[supplierId];
+            // 智能匹配字段：全局模板优先
+            const normTemplate = getNormalizedTemplate();
+            currentMappings = matchHeadersWithGlobalTemplate(headers, normTemplate);
 
-            // 智能匹配字段
-            currentMappings = {};
-            headers.forEach((h, idx) => {
-                const hStr = String(h || '').trim();
-                if (template && template.mappings[hStr]) {
-                    currentMappings[idx] = template.mappings[hStr];
-                } else {
-                    // 智能推断
-                    currentMappings[idx] = smartMatchField(hStr, '集采价'); // 默认使用集采价
+            // AI 映射：在关键词匹配基础上用 AI 优化
+            if (isAIAvailable()) {
+                try {
+                    const aiMappings = await callAIMapping(headers, rows.slice(0, 3), supplierId);
+                    // AI 结果覆盖非模板匹配的字段，模板优先级最高
+                    headers.forEach((h, idx) => {
+                        const hStr = String(h || '').trim();
+                        const hasTemplate = template && template.mappings[hStr];
+                        if (!hasTemplate && aiMappings[idx] && aiMappings[idx] !== '(忽略)') {
+                            currentMappings[idx] = aiMappings[idx];
+                        }
+                    });
+                } catch (e) {
+                    console.warn('AI 映射失败，使用关键词匹配:', e.message);
                 }
-            });
+            }
 
             parsedData = { headers, rows, mappings: currentMappings };
 
@@ -7645,6 +8775,262 @@
             renderDataPreview(headers, rows, currentMappings);
 
             document.getElementById('step3').classList.remove('opacity-50');
+        }
+
+        // ========== AI 智能映射 ==========
+        function hashHeaders(headers) {
+            const str = headers.map(h => String(h || '').trim()).join('|').toLowerCase();
+            let hash = 0;
+            for (let i = 0; i < str.length; i++) {
+                const char = str.charCodeAt(i);
+                hash = ((hash << 5) - hash) + char;
+                hash |= 0;
+            }
+            return String(hash);
+        }
+
+        function extractJSONFromAIResponse(content) {
+            let cleaned = content.replace(/```json\s*/gi, '').replace(/```/g, '').trim();
+            try { return JSON.parse(cleaned); } catch (e1) { }
+            const objMatch = cleaned.match(/\{[\s\S]*\}/);
+            if (objMatch) {
+                try { return JSON.parse(objMatch[0]); } catch (e2) { }
+            }
+            const arrMatch = cleaned.match(/\[[\s\S]*\]/);
+            if (arrMatch) {
+                try { return JSON.parse(arrMatch[0]); } catch (e3) { }
+            }
+            throw new Error('无法解析 AI 返回的 JSON');
+        }
+
+        function buildAIMappingPrompt(headers, sampleRows, existingTemplate) {
+            const fieldDesc = `系统字段（按类别分组）：
+
+基础信息：供应商ID, 供应商SKU(货号/编号), 商品名称(品名), 分类(品类), 单位(个/箱/盒)
+条码包装：产品条码(条形码/EAN), 外箱条码, 规格型号, 箱规(每箱数量), 内配(盒内配置), 产品尺寸, 整箱尺寸, 净含量(重量), 产品毛重, 整箱重量
+品牌属性：品牌, 品牌级别, 产地, 保质期, 配料表, 是否无糖, 是否有机, 税收编码
+价格信息：集采价(采购价/供货价/进价), 零售价(市场价/指导价), 渠道价, 团购价, 集采毛利率, 含税标识, 一件代发价, 一件代发运费, 一件代发毛利率, 京东/顺丰代发价
+物流供应：物流方式(发货方式), 发货地(仓库), 运费包含(是否包邮), 不包邮区域, 默认快递公司, 库存类型(现货/预订), 备货状态, 备货周期(交货期), 最小起订量, 包销产品, 价格有效期
+电商参考：京东链接, 京东价, 淘宝链接, 淘宝价, 拼多多链接, 拼多多价
+媒体备注：产品图片, 详情图, 备注
+
+重要映射规则（优先遵守）：
+- "货号"/"SKU"/"商品编码"/"产品编号"/"编号" → 供应商SKU
+- "品名"/"商品名称"/"产品名称"/"名称" → 商品名称
+- "品牌" 开头但不含"级别"/"等级" → 品牌
+- "品牌级别"/"品牌等级" → 品牌级别
+- "条码"/"条形码"/"EAN"/"商品条码" → 产品条码
+- "外箱条码"/"箱码" → 外箱条码
+- "规格"/"规格型号"/"型号" → 规格型号
+- "箱规"/"装箱数"/"箱入数"/"每箱数量" → 箱规
+- "净含量"/"重量"/"克重"/"净重" → 净含量
+- "毛重" → 产品毛重
+- "整箱重量"/"箱重" → 整箱重量
+- "采购价"/"进货价"/"供货价"/"单价"/"价格" → 集采价
+- "零售价"/"市场价"/"建议零售价" → 零售价
+- "渠道价" → 渠道价
+- "团购价" → 团购价
+- "含税"/"是否含税" → 含税标识
+- "一件代发价"/"代发价" → 一件代发价
+- "一件代发运费"/"代发运费" → 一件代发运费
+- "京东价" → 京东价
+- "淘宝价"/"天猫价" → 淘宝价
+- "尺寸" 前面有"整箱"/"外箱" → 整箱尺寸，否则 → 产品尺寸
+- "产品图片"/"图片"/"主图" → 产品图片
+- "详情图"/"详情图片" → 详情图
+- 无法确定的字段映射为 "(忽略)"
+- 如果示例数据显示URL/链接特征(http/https/base64)，优先考虑电商链接或图片字段
+- 如果示例数据是纯数字且较大(>100)，优先考虑条码；如果较小(<100)，优先考虑价格`;
+
+            let templateSection = '';
+            if (existingTemplate && Object.keys(existingTemplate.mappings || {}).length > 0) {
+                const entries = Object.entries(existingTemplate.mappings).slice(0, 10);
+                templateSection = `已有模板映射（仅供参考）：\n${entries.map(([k, v]) => `  "${k}" → "${v}"`).join('\n')}\n\n`;
+            }
+            let sampleSection = '';
+            if (sampleRows && sampleRows.length > 0) {
+                const row = sampleRows[0];
+                sampleSection = `第一行示例数据（根据数据值判断字段类型）：\n${headers.map((h, i) => `  ${h} = ${String(row[i] || '').substring(0, 40)}`).join('\n')}\n\n`;
+            }
+            return `你是B2B供应链系统的数据映射专家。将Excel表头映射到系统字段。只返回JSON。
+
+${fieldDesc}
+
+${templateSection}${sampleSection}待映射表头：
+${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
+
+返回格式：{"0":"商品名称","1":"供应商SKU","2":"集采价","3":"(忽略)"}`;
+        }
+
+        async function callAIMapping(headers, sampleRows, supplierId) {
+            if (!isAIAvailable()) {
+                throw new Error('AI 未配置或已禁用，请先在系统设置中配置 AI 接口');
+            }
+            // 检查缓存
+            const cacheKey = `aiMappingCache_${supplierId}`;
+            const cached = await loadSettingFromDB(cacheKey);
+            const hHash = hashHeaders(headers);
+            if (cached && cached.headerHash === hHash) {
+                if (Date.now() - cached.timestamp < 30 * 24 * 60 * 60 * 1000) {
+                    return cached.mappings;
+                }
+            }
+            // 分级策略：全局模板完全匹配则跳过 AI
+            let includeSamples = false;
+            if (Object.keys(globalTemplate).length > 0) {
+                const allMatched = headers.every(h => String(h || '').trim() in globalTemplate);
+                if (allMatched) {
+                    const mappings = {};
+                    headers.forEach((h, i) => { mappings[i] = globalTemplate[String(h || '').trim()]; });
+                    return mappings;
+                }
+                const ambiguousHeaders = headers.filter(h => String(h || '').trim().length < 2 || /^\d+$/.test(String(h || '').trim()));
+                includeSamples = ambiguousHeaders.length > 0;
+            }
+            const prompt = buildAIMappingPrompt(headers, includeSamples ? sampleRows : null, globalTemplate);
+            const isOpenAIFormat = aiSettings.apiType === 'deepseek' || aiSettings.apiType === 'openai' || aiSettings.apiType === 'custom';
+            const body = isOpenAIFormat ? {
+                model: aiSettings.model, messages: [{ role: 'user', content: prompt }],
+                max_tokens: aiSettings.maxTokens, temperature: aiSettings.temperature,
+                response_format: { type: 'json_object' }
+            } : {
+                model: aiSettings.model, max_tokens: aiSettings.maxTokens,
+                temperature: aiSettings.temperature,
+                messages: [{ role: 'user', content: prompt }]
+            };
+            const reqHeaders = isOpenAIFormat
+                ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiSettings.apiKey}` }
+                : { 'Content-Type': 'application/json', 'x-api-key': aiSettings.apiKey, 'anthropic-version': '2023-06-01' };
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 30000);
+            try {
+                const response = await fetch(aiSettings.endpoint, {
+                    method: 'POST', headers: reqHeaders, body: JSON.stringify(body), signal: controller.signal
+                });
+                if (!response.ok) {
+                    const errText = await response.text();
+                    throw new Error(`AI API 错误 (${response.status}): ${errText.substring(0, 200)}`);
+                }
+                const data = await response.json();
+                const content = isOpenAIFormat
+                    ? data.choices?.[0]?.message?.content
+                    : data.content?.[0]?.text;
+                if (!content) throw new Error('AI 返回格式异常');
+                const mappingsRaw = extractJSONFromAIResponse(content);
+                const validFields = new Set(ALL_FIELDS);
+                const mappings = {};
+                headers.forEach((h, i) => {
+                    const field = mappingsRaw[String(i)];
+                    mappings[i] = (field && validFields.has(field)) ? field : smartMatchField(String(h || ''), '集采价');
+                });
+                // 缓存结果
+                await saveSettingToDB(cacheKey, { headerHash: hHash, mappings, supplierId, timestamp: Date.now() });
+                return mappings;
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        async function runAIMappingForCurrent() {
+            if (!parsedData) {
+                alert('请先解析数据');
+                return;
+            }
+            if (!isAIAvailable()) {
+                alert('请先在系统设置中配置 AI 接口');
+                return;
+            }
+            const btn = document.getElementById('btnAIMapping');
+            if (btn) {
+                btn.disabled = true;
+                btn.textContent = 'AI 映射中...';
+            }
+            try {
+                const supplierId = getCurrentSupplierId();
+                const aiMappings = await callAIMapping(parsedData.headers, parsedData.rows.slice(0, 3), supplierId);
+                currentMappings = aiMappings;
+                parsedData.mappings = currentMappings;
+                renderMappingPreview(parsedData.headers, currentMappings);
+                renderDataPreview(parsedData.headers, parsedData.rows, currentMappings);
+                if (btn) {
+                    btn.textContent = 'AI 映射完成';
+                    setTimeout(() => { btn.textContent = '🤖 AI 智能映射'; btn.disabled = false; }, 2000);
+                }
+            } catch (e) {
+                alert('AI 映射失败：' + e.message);
+                if (btn) {
+                    btn.textContent = '🤖 AI 智能映射';
+                    btn.disabled = false;
+                }
+            }
+        }
+
+        // 批量 AI 映射：一次 API 调用处理所有 sheet
+        async function callAIMappingBatch(sheetsData) {
+            if (!isAIAvailable()) throw new Error('AI 未配置');
+            let prompt = `将以下所有工作表的表头映射到系统字段。每个工作表独立映射。只返回JSON，不要解释。\n系统字段：${SYSTEM_FIELDS.core.join(', ')}\n\n`;
+            sheetsData.forEach((sd, si) => {
+                prompt += `工作表"${sd.name}"的表头：\n`;
+                sd.headers.forEach((h, hi) => prompt += `  ${si}_${hi}. "${String(h || '').trim()}"\n`);
+                if (sd.sampleRows && sd.sampleRows.length > 0) {
+                    const row = sd.sampleRows[0];
+                    prompt += `示例行：${sd.headers.map((h, hi) => `${String(h || '').trim()}=${String(row[hi] || '').substring(0, 30)}`).join(', ')}\n`;
+                }
+            });
+            prompt += `\n返回JSON格式：{"工作表名1":{"0":"字段A","1":"字段B","2":"(忽略)"},"工作表名2":{...}}`;
+
+            const isOpenAIFormat = aiSettings.apiType === 'deepseek' || aiSettings.apiType === 'openai' || aiSettings.apiType === 'custom';
+            const body = isOpenAIFormat ? {
+                model: aiSettings.model, messages: [{ role: 'user', content: prompt }],
+                max_tokens: aiSettings.maxTokens, temperature: 0.1,
+                response_format: { type: 'json_object' }
+            } : {
+                model: aiSettings.model, max_tokens: aiSettings.maxTokens,
+                temperature: 0.1, messages: [{ role: 'user', content: prompt }]
+            };
+            const reqHeaders = isOpenAIFormat
+                ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiSettings.apiKey}` }
+                : { 'Content-Type': 'application/json', 'x-api-key': aiSettings.apiKey, 'anthropic-version': '2023-06-01' };
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 60000);
+            try {
+                const response = await fetch(aiSettings.endpoint, {
+                    method: 'POST', headers: reqHeaders, body: JSON.stringify(body), signal: controller.signal
+                });
+                if (!response.ok) throw new Error(`AI API 错误 (${response.status})`);
+                const data = await response.json();
+                const content = isOpenAIFormat ? data.choices?.[0]?.message?.content : data.content?.[0]?.text;
+                if (!content) throw new Error('AI 返回格式异常');
+                const raw = extractJSONFromAIResponse(content);
+                // 验证并规范化
+                const validFields = new Set(ALL_FIELDS);
+                const result = {};
+                sheetsData.forEach(sd => {
+                    const sheetMapping = raw[sd.name] || {};
+                    const mappings = {};
+                    sd.headers.forEach((h, i) => {
+                        const field = sheetMapping[String(i)];
+                        mappings[i] = (field && validFields.has(field)) ? field : smartMatchField(String(h || ''), '集采价');
+                    });
+                    result[sd.name] = mappings;
+                });
+                return result;
+            } finally {
+                clearTimeout(timeout);
+            }
+        }
+
+        // 将字段名解析为当前有效名称（处理重命名后的旧名残留）
+        function resolveFieldName(fieldName) {
+            if (!fieldName || fieldName === '(忽略)') return fieldName;
+            const allFields = getAllProductFields();
+            // 已经是当前名称
+            if (allFields.some(f => f.name === fieldName)) return fieldName;
+            // 检查是否是重命名前的旧名（originalName）
+            const renamed = allFields.find(f => f.originalName === fieldName);
+            if (renamed) return renamed.name;
+            // 如果完全找不到，可能已被删除，返回原值（后续逻辑会忽略）
+            return fieldName;
         }
 
         function smartMatchField(fieldName, priceType) {
@@ -7658,36 +9044,42 @@
             if (h.includes('单位')) return '单位';
 
             // 规格包装
-            if (h.includes('条码') || h.includes('ean') || h.includes('条形码') || h.includes('barcode')) return '产品条码';
+            if (h.includes('条码') || h.includes('ean') || h.includes('条形码') || h.includes('barcode') || h.includes('商品条码')) return '产品条码';
             if (h.includes('箱码') || h.includes('外箱码') || h.includes('外箱条码')) return '外箱条码';
             if (h.includes('规格型号') || h === '规格' || h.includes('型号')) return '规格型号';
-            if (h.includes('箱规') || h.includes('装箱数') || h.includes('箱入数') || h.includes('每箱')) return '箱规';
-            if (h.includes('内配') || h.includes('包装配置')) return '内配';
-            if (h.includes('产品尺寸') || h.includes('单品尺寸') || h.includes('礼盒尺寸') || h.includes('尺寸')) return '产品尺寸';
+            if (h.includes('箱规') || h.includes('装箱数') || h.includes('箱入数') || h.includes('每箱') || h.includes('装箱规格')) return '箱规';
+            if (h.includes('内配') || h.includes('包装配置') || h.includes('内包装')) return '内配';
             if (h.includes('整箱尺寸') || h.includes('外箱尺寸')) return '整箱尺寸';
-            if (h.includes('净含量') || h === '重量' || h.includes('克重')) return '净含量';
-            if (h.includes('产品毛重') || h === '毛重') return '产品毛重';
-            if (h.includes('整箱重量') || h.includes('箱重')) return '整箱重量';
+            if (h.includes('产品尺寸') || h.includes('单品尺寸') || h.includes('礼盒尺寸') || h === '尺寸') return '产品尺寸';
+            if (h.includes('整箱重量') || h.includes('箱重') || h.includes('外箱重量')) return '整箱重量';
+            if (h.includes('产品毛重') || h === '毛重' || h.includes('单品毛重')) return '产品毛重';
+            if (h.includes('净含量') || h === '重量' || h.includes('克重') || h.includes('净重')) return '净含量';
 
             // 产品属性
-            if (h.includes('品牌') && !h.includes('级别')) return '品牌';
             if (h.includes('品牌级别') || h.includes('品牌等级')) return '品牌级别';
-            if (h.includes('产地') || h.includes('生产地')) return '产地';
-            if (h.includes('保质期') || h.includes('有效期')) return '保质期';
-            if (h.includes('配料') || h.includes('成分')) return '配料表';
+            if (h.includes('品牌')) return '品牌';
+            if (h.includes('产地') || h.includes('生产地') || h.includes('原产地')) return '产地';
+            if (h.includes('保质期') || h.includes('有效期') || h.includes('质保期')) return '保质期';
+            if (h.includes('配料') || h.includes('成分') || h.includes('配料表')) return '配料表';
             if (h.includes('无糖')) return '是否无糖';
             if (h.includes('有机')) return '是否有机';
-            if (h.includes('税收编码') || h.includes('税码')) return '税收编码';
+            if (h.includes('税收编码') || h.includes('税码') || h.includes('税率')) return '税收编码';
 
-            // 价格体系
-            if (h.includes('集采价') || h.includes('采购价') || h.includes('进货价')) return '集采价';
+            // 价格体系（含运费的优先匹配，避免被不含运费的规则吞掉）
+            if (h.includes('一件代发运费') || h.includes('一份代发运费') || h.includes('代发运费')) return '一件代发运费';
+            if (h.includes('京东代发运费') || h.includes('顺丰代发运费') || h.includes('京东/顺丰代发运费')) return '京东/顺丰代发价';
+            if (h.includes('一件代发价') || h.includes('一份代发价')) return '一件代发价';
+            if (h.includes('一件代发毛利') || h.includes('代发毛利')) return '一件代发毛利率';
+            if (h.includes('京东/顺丰毛利') || h.includes('京东顺丰毛利')) return '京东/顺丰代发毛利率';
+            if (h.includes('京东代发') || h.includes('顺丰代发')) return '京东/顺丰代发价';
+            if (h.includes('集采毛利') || h.includes('采购毛利')) return '集采毛利率';
+            if (h.includes('集采价') || h.includes('采购价') || h.includes('进货价') || h.includes('进价') || h.includes('出厂价')) return '集采价';
             if (h.includes('渠道价')) return '渠道价';
             if (h.includes('团购价')) return '团购价';
             if (h.includes('零售价') || h.includes('市场价') || h.includes('指导价') || h.includes('建议零售')) return '零售价';
-            if (h.includes('含税')) return '含税标识';
-            if (h.includes('一件代发') || h.includes('一份代发') || h.includes('代发价')) return '一件代发价';
-            if (h.includes('一件代发运费') || h.includes('一份代发运费') || h.includes('代发运费')) return '一件代发运费';
-            if (h.includes('京东代发') || h.includes('顺丰代发')) return '京东/顺丰代发价';
+            if (h.includes('运费') && !h.includes('一件代发') && !h.includes('京东') && !h.includes('顺丰')) return '一件代发运费';
+            if (h === '含税' || h === '含税标识' || h === '是否含税' || h === '含税价格') return '含税标识';
+            if (h.includes('一件代发') || h.includes('代发价')) return '一件代发价';
 
             // 通用价格匹配
             if (h.includes('单价') || h.includes('价格') || h.includes('供货价')) return priceType;
@@ -7831,8 +9223,7 @@
                         ${headers.map((h, idx) => {
                             const hStr = String(h || '').trim();
                             const mapping = mappings[idx] || '(忽略)';
-                            const supplierId = getCurrentSupplierId();
-                            const templateMatch = supplierId && templates[supplierId]?.mappings?.[hStr];
+                            const templateMatch = globalTemplate[hStr];
                             return `<tr class="border-b border-gray-100">
                                 <td class="py-1"><code class="bg-gray-100 px-1 rounded">${hStr}</code></td>
                                 <td class="py-1">
@@ -8753,169 +10144,104 @@
             showPage('page-list');
         }
 
-        // ========== 映射模板 ==========
+        // ========== 映射模板（全局统一模板）==========
         function renderTemplatePage() {
-            // 从商品数据中提取所有供应商
-            const supplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))].sort();
+            const mappings = globalTemplate || {};
+            const entries = Object.entries(mappings).sort((a, b) => a[0].localeCompare(b[0]));
+            const allFields = getAllFieldNames();
 
-            const listHtml = supplierNames.map(name => {
-                const hasTemplate = templates[name] && Object.keys(templates[name].mappings || {}).length > 0;
-                return `
-                <div onclick="editTemplate('${name}')" class="p-3 border rounded-lg cursor-pointer hover:bg-gray-50 ${hasTemplate ? 'border-green-200 bg-green-50' : ''}">
-                    <div class="flex justify-between items-center">
-                        <span class="font-medium">${name}</span>
-                        ${hasTemplate ? '<span class="text-green-600 text-xs">✓ 已配置</span>' : '<span class="text-gray-400 text-xs">未配置</span>'}
-                    </div>
+            const listHtml = `
+                <div class="text-xs text-gray-500 mb-3">共 <span id="template-count">${entries.length}</span> 条映射 · 每次导入确认后自动丰富</div>
+                <div class="mb-3">
+                    <input id="template-search" type="text" placeholder="搜索表头或字段..." oninput="filterTemplateRules()"
+                        class="w-full border rounded px-3 py-1.5 text-xs">
                 </div>
-            `}).join('') || '<div class="text-center text-gray-400 py-8">暂无供应商数据，请先导入商品</div>';
-            document.getElementById('templateList').innerHTML = listHtml;
-        }
-
-        // 当前编辑的模板ID
-        let currentEditingTemplateId = null;
-
-        function editTemplate(supplierId) {
-            currentEditingTemplateId = supplierId;
-            const template = templates[supplierId] || { mappings: {} };
-
-            const allFields = [...SYSTEM_FIELDS.core, ...SYSTEM_FIELDS.spec, ...SYSTEM_FIELDS.price, ...SYSTEM_FIELDS.supply];
-
-            // 获取已有模板的供应商列表（排除当前供应商）
-            const allSupplierNames = [...new Set(products.map(p => p.supplierId).filter(Boolean))];
-            const templatesWithSupplier = allSupplierNames.filter(name =>
-                name !== supplierId && templates[name] && Object.keys(templates[name].mappings || {}).length > 0
-            );
-
-            document.getElementById('templateEditor').innerHTML = `
-                <div class="mb-4">
-                    <div class="flex justify-between items-start">
-                        <div>
-                            <h4 class="font-medium">${supplierId} - 字段映射模板</h4>
-                            <p class="text-xs text-gray-500 mt-1">配置供应商原始字段名与系统标准字段的对应关系</p>
-                        </div>
-                        ${templatesWithSupplier.length > 0 ? `
-                            <div class="flex items-center gap-2">
-                                <select id="copy-template-select" class="border rounded px-2 py-1 text-xs">
-                                    <option value="">从已有模板复制...</option>
-                                    ${templatesWithSupplier.map(name => `<option value="${name}">${name}</option>`).join('')}
-                                </select>
-                                <button onclick="copyFromTemplate()" class="px-2 py-1 bg-gray-100 text-gray-600 rounded text-xs hover:bg-gray-200">复制</button>
-                            </div>
-                        ` : ''}
-                    </div>
-                </div>
-                <div id="mapping-rules" class="space-y-2 max-h-80 overflow-y-auto mb-4">
-                    ${Object.entries(template.mappings).map(([original, target], index) => `
-                        <div class="flex items-center gap-2 mapping-rule" data-index="${index}">
-                            <input type="text" value="${original}" class="mapping-original flex-1 border rounded px-2 py-1 text-xs" placeholder="原始字段名">
-                            <span class="text-gray-400">→</span>
+                <div id="template-rules-container" class="space-y-1 max-h-96 overflow-y-auto">
+                    ${entries.map(([header, field], idx) => {
+                        const resolved = resolveFieldName(field);
+                        return `
+                        <div class="template-rule flex items-center gap-2 p-2 border rounded hover:bg-gray-50" data-header="${header}" data-field="${resolved}">
+                            <input type="text" value="${header}" class="mapping-original flex-1 border rounded px-2 py-1 text-xs" placeholder="原始字段名">
+                            <span class="text-gray-400 text-xs">→</span>
                             <select class="mapping-target flex-1 border rounded px-2 py-1 text-xs">
                                 <option value="">(忽略)</option>
-                                ${allFields.map(f => `<option value="${f}" ${target === f ? 'selected' : ''}>${f}</option>`).join('')}
+                                ${allFields.map(f => `<option value="${f}" ${resolved === f ? 'selected' : ''}>${f}</option>`).join('')}
                             </select>
-                            <button onclick="removeMappingRule(this)" class="text-red-500 text-xs hover:text-red-700">×</button>
+                            <button onclick="this.closest('.template-rule').remove(); updateTemplateStats();" class="text-red-400 text-xs hover:text-red-600 shrink-0">×</button>
                         </div>
-                    `).join('')}
+                    `}).join('')}
                 </div>
-                <button onclick="addMappingRule()" class="w-full border border-dashed rounded py-2 text-xs text-gray-500 hover:bg-gray-50">+ 添加映射规则</button>
+                <button onclick="addTemplateRule()" class="w-full mt-2 border border-dashed rounded py-2 text-xs text-gray-500 hover:bg-gray-50">+ 添加映射规则</button>
                 <div class="mt-4 pt-4 border-t flex justify-between items-center">
-                    <div class="text-xs text-gray-400">共 <span id="rule-count">${Object.keys(template.mappings).length}</span> 条规则</div>
+                    <div class="text-xs text-gray-400">共 <span id="rule-count">${entries.length}</span> 条规则</div>
                     <div class="flex gap-2">
-                        <button onclick="clearAllRules()" class="px-4 py-2 border rounded-lg text-xs hover:bg-gray-50">清空</button>
-                        <button onclick="saveTemplateConfig('${supplierId}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">保存模板</button>
+                        <button onclick="clearAllTemplateRules()" class="px-4 py-2 border rounded-lg text-xs hover:bg-gray-50">清空</button>
+                        <button onclick="saveGlobalTemplateConfig()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-xs hover:bg-blue-700">保存模板</button>
                     </div>
                 </div>
             `;
+            document.getElementById('templateList').innerHTML = listHtml;
+            document.getElementById('templateEditor').innerHTML = '<p class="text-gray-400 text-sm">上方可直接编辑全局映射，修改后点击保存</p>';
         }
 
-        function copyFromTemplate() {
-            const select = document.getElementById('copy-template-select');
-            const sourceId = select.value;
-            if (!sourceId) return;
-
-            const sourceTemplate = templates[sourceId];
-            if (!sourceTemplate || !sourceTemplate.mappings) return;
-
-            const container = document.getElementById('mapping-rules');
-            container.innerHTML = '';
-
-            const allFields = [...SYSTEM_FIELDS.core, ...SYSTEM_FIELDS.spec, ...SYSTEM_FIELDS.price, ...SYSTEM_FIELDS.supply];
-
-            Object.entries(sourceTemplate.mappings).forEach(([original, target], index) => {
-                const div = document.createElement('div');
-                div.className = 'flex items-center gap-2 mapping-rule';
-                div.dataset.index = index;
-                div.innerHTML = `
-                    <input type="text" value="${original}" class="mapping-original flex-1 border rounded px-2 py-1 text-xs" placeholder="原始字段名">
-                    <span class="text-gray-400">→</span>
-                    <select class="mapping-target flex-1 border rounded px-2 py-1 text-xs">
-                        <option value="">(忽略)</option>
-                        ${allFields.map(f => `<option value="${f}" ${target === f ? 'selected' : ''}>${f}</option>`).join('')}
-                    </select>
-                    <button onclick="removeMappingRule(this)" class="text-red-500 text-xs hover:text-red-700">×</button>
-                `;
-                container.appendChild(div);
+        function filterTemplateRules() {
+            const query = (document.getElementById('template-search')?.value || '').toLowerCase();
+            document.querySelectorAll('.template-rule').forEach(el => {
+                const header = (el.dataset.header || '').toLowerCase();
+                const field = (el.dataset.field || '').toLowerCase();
+                el.style.display = !query || header.includes(query) || field.includes(query) ? '' : 'none';
             });
-
-            updateRuleCount();
-            select.value = ''; // 重置选择
         }
 
-        function clearAllRules() {
-            if (!confirm('确定要清空所有映射规则吗？')) return;
-            document.getElementById('mapping-rules').innerHTML = '';
-            updateRuleCount();
-        }
-
-        function addMappingRule() {
-            const container = document.getElementById('mapping-rules');
-            const allFields = [...SYSTEM_FIELDS.core, ...SYSTEM_FIELDS.spec, ...SYSTEM_FIELDS.price, ...SYSTEM_FIELDS.supply];
-            const index = container.children.length;
-
+        function addTemplateRule() {
+            const container = document.getElementById('template-rules-container');
+            if (!container) return;
+            const allFields = getAllFieldNames();
             const div = document.createElement('div');
-            div.className = 'flex items-center gap-2 mapping-rule';
-            div.dataset.index = index;
+            div.className = 'template-rule flex items-center gap-2 p-2 border rounded hover:bg-gray-50';
             div.innerHTML = `
                 <input type="text" class="mapping-original flex-1 border rounded px-2 py-1 text-xs" placeholder="原始字段名">
-                <span class="text-gray-400">→</span>
+                <span class="text-gray-400 text-xs">→</span>
                 <select class="mapping-target flex-1 border rounded px-2 py-1 text-xs">
                     <option value="">(忽略)</option>
                     ${allFields.map(f => `<option value="${f}">${f}</option>`).join('')}
                 </select>
-                <button onclick="removeMappingRule(this)" class="text-red-500 text-xs hover:text-red-700">×</button>
+                <button onclick="this.closest('.template-rule').remove(); updateTemplateStats();" class="text-red-400 text-xs hover:text-red-600 shrink-0">×</button>
             `;
             container.appendChild(div);
-            updateRuleCount();
+            updateTemplateStats();
         }
 
-        function removeMappingRule(btn) {
-            btn.parentElement.remove();
-            updateRuleCount();
+        function updateTemplateStats() {
+            const count = document.querySelectorAll('.template-rule').length;
+            const el = document.getElementById('rule-count');
+            if (el) el.textContent = count;
+            const el2 = document.getElementById('template-count');
+            if (el2) el2.textContent = count;
         }
 
-        function updateRuleCount() {
-            const count = document.querySelectorAll('.mapping-rule').length;
-            document.getElementById('rule-count').textContent = count;
+        function clearAllTemplateRules() {
+            if (!confirm('确定要清空所有映射规则吗？')) return;
+            document.getElementById('template-rules-container').innerHTML = '';
+            updateTemplateStats();
         }
 
-        async function saveTemplateConfig(supplierId) {
-            const rules = document.querySelectorAll('.mapping-rule');
-            const mappings = {};
+        async function saveGlobalTemplateConfig() {
+            const rules = document.querySelectorAll('.template-rule');
+            const newTemplate = {};
 
             rules.forEach(rule => {
                 const original = rule.querySelector('.mapping-original').value.trim();
                 const target = rule.querySelector('.mapping-target').value;
                 if (original && target) {
-                    mappings[original] = target;
+                    newTemplate[original] = target;
                 }
             });
 
-            templates[supplierId] = { supplierId, mappings };
-
+            globalTemplate = newTemplate;
             await saveDataAsync();
-            alert(`已保存 ${Object.keys(mappings).length} 条映射规则`);
+            alert(`已保存 ${Object.keys(globalTemplate).length} 条映射规则`);
             renderTemplatePage();
-            editTemplate(supplierId);
         }
 
         // ========== 供应商管理 ==========
@@ -8975,16 +10301,14 @@
                 if (search && !s.name.toLowerCase().includes(search) && !(s.contact || '').toLowerCase().includes(search)) return false;
                 if (filterType && s.type !== filterType) return false;
                 if (filterCooperation && s.cooperation !== filterCooperation) return false;
-                if (filterTemplate === 'yes' && !(templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0)) return false;
-                if (filterTemplate === 'no' && (templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0)) return false;
+                if (filterTemplate === 'yes' && Object.keys(globalTemplate).length === 0) return false;
+                if (filterTemplate === 'no' && Object.keys(globalTemplate).length > 0) return false;
                 return true;
             });
 
             // 更新统计
             document.getElementById('supplier-count').textContent = allSuppliers.length;
-            document.getElementById('supplier-with-template').textContent = allSuppliers.filter(s =>
-                templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0
-            ).length;
+            document.getElementById('supplier-with-template').textContent = Object.keys(globalTemplate).length > 0 ? '全局' : '0';
             document.getElementById('supplier-deep').textContent = allSuppliers.filter(s =>
                 s.cooperation === '战略合作' || s.cooperation === '深度合作'
             ).length;
@@ -9007,7 +10331,7 @@
             };
 
             document.getElementById('supplierList').innerHTML = filtered.map(s => {
-                const hasTemplate = templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0;
+                const templateCount = Object.keys(globalTemplate).length;
                 return `
                 <tr class="hover:bg-gray-50">
                     <td class="px-4 py-3">
@@ -9032,7 +10356,7 @@
                         <span class="${s.productCount > 0 ? 'text-blue-600 font-medium' : 'text-gray-400'}">${s.productCount}</span>
                     </td>
                     <td class="px-4 py-3 text-center">
-                        ${hasTemplate ? '<span class="text-green-600">✓</span>' : '<span class="text-gray-300">-</span>'}
+                        ${templateCount > 0 ? '<span class="text-green-600">✓</span>' : '<span class="text-gray-300">-</span>'}
                     </td>
                     <td class="px-4 py-3 text-center">
                         <button onclick="editSupplierInfo('${s.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
@@ -9047,7 +10371,6 @@
             const allSuppliers = getAllSuppliers();
             const s = allSuppliers.find(x => x.name === supplierId);
             const supplierProducts = products.filter(p => p.supplierId === supplierId);
-            const template = templates[supplierId];
 
             document.getElementById('supplier-detail-title').textContent = supplierId;
             document.getElementById('supplier-detail-content').innerHTML = `
@@ -9086,15 +10409,17 @@
                     <!-- 映射模板 -->
                     <div class="bg-gray-50 rounded-lg p-4">
                         <h4 class="font-medium text-gray-700 mb-3">字段映射模板</h4>
-                        ${template && Object.keys(template.mappings || {}).length > 0 ? `
-                            <div class="space-y-1 text-sm">
-                                ${Object.entries(template.mappings).map(([orig, target]) => `
+                        ${Object.keys(globalTemplate).length > 0 ? `
+                            <div class="text-sm text-green-600 mb-2">✓ 全局模板已配置（${Object.keys(globalTemplate).length} 条映射）</div>
+                            <div class="space-y-1 text-sm max-h-32 overflow-y-auto">
+                                ${Object.entries(globalTemplate).slice(0, 8).map(([orig, target]) => `
                                     <div class="flex items-center gap-2">
                                         <span class="text-gray-500">${orig}</span>
                                         <span class="text-gray-400">→</span>
                                         <span class="text-blue-600">${target}</span>
                                     </div>
                                 `).join('')}
+                                ${Object.keys(globalTemplate).length > 8 ? `<div class="text-xs text-gray-400">... 还有 ${Object.keys(globalTemplate).length - 8} 条</div>` : ''}
                             </div>
                         ` : '<div class="text-sm text-gray-400">暂未配置映射模板</div>'}
                     </div>
@@ -9103,7 +10428,7 @@
                     <div class="flex justify-end gap-2 pt-4 border-t">
                         <button onclick="closeModal('modal-supplier-detail')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">关闭</button>
                         <button onclick="closeModal('modal-supplier-detail');editSupplierInfo('${supplierId}')" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">编辑</button>
-                        <button onclick="closeModal('modal-supplier-detail');editTemplate('${supplierId}')" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">配置模板</button>
+                        <button onclick="closeModal('modal-supplier-detail');showPage('page-template');renderTemplatePage()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">配置模板</button>
                     </div>
                 </div>
             `;
@@ -9297,7 +10622,7 @@
                 s.cooperation || '',
                 s.remark || '',
                 s.productCount,
-                templates[s.name] && Object.keys(templates[s.name].mappings || {}).length > 0 ? '已配置' : '未配置'
+                Object.keys(globalTemplate).length > 0 ? '已配置' : '未配置'
             ]);
 
             const wb = XLSX.utils.book_new();
@@ -9344,14 +10669,14 @@
                 return;
             }
 
-            // 合并保存模板（保留已有映射，新增/覆盖当前映射）
-            const existingCount = Object.keys(templates[supplierId]?.mappings || {}).length;
-            const merged = mergeTemplateMappings(supplierId, mappings);
-            const newCount = Object.keys(merged).length;
+            // 合并保存到全局模板（保留已有映射，新增/覆盖当前映射）
+            const existingCount = Object.keys(globalTemplate).length;
+            mergeTemplateMappings(mappings);
+            const newCount = Object.keys(globalTemplate).length;
 
             await saveDataAsync();
 
-            alert(`已保存「${supplierId}」的映射模板（${newCount}个字段${newCount > existingCount ? `，本次新增 ${newCount - existingCount} 个` : ''}）`);
+            alert(`已保存映射模板（共${newCount}个字段${newCount > existingCount ? `，本次新增 ${newCount - existingCount} 个` : ''}）`);
         }
 
         // ========== 系统设置 ==========
@@ -9399,6 +10724,9 @@
 
             // 更新本地文件存储状态
             updateLocalFileStorageUI();
+
+            // 填充 AI 设置表单
+            showAISettingsForm();
         }
 
         // ========== 字段管理 ==========
@@ -9666,6 +10994,15 @@
                 }
             }
 
+            // 同步更新全局模板映射中的字段名
+            if (name !== oldName) {
+                for (const [header, field] of Object.entries(globalTemplate)) {
+                    if (field === oldName) {
+                        globalTemplate[header] = name;
+                    }
+                }
+            }
+
             saveData();
             closeModal('modal-edit-product-field');
             renderProductFieldsList();
@@ -9688,6 +11025,12 @@
             } else {
                 // 是自定义字段，直接删除
                 customProductFields = customProductFields.filter(f => f.name !== name && !f.isSystemOverride);
+            }
+            // 清理全局模板中引用已删除字段的映射
+            for (const [header, field] of Object.entries(globalTemplate)) {
+                if (field === name) {
+                    delete globalTemplate[header];
+                }
             }
             saveData();
             renderProductFieldsList();
