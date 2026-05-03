@@ -287,22 +287,69 @@
                             <label class="block text-sm text-gray-500 mb-1">选择要修改的字段</label>
                             <select id="batchEditField" class="w-full border rounded-lg px-3 py-2 text-sm" onchange="updateBatchEditValue()">
                                 <option value="">请选择字段</option>
-                                <option value="status">状态</option>
-                                <option value="supplierId">供应商</option>
-                                <option value="category">分类</option>
-                                <option value="brand">品牌</option>
-                                <option value="brandLevel">品牌级别</option>
-                                <option value="origin">产地</option>
-                                <option value="stockType">库存类型</option>
-                                <option value="stockStatus">备货状态</option>
-                                <option value="logisticsMode">物流方式</option>
-                                <option value="taxIncluded">含税标识</option>
-                                <option value="isExclusive">包销产品</option>
+                                <optgroup label="基础信息">
+                                    <option value="name">商品名称</option>
+                                    <option value="sku">供应商SKU</option>
+                                    <option value="supplierId">供应商</option>
+                                    <option value="brand">品牌</option>
+                                    <option value="category">分类</option>
+                                    <option value="unit">单位</option>
+                                    <option value="barcode">产品条码</option>
+                                    <option value="boxBarcode">外箱条码</option>
+                                    <option value="spec">规格型号</option>
+                                </optgroup>
+                                <optgroup label="规格包装">
+                                    <option value="boxSpec">箱规</option>
+                                    <option value="innerConfig">内配</option>
+                                    <option value="productSize">产品尺寸</option>
+                                    <option value="boxSize">整箱尺寸</option>
+                                    <option value="weight">净含量</option>
+                                    <option value="grossWeight">产品毛重</option>
+                                    <option value="boxWeight">整箱重量</option>
+                                </optgroup>
+                                <optgroup label="产品属性">
+                                    <option value="brandLevel">品牌级别</option>
+                                    <option value="origin">产地</option>
+                                    <option value="shelfLife">保质期</option>
+                                    <option value="ingredients">配料表</option>
+                                    <option value="isSugarFree">是否无糖</option>
+                                    <option value="isOrganic">是否有机</option>
+                                    <option value="taxCode">税收编码</option>
+                                </optgroup>
+                                <optgroup label="价格">
+                                    <option value="purchasePrice">集采价</option>
+                                    <option value="retailPrice">零售价</option>
+                                    <option value="channelPrice">渠道价</option>
+                                    <option value="groupPrice">团购价</option>
+                                    <option value="normalExpressPrice">一件代发价</option>
+                                    <option value="dropshipFreight">一件代发运费</option>
+                                    <option value="jdSfExpressPrice">京东/顺丰代发价</option>
+                                    <option value="taxIncluded">含税标识</option>
+                                </optgroup>
+                                <optgroup label="物流供应链">
+                                    <option value="logisticsMode">物流方式</option>
+                                    <option value="shipFrom">发货地</option>
+                                    <option value="freightIncluded">运费包含</option>
+                                    <option value="noPostArea">不包邮区域</option>
+                                    <option value="defaultExpress">默认快递公司</option>
+                                    <option value="stockType">库存类型</option>
+                                    <option value="stockStatus">备货状态</option>
+                                    <option value="leadTime">备货周期</option>
+                                    <option value="moq">最小起订量</option>
+                                    <option value="isExclusive">包销产品</option>
+                                </optgroup>
+                                <optgroup label="其他">
+                                    <option value="status">状态</option>
+                                    <option value="remark">备注</option>
+                                </optgroup>
                             </select>
                         </div>
                         <div id="batchEditValueContainer" class="hidden">
                             <label class="block text-sm text-gray-500 mb-1">新值</label>
                             <div id="batchEditValueInput"></div>
+                            <label class="inline-flex items-center gap-1 mt-2 text-sm text-gray-500 cursor-pointer">
+                                <input type="checkbox" id="batchEditClear" onchange="toggleBatchEditClear()"> 清空字段值
+                            </label>
                         </div>
                         <div class="flex justify-end gap-2 pt-4 border-t">
                             <button onclick="closeModal('modal-batch-edit')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
@@ -3736,6 +3783,7 @@
             if (selectedIds.size === 0) return;
             document.getElementById('batchEditField').value = '';
             document.getElementById('batchEditValueContainer').classList.add('hidden');
+            document.getElementById('batchEditClear').checked = false;
             document.getElementById('modal-batch-edit').classList.add('active');
         }
 
@@ -3753,17 +3801,40 @@
 
             // 根据字段类型生成不同的输入控件
             const fieldConfigs = {
-                status: { type: 'select', options: ['上架中', '待审核', '已过期'] },
-                supplierId: { type: 'datalist', options: [...new Set(products.map(p => p.supplierId).filter(Boolean))] },
-                category: { type: 'datalist', options: [...new Set(products.map(p => p.category).filter(Boolean))] },
-                brand: { type: 'datalist', options: [...new Set(products.map(p => p.brand).filter(Boolean))] },
-                brandLevel: { type: 'select', options: ['全国品牌', '地方品牌', '进口品牌'] },
-                origin: { type: 'datalist', options: [...new Set(products.map(p => p.origin).filter(Boolean))] },
-                stockType: { type: 'select', options: ['现货', '需预订'] },
-                stockStatus: { type: 'select', options: ['充足', '紧张', '需提前'] },
-                logisticsMode: { type: 'select', options: ['集采', '代发'] },
+                // 固定选项字段
+                status: { type: 'select', options: ['上架中', '待审核', '已下架', '已过期'] },
                 taxIncluded: { type: 'select', options: ['true', 'false'], labels: ['含税', '不含税'] },
-                isExclusive: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] }
+                isSugarFree: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
+                isOrganic: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
+                freightIncluded: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
+                isExclusive: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
+                // datalist 字段（从现有产品数据提取唯一值）
+                supplierId: { type: 'datalist', options: [...new Set(products.map(p => p.supplierId).filter(Boolean))] },
+                brand: { type: 'datalist', options: [...new Set(products.map(p => p.brand).filter(Boolean))] },
+                category: { type: 'datalist', options: [...new Set(products.map(p => p.category).filter(Boolean))] },
+                shipFrom: { type: 'datalist', options: [...new Set(products.map(p => p.shipFrom).filter(Boolean))] },
+                origin: { type: 'datalist', options: [...new Set(products.map(p => p.origin).filter(Boolean))] },
+                brandLevel: { type: 'datalist', options: [...new Set(products.map(p => p.brandLevel).filter(Boolean))] },
+                stockType: { type: 'datalist', options: [...new Set(products.map(p => p.stockType).filter(Boolean))] },
+                stockStatus: { type: 'datalist', options: [...new Set(products.map(p => p.stockStatus).filter(Boolean))] },
+                logisticsMode: { type: 'datalist', options: [...new Set(products.map(p => p.logisticsMode).filter(Boolean))] },
+                unit: { type: 'datalist', options: [...new Set(products.map(p => p.unit).filter(Boolean))] },
+                defaultExpress: { type: 'datalist', options: [...new Set(products.map(p => p.defaultExpress).filter(Boolean))] },
+                // 数值字段
+                purchasePrice: { type: 'number' },
+                retailPrice: { type: 'number' },
+                channelPrice: { type: 'number' },
+                groupPrice: { type: 'number' },
+                normalExpressPrice: { type: 'number' },
+                dropshipFreight: { type: 'number' },
+                jdSfExpressPrice: { type: 'number' },
+                moq: { type: 'number' },
+                leadTime: { type: 'number' },
+                boxSpec: { type: 'number' },
+                innerConfig: { type: 'number' },
+                weight: { type: 'number' },
+                grossWeight: { type: 'number' },
+                boxWeight: { type: 'number' }
             };
 
             const config = fieldConfigs[field];
@@ -3787,27 +3858,55 @@
                         ${config.options.map(opt => `<option value="${opt}">`).join('')}
                     </datalist>
                 `;
+            } else if (config.type === 'number') {
+                inputDiv.innerHTML = '<input type="number" id="batchEditValue" class="w-full border rounded-lg px-3 py-2 text-sm" step="0.01">';
+            }
+        }
+
+        function toggleBatchEditClear() {
+            const checked = document.getElementById('batchEditClear').checked;
+            const valueInput = document.getElementById('batchEditValue');
+            if (valueInput) {
+                valueInput.disabled = checked;
+                valueInput.style.opacity = checked ? '0.5' : '1';
             }
         }
 
         function executeBatchEdit() {
             const field = document.getElementById('batchEditField').value;
             const valueInput = document.getElementById('batchEditValue');
-            let value = valueInput.value;
+            const clearChecked = document.getElementById('batchEditClear').checked;
 
             if (!field) {
                 alert('请选择要修改的字段');
                 return;
             }
 
-            if (!value && value !== false) {
-                alert('请输入新值');
-                return;
-            }
+            let value;
+            if (clearChecked) {
+                const boolFields = ['taxIncluded', 'isExclusive', 'isSugarFree', 'isOrganic', 'freightIncluded'];
+                value = boolFields.includes(field) ? false : '';
+            } else {
+                value = valueInput.value;
+                if (!value && value !== false) {
+                    alert('请输入新值');
+                    return;
+                }
 
-            // 处理布尔值
-            if (field === 'taxIncluded' || field === 'isExclusive') {
-                value = value === 'true';
+                // 布尔字段
+                const boolFields = ['taxIncluded', 'isExclusive', 'isSugarFree', 'isOrganic', 'freightIncluded'];
+                if (boolFields.includes(field)) {
+                    value = value === 'true';
+                }
+
+                // 数值字段
+                const numberFields = ['purchasePrice', 'retailPrice', 'channelPrice', 'groupPrice',
+                    'normalExpressPrice', 'dropshipFreight', 'jdSfExpressPrice',
+                    'moq', 'leadTime', 'boxSpec', 'innerConfig', 'weight', 'grossWeight', 'boxWeight'];
+                if (numberFields.includes(field)) {
+                    value = value === '' ? null : parseFloat(value);
+                    if (isNaN(value)) { alert('请输入有效数值'); return; }
+                }
             }
 
             selectedIds.forEach(id => {
@@ -3822,7 +3921,9 @@
             closeModal('modal-batch-edit');
             clearSelection();
             renderList();
-            alert(`已修改 ${selectedIds.size} 条商品的${field}`);
+            const fieldLabel = document.getElementById('batchEditField').selectedOptions[0].textContent;
+            const action = clearChecked ? '清空' : '修改';
+            alert(`已${action} ${selectedIds.size} 条商品的"${fieldLabel}"`);
         }
 
         function batchEditStatus() {
