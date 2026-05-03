@@ -84,25 +84,6 @@
             padding: 2px 4px; border-radius: 0.25rem;
         }
         .condition-remove:hover { color: #dc2626; background: #fee2e2; }
-
-        /* 图片放大灯箱 */
-        .image-lightbox {
-            display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.85);
-            z-index: 100; align-items: center; justify-content: center; cursor: pointer;
-        }
-        .image-lightbox.active { display: flex; }
-        .image-lightbox img {
-            max-width: 95vw; max-height: 95vh; object-fit: contain;
-            border-radius: 4px; box-shadow: 0 0 40px rgba(0,0,0,0.5);
-        }
-        .image-lightbox .lightbox-close {
-            position: absolute; top: 16px; right: 24px;
-            color: white; font-size: 32px; cursor: pointer; z-index: 101;
-            line-height: 1; opacity: 0.7; transition: opacity 0.2s;
-        }
-        .image-lightbox .lightbox-close:hover { opacity: 1; }
-        .image-thumb { cursor: pointer; transition: opacity 0.15s; }
-        .image-thumb:hover { opacity: 0.8; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -3618,11 +3599,10 @@
                     break;
 
                 case 'product':
-                    const imgSrc = p.mainImage || '';
                     return `<td class="px-4 py-3">
                         <div class="flex items-center gap-2">
-                            <div class="w-10 h-10 bg-gray-200 rounded flex-shrink-0 overflow-hidden ${imgSrc ? 'image-thumb' : ''}" ${imgSrc ? `onclick="showImageViewer('${imgSrc.replace(/'/g, "\\'")}')"` : ''}>
-                                ${imgSrc ? `<img src="${imgSrc}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-gray-400 text-xs\\'>图</div>'">` : '<div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">图</div>'}
+                            <div class="w-10 h-10 bg-gray-200 rounded flex-shrink-0 overflow-hidden">
+                                ${p.mainImage ? `<img src="${p.mainImage}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<div class=\\'w-full h-full flex items-center justify-center text-gray-400 text-xs\\'>图</div>'">` : '<div class="w-full h-full flex items-center justify-center text-gray-400 text-xs">图</div>'}
                             </div>
                             <div>
                                 <div class="font-medium">${p.name || '-'}</div>
@@ -4663,17 +4643,15 @@
                         <p class="text-xs text-gray-400 mb-2">提示：Excel 导入无法提取嵌入图片，请手动上传</p>
                         <div class="flex gap-2 flex-wrap">
                             <div class="relative group">
-                                <div class="w-20 h-20 bg-white border-2 ${p.mainImage ? 'border-blue-400' : 'border-dashed border-gray-300'} rounded flex items-center justify-center overflow-hidden ${p.mainImage ? 'image-thumb' : ''}" ${p.mainImage ? `onclick="showImageViewer('${p.mainImage.replace(/'/g, "\\'")}')"` : ''}>
+                                <div class="w-20 h-20 bg-white border-2 ${p.mainImage ? 'border-blue-400' : 'border-dashed border-gray-300'} rounded flex items-center justify-center overflow-hidden">
                                     ${p.mainImage ? `<img src="${p.mainImage}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span class=\\'text-gray-400 text-xs\\'>产品图片加载失败</span>'">` : '<span class="text-gray-400 text-xs">产品图片</span>'}
                                 </div>
                                 <span class="absolute -bottom-1 left-0 right-0 text-center text-xs bg-blue-500 text-white rounded-b">产品图片</span>
                             </div>
-                            ${(p.detailImages ? p.detailImages.split(',').filter(u => u.trim()) : []).map((url, i) => {
-                                const detailSrc = url.trim();
-                                return `
+                            ${(p.detailImages ? p.detailImages.split(',').filter(u => u.trim()) : []).map((url, i) => `
                                 <div class="relative group">
-                                    <div class="w-20 h-20 bg-white border rounded overflow-hidden image-thumb" onclick="showImageViewer('${detailSrc.replace(/'/g, "\\'")}')">
-                                        <img src="${detailSrc}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span class=\\'text-gray-400 text-xs\\'>详情图</span>'">
+                                    <div class="w-20 h-20 bg-white border rounded overflow-hidden">
+                                        <img src="${url.trim()}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span class=\\'text-gray-400 text-xs\\'>详情图</span>'">
                                     </div>
                                     <span class="absolute -bottom-1 left-0 right-0 text-center text-xs bg-gray-500 text-white rounded-b">详情${i+1}</span>
                                     <button onclick="removeDetailImage(${p.id}, ${i})" class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
@@ -9932,25 +9910,6 @@
             alert('必填项设置已保存');
             // 重新渲染以更新样式
             renderSettingsPage();
-        }
-
-        // ========== 图片放大灯箱 ==========
-        function showImageViewer(src) {
-            if (!src) return;
-            // 移除已有灯箱
-            const existing = document.getElementById('image-lightbox');
-            if (existing) existing.remove();
-            const lb = document.createElement('div');
-            lb.id = 'image-lightbox';
-            lb.className = 'image-lightbox active';
-            lb.innerHTML = `<span class="lightbox-close">&times;</span><img src="${src}">`;
-            lb.addEventListener('click', (e) => {
-                if (e.target !== lb.querySelector('img')) lb.remove();
-            });
-            document.addEventListener('keydown', function escHandler(e) {
-                if (e.key === 'Escape') { lb.remove(); document.removeEventListener('keydown', escHandler); }
-            });
-            document.body.appendChild(lb);
         }
 
         // ========== 模态框 ==========
