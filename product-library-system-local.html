@@ -1022,13 +1022,6 @@
                     </div>
                 </div>
 
-                <!-- 当前必填项预览 -->
-                <div class="bg-white rounded-lg shadow p-6 mb-6">
-                    <h3 class="font-medium mb-4">当前必填项</h3>
-                    <div id="currentRequiredFields" class="text-sm">
-                    </div>
-                </div>
-
                 <!-- 字段管理 -->
                 <div class="bg-white rounded-lg shadow p-6 mb-6">
                     <h3 class="font-medium mb-4">字段管理</h3>
@@ -1364,21 +1357,6 @@
             ...SYSTEM_FIELDS.ecommerce,
             ...SYSTEM_FIELDS.media,
             ...SYSTEM_FIELDS.other
-        ];
-
-        // 导出表头
-        const EXPORT_HEADERS = [
-            '供应商', '供应商ID', '供应商SKU', '商品名称', '分类', '单位',
-            '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
-            '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
-            '集采价', '零售价', '渠道价', '团购价', '集采毛利率', '含税标识',
-            '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价',
-            '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司',
-            '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期',
-            '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价',
-            '产品图片', '详情图',
-            '备注',
-            '状态', '录入来源', '录入时间'
         ];
 
         // 默认示例商品数据（用于重置）
@@ -2522,24 +2500,82 @@
             await exportProducts(exportList);
         }
 
+        // 导出字段 → 产品属性值映射
+        const EXPORT_FIELD_MAP = {
+            '供应商': (p) => p.supplierId || '',
+            '供应商ID': (p) => p.supplierId || '',
+            '供应商SKU': (p) => p.sku || '',
+            '商品名称': (p) => p.name || '',
+            '分类': (p) => p.category || '',
+            '单位': (p) => p.unit || '',
+            '产品条码': (p) => p.barcode || '',
+            '外箱条码': (p) => p.boxBarcode || '',
+            '规格型号': (p) => p.spec || '',
+            '箱规': (p) => p.boxSpec || '',
+            '内配': (p) => p.innerConfig || '',
+            '产品尺寸': (p) => p.productSize || '',
+            '整箱尺寸': (p) => p.boxSize || '',
+            '净含量': (p) => p.weight || '',
+            '产品毛重': (p) => p.grossWeight || '',
+            '整箱重量': (p) => p.boxWeight || '',
+            '品牌': (p) => p.brand || '',
+            '品牌级别': (p) => p.brandLevel || '',
+            '产地': (p) => p.origin || '',
+            '保质期': (p) => p.shelfLife || '',
+            '配料表': (p) => p.ingredients || '',
+            '是否无糖': (p) => p.isSugarFree ? '是' : '否',
+            '是否有机': (p) => p.isOrganic ? '是' : '否',
+            '税收编码': (p) => p.taxCode || '',
+            '集采价': (p) => p.purchasePrice || '',
+            '零售价': (p) => p.retailPrice || '',
+            '渠道价': (p) => p.channelPrice || '',
+            '团购价': (p) => p.groupPrice || '',
+            '集采毛利率': (p) => calculateMargin(p.retailPrice, p.purchasePrice),
+            '含税标识': (p) => p.taxIncluded ? '含税' : '不含税',
+            '一件代发价': (p) => p.normalExpressPrice || '',
+            '一件代发运费': (p) => p.dropshipFreight || '',
+            '一件代发毛利率': (p) => calculateMargin(p.retailPrice, p.normalExpressPrice),
+            '京东/顺丰代发价': (p) => p.jdSfExpressPrice || '',
+            '物流方式': (p) => p.logisticsMode || '',
+            '发货地': (p) => p.shipFrom || '',
+            '运费包含': (p) => p.freightIncluded ? '是' : '否',
+            '不包邮区域': (p) => p.noPostArea || '',
+            '默认快递公司': (p) => p.defaultExpress || '',
+            '库存类型': (p) => p.stockType || '',
+            '备货状态': (p) => p.stockStatus || '',
+            '备货周期': (p) => p.leadTime || '',
+            '最小起订量': (p) => p.moq || '',
+            '包销产品': (p) => p.isExclusive ? '是' : '否',
+            '价格有效期': (p) => p.priceExpiry || '',
+            '京东链接': (p) => p.jdLink || '',
+            '京东价': (p) => p.jdPrice || '',
+            '淘宝链接': (p) => p.tbLink || '',
+            '淘宝价': (p) => p.tbPrice || '',
+            '拼多多链接': (p) => p.pddLink || '',
+            '拼多多价': (p) => p.pddPrice || '',
+            '产品图片': (p) => '',
+            '详情图': (p) => p.detailImages ? '(已导入)' : '',
+            '备注': (p) => p.remark || '',
+            '状态': (p) => p.status || '',
+            '录入来源': (p) => p.source || '',
+            '录入时间': (p) => p.createdAt || ''
+        };
+
+        function getExportFieldValue(p, fieldName) {
+            const fn = EXPORT_FIELD_MAP[fieldName];
+            if (fn) return fn(p);
+            // 自定义字段，直接从产品属性读取
+            const val = p[fieldName];
+            return val !== undefined && val !== null ? String(val) : '';
+        }
+
         async function exportProducts(filtered) {
-            // 使用 ExcelJS 创建带图片的工作簿
             const workbook = new ExcelJS.Workbook();
             const worksheet = workbook.addWorksheet('商品库');
 
-            // 定义列标题
-            const headers = [
-                '供应商', '供应商ID', '供应商SKU', '商品名称', '分类', '单位',
-                '产品条码', '外箱条码', '规格型号', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量',
-                '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
-                '集采价', '零售价', '集采毛利率', '含税标识',
-                '一件代发价', '一件代发运费', '一件代发毛利率', '京东/顺丰代发价',
-                '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司',
-                '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期',
-                '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价',
-                '产品图片', '详情图', '备注',
-                '状态', '录入来源', '录入时间'
-            ];
+            // 按系统字段顺序构建表头（包含自定义字段）
+            const allFields = getAllProductFields();
+            const headers = allFields.map(f => f.name);
 
             // 计算产品图片列索引（0-based）
             const imageColIndex = headers.indexOf('产品图片');
@@ -2550,102 +2586,34 @@
             // 添加数据行
             for (let i = 0; i < filtered.length; i++) {
                 const p = filtered[i];
-                const rowNumber = i + 2; // Excel 行号（第1行是表头）
-
-                const rowData = {
-                    '供应商': p.supplierId || '',
-                    '供应商SKU': p.sku || '',
-                    '商品名称': p.name || '',
-                    '分类': p.category || '',
-                    '单位': p.unit || '',
-                    '产品条码': p.barcode || '',
-                    '外箱条码': p.boxBarcode || '',
-                    '规格型号': p.spec || '',
-                    '箱规': p.boxSpec || '',
-                    '内配': p.innerConfig || '',
-                    '产品尺寸': p.productSize || '',
-                    '整箱尺寸': p.boxSize || '',
-                    '净含量': p.weight || '',
-                    '产品毛重': p.grossWeight || '',
-                    '整箱重量': p.boxWeight || '',
-                    '品牌': p.brand || '',
-                    '品牌级别': p.brandLevel || '',
-                    '产地': p.origin || '',
-                    '保质期': p.shelfLife || '',
-                    '配料表': p.ingredients || '',
-                    '是否无糖': p.isSugarFree ? '是' : '否',
-                    '是否有机': p.isOrganic ? '是' : '否',
-                    '税收编码': p.taxCode || '',
-                    '集采价': p.purchasePrice || '',
-                    '零售价': p.retailPrice || '',
-                    '渠道价': p.channelPrice || '',
-                    '团购价': p.groupPrice || '',
-                    '集采毛利率': calculateMargin(p.retailPrice, p.purchasePrice),
-                    '含税标识': p.taxIncluded ? '含税' : '不含税',
-                    '一件代发价': p.normalExpressPrice || '',
-                    '一件代发运费': p.dropshipFreight || '',
-                    '一件代发毛利率': calculateMargin(p.retailPrice, p.normalExpressPrice),
-                    '京东/顺丰代发价': p.jdSfExpressPrice || '',
-                    '物流方式': p.logisticsMode || '',
-                    '发货地': p.shipFrom || '',
-                    '运费包含': p.freightIncluded ? '是' : '否',
-                    '不包邮区域': p.noPostArea || '',
-                    '默认快递公司': p.defaultExpress || '',
-                    '库存类型': p.stockType || '',
-                    '备货状态': p.stockStatus || '',
-                    '备货周期': p.leadTime || '',
-                    '最小起订量': p.moq || '',
-                    '包销产品': p.isExclusive ? '是' : '否',
-                    '价格有效期': p.priceExpiry || '',
-                    '京东链接': p.jdLink || '',
-                    '京东价': p.jdPrice || '',
-                    '淘宝链接': p.tbLink || '',
-                    '淘宝价': p.tbPrice || '',
-                    '拼多多链接': p.pddLink || '',
-                    '拼多多价': p.pddPrice || '',
-                    '产品图片': '',
-                    '详情图': p.detailImages ? '(已导入)' : '',
-                    '备注': p.remark || '',
-                    '状态': p.status || '',
-                    '录入来源': p.source || '',
-                    '录入时间': p.createdAt || ''
-                };
+                const rowData = {};
+                for (const h of headers) {
+                    rowData[h] = getExportFieldValue(p, h);
+                }
 
                 const row = worksheet.addRow(rowData);
 
                 // 添加产品图片
-                if (p.mainImage && p.mainImage.startsWith('data:')) {
+                if (imageColIndex >= 0 && p.mainImage && p.mainImage.startsWith('data:')) {
                     try {
-                        // 从 base64 提取图片数据
                         const matches = p.mainImage.match(/^data:image\/(\w+);base64,(.+)$/);
                         if (matches) {
                             const extension = matches[1];
                             const base64Data = matches[2];
-
-                            // 将 base64 转换为 ArrayBuffer（浏览器环境）
                             const binaryString = atob(base64Data);
                             const bytes = new Uint8Array(binaryString.length);
                             for (let j = 0; j < binaryString.length; j++) {
                                 bytes[j] = binaryString.charCodeAt(j);
                             }
-                            const imageBuffer = bytes.buffer;
-
-                            // 添加图片到工作表
                             const imageId = workbook.addImage({
-                                buffer: imageBuffer,
+                                buffer: bytes.buffer,
                                 extension: extension === 'jpeg' ? 'jpg' : extension
                             });
-
-                            // ExcelJS 使用 0-based 索引
-                            // imageColIndex 已在前面计算（'产品图片' 列的索引）
-                            const imageRow = i + 1; // 0-based 行索引（第1行是表头，数据从第2行开始，索引为1）
-
+                            const imageRow = i + 1; // 0-based 行索引
                             worksheet.addImage(imageId, {
                                 tl: { col: imageColIndex, row: imageRow },
-                                ext: { width: 125, height: 125 } // 图片大小 125x125
+                                ext: { width: 125, height: 125 }
                             });
-
-                            // 设置该行高度（Excel 行高单位是点，约等于像素）
                             row.height = 180;
                         }
                     } catch (imgErr) {
@@ -2654,10 +2622,12 @@
                 }
             }
 
-            // 设置产品图片列的宽度（使用动态计算的索引，+1 因为 getColumn 是 1-based）
-            worksheet.getColumn(imageColIndex + 1).width = 22;
+            // 设置产品图片列宽度
+            if (imageColIndex >= 0) {
+                worksheet.getColumn(imageColIndex + 1).width = 22;
+            }
 
-            // 设置所有行的字体大小和垂直居中对齐
+            // 设置所有单元格样式
             worksheet.eachRow((row, rowNumber) => {
                 row.eachCell((cell) => {
                     cell.font = { size: 10 };
@@ -2665,7 +2635,7 @@
                 });
             });
 
-            // 设置表头样式
+            // 表头样式
             worksheet.getRow(1).font = { bold: true };
             worksheet.getRow(1).fill = {
                 type: 'pattern',
@@ -9385,9 +9355,20 @@
         }
 
         // ========== 系统设置 ==========
-        function renderSettingsPage() {
-            // 渲染各分类的必填项复选框
-            const renderCheckboxes = (containerId, fields) => {
+        function renderRequiredFieldCheckboxes() {
+            const allFields = getAllProductFields();
+            const groups = { core: [], spec: [], price: [], other: [] };
+            const coreGroups = new Set(['core']);
+            const specGroups = new Set(['spec']);
+            const priceGroups = new Set(['price']);
+            for (const f of allFields) {
+                if (coreGroups.has(f.group)) groups.core.push(f.name);
+                else if (specGroups.has(f.group)) groups.spec.push(f.name);
+                else if (priceGroups.has(f.group)) groups.price.push(f.name);
+                else groups.other.push(f.name);
+            }
+
+            const renderContainer = (containerId, fields) => {
                 const container = document.getElementById(containerId);
                 if (!container) return;
                 container.innerHTML = fields.map(field => {
@@ -9400,13 +9381,14 @@
                 }).join('');
             };
 
-            renderCheckboxes('required-core', SELECTABLE_FIELDS.core);
-            renderCheckboxes('required-spec', SELECTABLE_FIELDS.spec);
-            renderCheckboxes('required-price', SELECTABLE_FIELDS.price);
-            renderCheckboxes('required-other', SELECTABLE_FIELDS.other);
+            renderContainer('required-core', groups.core);
+            renderContainer('required-spec', groups.spec);
+            renderContainer('required-price', groups.price);
+            renderContainer('required-other', groups.other);
+        }
 
-            // 渲染当前必填项列表
-            updateCurrentRequiredDisplay();
+        function renderSettingsPage() {
+            renderRequiredFieldCheckboxes();
 
             // 渲染字段管理
             renderProductFieldsList();
@@ -9608,6 +9590,7 @@
             saveData();
             closeModal('modal-add-product-field');
             renderProductFieldsList();
+            renderRequiredFieldCheckboxes();
         }
 
         function editProductField(name) {
@@ -9686,6 +9669,7 @@
             saveData();
             closeModal('modal-edit-product-field');
             renderProductFieldsList();
+            renderRequiredFieldCheckboxes();
         }
 
         function deleteProductField(name) {
@@ -9707,6 +9691,7 @@
             }
             saveData();
             renderProductFieldsList();
+            renderRequiredFieldCheckboxes();
         }
 
         // 供应商字段
@@ -9990,37 +9975,6 @@
                 requiredFields = requiredFields.filter(f => f !== field);
             }
             saveData();
-            updateCurrentRequiredDisplay();
-        }
-
-        function updateCurrentRequiredDisplay() {
-            const container = document.getElementById('currentRequiredFields');
-            if (!container) return;
-
-            let html = '';
-
-            // 单独必填项
-            if (requiredFields.length > 0) {
-                html += '<div class="mb-2"><span class="text-gray-500 text-xs">单独必填：</span>';
-                html += requiredFields.map(f => `<span class="inline-block px-2 py-1 bg-red-100 text-red-700 rounded text-xs mr-1 mb-1">${f}</span>`).join('');
-                html += '</div>';
-            }
-
-            // 组合必填项
-            if (requiredGroups.length > 0) {
-                html += '<div><span class="text-gray-500 text-xs">组合必填：</span>';
-                html += requiredGroups.map(g => {
-                    const groupFields = g.fields.map(f => `<span class="inline-block px-2 py-1 bg-orange-100 text-orange-700 rounded text-xs mr-1">${f}</span>`).join('');
-                    return `<div class="mt-1 mb-2">${groupFields}<span class="text-xs text-gray-500 ml-1">→ 至少填 ${g.minRequired} 个</span></div>`;
-                }).join('');
-                html += '</div>';
-            }
-
-            if (!html) {
-                html = '<span class="text-gray-400">未设置必填项（将允许导入所有数据）</span>';
-            }
-
-            container.innerHTML = html;
         }
 
         function toggleRequiredGroup(groupId, enabled) {
@@ -10035,7 +9989,6 @@
                 requiredGroups = requiredGroups.filter(g => g.id !== groupId);
             }
             saveData();
-            updateCurrentRequiredDisplay();
         }
 
         function saveRequiredFields() {
