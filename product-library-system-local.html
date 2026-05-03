@@ -5750,6 +5750,17 @@
 
         function showBatchAutoImportModal(sheetsData, mappings, sheetBrands, headerRows) {
             window._batchWizard = { step: 1, sheetsData, mappings, sheetBrands, headerRows: headerRows || {}, originalHeaderRows: { ...headerRows } };
+            // 默认所有sheet都选中
+            window._batchWizard.selectedSheets = {};
+            sheetsData.forEach(sd => { window._batchWizard.selectedSheets[sd.name] = true; });
+            // 品牌配置：默认从sheet名提取
+            window._batchWizard.brandConfig = {};
+            sheetsData.forEach(sd => {
+                window._batchWizard.brandConfig[sd.name] = {
+                    mode: 'sheet',
+                    value: sheetBrands[sd.name] || ''
+                };
+            });
             // 读取导入页面已选择的供应商
             const importSupplier = document.getElementById('importSupplier');
             if (importSupplier && importSupplier.value.trim()) {
@@ -5762,15 +5773,21 @@
         function renderWizardStep1() {
             const wizard = window._batchWizard;
             if (!wizard) return;
-            const { sheetsData, headerRows } = wizard;
+            const { sheetsData, headerRows, selectedSheets, sheetBrands } = wizard;
             const modal = document.getElementById('modal-sheet-select');
-            const totalRows = sheetsData.reduce((sum, sd) => sum + sd.rowCount, 0);
+            const selectedCount = Object.values(selectedSheets).filter(Boolean).length;
+            const totalRows = sheetsData.filter(sd => selectedSheets[sd.name]).reduce((sum, sd) => sum + sd.rowCount, 0);
             const sheetCount = sheetsData.length;
 
             let sheetsHTML = sheetsData.map((sd) => {
+                const checked = selectedSheets[sd.name] !== false;
                 const previewRows = sd.allRows.slice(0, 8);
                 const currentHeader = headerRows[sd.name] || 1;
                 const rowOptions = [1,2,3,4,5,6,7,8].map(r => `<option value="${r}" ${r === currentHeader ? 'selected' : ''}>第${r}行</option>`).join('');
+                const brandCfg = (wizard.brandConfig && wizard.brandConfig[sd.name]) || {};
+                const brandMode = brandCfg.mode || 'sheet';
+                const brandValue = brandCfg.value || sheetBrands[sd.name] || '';
+                const brandPreview = brandMode === 'sheet' ? sheetBrands[sd.name] || '(未识别)' : (brandMode === 'manual' ? brandValue || '(待输入)' : '(从商品名提取)');
 
                 // 渲染前8行预览，高亮当前表头行
                 const previewHTML = previewRows.map((row, ri) => {
@@ -5784,13 +5801,26 @@
                     </div>`;
                 }).join('');
 
-                return `<div class="p-3 border rounded-lg bg-gray-50">
+                return `<div class="p-3 border rounded-lg ${checked ? 'bg-gray-50 border-gray-300' : 'bg-gray-100 border-gray-200 opacity-60'}">
                     <div class="flex items-center justify-between mb-2">
-                        <span class="font-medium text-sm">${escapeHtml(sd.name)}</span>
+                        <label class="flex items-center gap-2 cursor-pointer">
+                            <input type="checkbox" class="wizard-sheet-check" data-sheet="${escapeHtml(sd.name)}" ${checked ? 'checked' : ''} onchange="wizardToggleSheet(this)">
+                            <span class="font-medium text-sm ${checked ? '' : 'line-through text-gray-400'}">${escapeHtml(sd.name)}</span>
+                            <span class="text-xs text-gray-400">(${sd.rowCount}行)</span>
+                        </label>
                         <div class="flex items-center gap-2">
-                            <span class="text-xs text-gray-500">表头行：</span>
-                            <select class="border rounded px-1.5 py-0.5 text-xs wizard-header-select" data-sheet="${escapeHtml(sd.name)}" onchange="wizardHeaderRowChanged(this)">${rowOptions}</select>
+                            <span class="text-xs text-gray-500">品牌：</span>
+                            <select class="border rounded px-1.5 py-0.5 text-xs wizard-brand-mode" data-sheet="${escapeHtml(sd.name)}" onchange="wizardBrandModeChanged(this)" ${checked ? '' : 'disabled'}>
+                                <option value="sheet" ${brandMode === 'sheet' ? 'selected' : ''}>Sheet名</option>
+                                <option value="manual" ${brandMode === 'manual' ? 'selected' : ''}>手动输入</option>
+                                <option value="product" ${brandMode === 'product' ? 'selected' : ''}>从商品名</option>
+                            </select>
+                            ${brandMode === 'manual' ? `<input type="text" class="border rounded px-1.5 py-0.5 text-xs w-24 wizard-brand-input" data-sheet="${escapeHtml(sd.name)}" value="${escapeHtml(brandValue)}" placeholder="品牌名" oninput="wizardBrandInputChanged(this)">` : `<span class="text-xs text-blue-600 truncate max-w-[100px]" title="${escapeHtml(brandPreview)}">${escapeHtml(brandPreview.length > 10 ? brandPreview.substring(0,10)+'...' : brandPreview)}</span>`}
                         </div>
+                    </div>
+                    <div class="flex items-center gap-2 mb-2">
+                        <span class="text-xs text-gray-500">表头行：</span>
+                        <select class="border rounded px-1.5 py-0.5 text-xs wizard-header-select" data-sheet="${escapeHtml(sd.name)}" onchange="wizardHeaderRowChanged(this)" ${checked ? '' : 'disabled'}>${rowOptions}</select>
                     </div>
                     <div class="text-xs text-gray-500 mb-1">行预览（前8行）：</div>
                     <div class="border rounded bg-white overflow-hidden">${previewHTML}</div>
@@ -5802,21 +5832,89 @@
                     <h3 class="text-lg font-bold">步骤 1/3：确认表头行</h3>
                     <button onclick="finishMultiSheetImport()" class="text-gray-400 hover:text-gray-600">✕</button>
                 </div>
-                <p class="text-sm text-gray-500 mb-2">请确认每个工作表的表头所在行。点击"下一步"将按所选行解析表头。</p>
-                <p class="text-xs text-gray-400 mb-4">共 ${sheetCount} 个工作表，${totalRows} 行数据</p>
+                <p class="text-sm text-gray-500 mb-2">勾选需要导入的工作表，确认各表头行。点击"下一步"将按所选行解析表头。</p>
+                <div class="flex items-center justify-between mb-3">
+                    <p class="text-xs text-gray-400">共 ${sheetCount} 个工作表，已选 <span id="wizard-selected-count">${selectedCount}</span> 个，${totalRows} 行数据</p>
+                    <div class="flex gap-2">
+                        <button onclick="wizardSelectAllSheets(true)" class="text-xs text-blue-600 hover:underline">全选</button>
+                        <button onclick="wizardSelectAllSheets(false)" class="text-xs text-blue-600 hover:underline">全不选</button>
+                    </div>
+                </div>
                 <div class="space-y-2 mb-4 max-h-96 overflow-y-auto">${sheetsHTML}</div>
                 <div class="flex justify-between items-center pt-4 border-t">
                     <button onclick="batchWizardGoManual()" class="px-3 py-2 border border-orange-300 rounded-lg text-sm text-orange-600 hover:bg-orange-50">切换到手动导入</button>
                     <div class="flex gap-2">
                         <button onclick="finishMultiSheetImport()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-                        <button onclick="wizardGoStep2()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">下一步 →</button>
+                        <button onclick="wizardGoStep2()" id="wizard-step1-next" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">下一步 →</button>
                     </div>
                 </div>
             `;
             modal.classList.add('active');
         }
 
+        function wizardToggleSheet(cb) {
+            if (!window._batchWizard) return;
+            window._batchWizard.selectedSheets[cb.dataset.sheet] = cb.checked;
+            // 更新统计
+            const selectedCount = Object.values(window._batchWizard.selectedSheets).filter(Boolean).length;
+            const el = document.getElementById('wizard-selected-count');
+            if (el) el.textContent = selectedCount;
+            // 更新卡片样式
+            const card = cb.closest('.p-3');
+            if (card) {
+                card.className = cb.checked ? 'p-3 border rounded-lg bg-gray-50 border-gray-300' : 'p-3 border rounded-lg bg-gray-100 border-gray-200 opacity-60';
+                const nameSpan = card.querySelector('.font-medium');
+                if (nameSpan) nameSpan.className = cb.checked ? 'font-medium text-sm' : 'font-medium text-sm line-through text-gray-400';
+            }
+            // 更新表头行选择框状态
+            const sel = card ? card.querySelector('.wizard-header-select') : null;
+            if (sel) sel.disabled = !cb.checked;
+        }
+
+        function wizardSelectAllSheets(select) {
+            if (!window._batchWizard) return;
+            window._batchWizard.sheetsData.forEach(sd => {
+                window._batchWizard.selectedSheets[sd.name] = select;
+            });
+            document.querySelectorAll('.wizard-sheet-check').forEach(cb => { cb.checked = select; });
+            const selectedCount = select ? window._batchWizard.sheetsData.length : 0;
+            const el = document.getElementById('wizard-selected-count');
+            if (el) el.textContent = selectedCount;
+            document.querySelectorAll('.p-3.border.rounded-lg').forEach(card => {
+                if (select) {
+                    card.className = 'p-3 border rounded-lg bg-gray-50 border-gray-300';
+                } else {
+                    card.className = 'p-3 border rounded-lg bg-gray-100 border-gray-200 opacity-60';
+                }
+                const nameSpan = card.querySelector('.font-medium');
+                if (nameSpan) {
+                    nameSpan.className = select ? 'font-medium text-sm' : 'font-medium text-sm line-through text-gray-400';
+                }
+                const sel = card.querySelector('.wizard-header-select');
+                if (sel) sel.disabled = !select;
+            });
+        }
+
         // 表头行下拉改变时，实时更新高亮
+        function wizardBrandModeChanged(sel) {
+            if (!window._batchWizard) return;
+            const sheetName = sel.dataset.sheet;
+            const mode = sel.value;
+            if (!window._batchWizard.brandConfig) window._batchWizard.brandConfig = {};
+            window._batchWizard.brandConfig[sheetName] = { mode, value: window._batchWizard.brandConfig[sheetName]?.value || window._batchWizard.sheetBrands?.[sheetName] || '' };
+            // 重新渲染以更新品牌预览/输入框
+            renderWizardStep1();
+        }
+
+        function wizardBrandInputChanged(inp) {
+            if (!window._batchWizard) return;
+            const sheetName = inp.dataset.sheet;
+            if (!window._batchWizard.brandConfig) window._batchWizard.brandConfig = {};
+            const cfg = window._batchWizard.brandConfig[sheetName] || { mode: 'manual' };
+            cfg.value = inp.value;
+            window._batchWizard.brandConfig[sheetName] = cfg;
+        }
+
         function wizardHeaderRowChanged(sel) {
             const sheetName = sel.dataset.sheet;
             const newRow = parseInt(sel.value);
@@ -5831,7 +5929,13 @@
         function wizardGoStep2() {
             const wizard = window._batchWizard;
             if (!wizard) return;
-            const { sheetsData, mappings, headerRows } = wizard;
+            const { sheetsData, mappings, headerRows, selectedSheets } = wizard;
+
+            // 检查是否有选中的sheet
+            if (!Object.values(selectedSheets).some(Boolean)) {
+                alert('请至少勾选一个要导入的工作表');
+                return;
+            }
 
             // 根据用户选择的表头行，重新解析每个sheet的headers和dataRows
             for (const sd of sheetsData) {
@@ -5863,13 +5967,14 @@
         function renderWizardStep2() {
             const wizard = window._batchWizard;
             if (!wizard) return;
-            const { sheetsData, mappings } = wizard;
+            const { sheetsData, mappings, selectedSheets } = wizard;
+            const activeSheets = sheetsData.filter(sd => selectedSheets[sd.name]);
             const modal = document.getElementById('modal-sheet-select');
-            const totalRows = sheetsData.reduce((sum, sd) => sum + sd.rowCount, 0);
-            const sheetCount = sheetsData.length;
+            const totalRows = activeSheets.reduce((sum, sd) => sum + sd.rowCount, 0);
+            const sheetCount = activeSheets.length;
             const fieldOptions = getAllFieldNames().map(f => `<option value="${f}">${f}</option>`).join('');
 
-            let sheetsHTML = sheetsData.map((sd) => {
+            let sheetsHTML = activeSheets.map((sd) => {
                 const mapping = mappings[sd.name] || {};
                 const headersHTML = sd.headers.map((h, hi) => {
                     const target = mapping[hi] || smartMatchField(String(h || ''), '集采价');
@@ -5926,15 +6031,19 @@
         function renderWizardStep3() {
             const wizard = window._batchWizard;
             if (!wizard) return;
-            const { sheetsData, mappings, sheetBrands } = wizard;
+            const { sheetsData, mappings, brandConfig, selectedSheets } = wizard;
+            const activeSheets = sheetsData.filter(sd => selectedSheets[sd.name]);
             const modal = document.getElementById('modal-sheet-select');
             const supplierOptions = [...new Set(products.map(p => p.supplierId).filter(Boolean).sort())].map(s => `<option value="${s}">`).join('');
-            const totalRows = sheetsData.reduce((sum, sd) => sum + sd.rowCount, 0);
-            const sheetCount = sheetsData.length;
+            const totalRows = activeSheets.reduce((sum, sd) => sum + sd.rowCount, 0);
+            const sheetCount = activeSheets.length;
 
-            let sheetsHTML = sheetsData.map((sd) => {
+            let sheetsHTML = activeSheets.map((sd) => {
                 const mapping = mappings[sd.name] || {};
-                const brand = sheetBrands[sd.name] || '';
+                const bCfg = (brandConfig && brandConfig[sd.name]) || {};
+                const brand = bCfg.value || '';
+                const brandMode = bCfg.mode || 'sheet';
+                const brandLabel = brandMode === 'product' ? '(从商品名提取)' : (brandMode === 'manual' ? '(手动输入)' : '(Sheet名)');
                 const mappingSummary = sd.headers.slice(0, 6).map((h, i) => {
                     const target = mapping[i] || smartMatchField(String(h || ''), '集采价');
                     return `${escapeHtml(String(h || '').substring(0, 6))}→${target}`;
@@ -5946,8 +6055,8 @@
                     </div>
                     <div class="text-xs text-gray-600 mb-2">${mappingSummary}</div>
                     <div class="flex items-center gap-2">
-                        <span class="text-xs text-gray-500">品牌：</span>
-                        <input type="text" class="border rounded px-2 py-1 text-xs flex-1 batch-brand-input" data-sheet="${escapeHtml(sd.name)}" value="${escapeHtml(brand)}" placeholder="输入品牌名">
+                        <span class="text-xs text-gray-500">品牌 ${brandLabel}：</span>
+                        <input type="text" class="border rounded px-2 py-1 text-xs flex-1 batch-brand-input" data-sheet="${escapeHtml(sd.name)}" value="${escapeHtml(brand)}" placeholder="${brandMode === 'product' ? '将从商品名列自动提取' : '输入品牌名'}">
                     </div>
                 </div>`;
             }).join('');
@@ -5991,15 +6100,26 @@
         }
 
         function batchWizardGoManual() {
+            // 保留 pendingWorkbookData，清除向导状态
             window._batchWizard = null;
-            document.getElementById('modal-sheet-select').classList.remove('active');
+            window._batchImportData = null;
+            // 直接在同一弹窗中渲染手动sheet选择列表
             showSheetSelectModal();
         }
 
         function executeBatchImportFromWizard() {
             const wizard = window._batchWizard;
             if (!wizard) return;
-            window._batchImportData = { sheetsData: wizard.sheetsData, mappings: wizard.mappings };
+            // 只导入勾选的sheet
+            const selectedSheets = wizard.selectedSheets || {};
+            const activeSheets = wizard.sheetsData.filter(sd => selectedSheets[sd.name]);
+            if (activeSheets.length === 0) {
+                alert('没有选中任何工作表');
+                return;
+            }
+            const activeMappings = {};
+            activeSheets.forEach(sd => { activeMappings[sd.name] = wizard.mappings[sd.name] || {}; });
+            window._batchImportData = { sheetsData: activeSheets, mappings: activeMappings, brandConfig: wizard.brandConfig };
             executeBatchImport();
         }
 
@@ -6051,14 +6171,25 @@
             if (!supplierId) { alert('请输入供应商名称'); return; }
             const batchData = window._batchImportData;
             if (!batchData) { alert('批量导入数据已丢失'); return; }
-            const { sheetsData, mappings } = batchData;
+            const { sheetsData, mappings, brandConfig } = batchData;
             closeModal('modal-sheet-select');
 
-            // Collect brand names from the batch modal inputs
+            // Collect brand names from Step 3 inputs + brandConfig
             const sheetBrands = {};
             document.querySelectorAll('.batch-brand-input').forEach(input => {
                 sheetBrands[input.dataset.sheet] = input.value.trim();
             });
+            // 合并 brandConfig（Step 1 设置的品牌来源）
+            if (brandConfig) {
+                for (const [name, cfg] of Object.entries(brandConfig)) {
+                    if (cfg.mode === 'sheet') {
+                        sheetBrands[name] = sheetBrands[name] || extractBrandFromSheetName(name);
+                    } else if (cfg.mode === 'manual') {
+                        sheetBrands[name] = cfg.value || sheetBrands[name] || '';
+                    }
+                    // 'product' mode: 品牌将从商品名中提取，暂留空
+                }
+            }
 
             let totalAdded = 0, totalUpdated = 0, totalErrors = 0;
             const importedSheets = [];
@@ -6090,7 +6221,26 @@
                     window.multiSheetContext = { activeSheet: sd.name };
                     window.pendingBrandName = sheetBrands[sd.name] || '';
 
-                    const result = await executeBatchSingleSheetImport(sd.name, supplierId, sheetBrands[sd.name] || '');
+                    let brandName = sheetBrands[sd.name] || '';
+                    // 'product' mode: extract brand from product name column
+                    if (!brandName && brandConfig && brandConfig[sd.name] && brandConfig[sd.name].mode === 'product') {
+                        // 找到映射到"商品名称"的列（支持重命名后的字段名）
+                        const nameField = resolveFieldName('商品名称');
+                        const nameColEntry = Object.entries(sheetMapping).find(([idx, field]) => field === nameField);
+                        if (nameColEntry) {
+                            const colIdx = parseInt(nameColEntry[0]);
+                            // 从所有数据行中取第一个非空的商品名来提取品牌
+                            for (const row of sd.dataRows) {
+                                const productName = String(row[colIdx] || '').trim();
+                                if (productName) {
+                                    // 取前2-4个中文字符作为品牌名
+                                    const chineseMatch = productName.match(/^[一-鿿]{2,4}/);
+                                    if (chineseMatch) { brandName = chineseMatch[0]; break; }
+                                }
+                            }
+                        }
+                    }
+                    const result = await executeBatchSingleSheetImport(sd.name, supplierId, brandName);
                     if (result) {
                         totalAdded += result.added || 0;
                         totalUpdated += result.updated || 0;
@@ -6285,11 +6435,11 @@
                 alert('工作簿数据已丢失，请重新上传文件');
                 return;
             }
-            const sheetList = document.getElementById('sheet-list');
+            const modal = document.getElementById('modal-sheet-select');
             const totalSheets = Object.keys(pendingWorkbookData.sheets).length;
             const importedCount = Object.values(pendingWorkbookData.sheets).filter(s => s.imported).length;
 
-            sheetList.innerHTML = Object.entries(pendingWorkbookData.sheets).map(([name, info], index) => `
+            const listHTML = Object.entries(pendingWorkbookData.sheets).map(([name, info], index) => `
                 <div class="p-3 border rounded-lg ${info.imported ? 'bg-green-50 border-green-200' : 'hover:bg-gray-50'}">
                     <div class="flex items-center justify-between">
                         <div class="flex-1">
@@ -6309,10 +6459,16 @@
                 </div>
             `).join('');
 
-            // 更新弹窗标题
-            document.querySelector('#modal-sheet-select h3').textContent = `工作表列表 (${importedCount}/${totalSheets} 已导入)`;
+            modal.querySelector('.modal-content').innerHTML = `
+                <div class="flex justify-between items-center mb-4">
+                    <h3>工作表列表 (${importedCount}/${totalSheets} 已导入)</h3>
+                    <button onclick="closeModal('modal-sheet-select'); clearPendingImport()" class="text-gray-400 hover:text-gray-600">✕</button>
+                </div>
+                <p class="text-sm text-gray-500 mb-4">选择要手动导入的工作表。已导入的不可重复导入。</p>
+                <div class="space-y-2 mb-4 max-h-96 overflow-y-auto">${listHTML}</div>
+            `;
 
-            document.getElementById('modal-sheet-select').classList.add('active');
+            modal.classList.add('active');
         }
 
         // 将多sheet中的单个sheet加载到标准导入流程
