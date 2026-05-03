@@ -1555,19 +1555,18 @@
             }
         }
 
-        // 同步保存（兼容旧代码）
+        // 保存数据，返回 Promise
         function saveData() {
-            saveDataAsync().then(success => {
+            return saveDataAsync().then(success => {
                 if (!success) {
                     showStorageWarning();
                 } else {
-                    // 保存成功后，如果开启了自动保存到本地文件，则同步保存
                     if (autoSaveEnabled && directoryHandle) {
                         autoSaveToFile();
                     }
                 }
+                return success;
             });
-            return true;
         }
 
         // 获取存储使用情况
@@ -3901,12 +3900,12 @@
             renderList();
         }
 
-        function batchDelete() {
+        async function batchDelete() {
             if (selectedIds.size === 0) return;
             if (!confirm(`确定要删除选中的 ${selectedIds.size} 个商品吗？`)) return;
 
             products = products.filter(p => !selectedIds.has(p.id));
-            saveData();
+            await saveData();
             clearSelection();
             renderList();
         }
@@ -4039,7 +4038,7 @@
             document.getElementById('dup-selected-count').textContent = count;
         }
 
-        function deleteSelectedDuplicates() {
+        async function deleteSelectedDuplicates() {
             const selectedIds = Array.from(document.querySelectorAll('.dup-checkbox:checked')).map(cb => cb.dataset.id);
             if (selectedIds.length === 0) {
                 alert('请选择要删除的商品');
@@ -4049,7 +4048,7 @@
             if (!confirm(`确定要删除选中的 ${selectedIds.length} 条重复商品吗？`)) return;
 
             products = products.filter(p => !selectedIds.includes(String(p.id)));
-            saveData();
+            await saveData();
             document.getElementById('modal-product-duplicates').remove();
             renderList();
             alert(`已删除 ${selectedIds.length} 条重复商品`);
@@ -4845,10 +4844,10 @@
             }
         }
 
-        function deleteProduct(id) {
+        async function deleteProduct(id) {
             if (confirm('确定删除该商品？')) {
                 products = products.filter(p => p.id !== id);
-                saveData();
+                await saveData();
                 renderList();
             }
         }
@@ -6033,8 +6032,8 @@
                             }
                         }
 
-                        // 应用品牌名（如果设置了且商品没有品牌）
-                        if (brandName && !existingProduct.brand) {
+                        // 应用品牌名（用户已确认选择，覆盖已有品牌）
+                        if (brandName) {
                             existingProduct.brand = brandName;
                         }
 
@@ -6126,7 +6125,7 @@
                     }
                 }
 
-                saveData();
+                await saveData();
                 updateImportOverlay('完成', 100);
 
                 setTimeout(() => {
@@ -8490,11 +8489,12 @@
                     }
                 });
 
-                // 品牌未通过字段映射设置时，优先从商品名称逐行匹配，次选 sheet 名识别结果
-                if (!product.brand) {
+                // 品牌设置优先级：字段映射 > sheet名识别 > 商品名匹配
+                if (window.pendingBrandName) {
+                    product.brand = window.pendingBrandName;
+                } else if (!product.brand) {
                     const rowBrand = brandCandidates ? matchBrandForName(product.name, brandCandidates) : null;
-                    const finalBrand = rowBrand || window.pendingBrandName || null;
-                    if (finalBrand) product.brand = finalBrand;
+                    if (rowBrand) product.brand = rowBrand;
                 }
 
                 // 导入 Excel 中的嵌入图片
