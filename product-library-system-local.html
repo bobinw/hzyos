@@ -30,6 +30,60 @@
             background: #f9fafb;
             box-shadow: 0 1px 2px rgba(0,0,0,0.1);
         }
+
+        /* Combo box 样式 */
+        .combo-box { display: inline-block; min-width: 140px; position: relative; }
+        .combo-input-area {
+            display: flex; flex-wrap: wrap; gap: 2px; align-items: center;
+            border: 1px solid #d1d5db; border-radius: 0.5rem;
+            padding: 2px 8px; min-height: 34px; cursor: text;
+            background: white; transition: border-color 0.15s;
+        }
+        .combo-input-area:focus-within { border-color: #3b82f6; box-shadow: 0 0 0 2px rgba(59,130,246,0.15); }
+        .combo-chip {
+            display: inline-flex; align-items: center; gap: 2px;
+            padding: 1px 6px; border-radius: 9999px; font-size: 0.75rem;
+            background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe;
+            white-space: nowrap; max-width: 160px; overflow: hidden; text-overflow: ellipsis;
+        }
+        .combo-chip-remove { cursor: pointer; font-size: 0.875rem; line-height: 1; color: #6b7280; margin-left: 2px; }
+        .combo-chip-remove:hover { color: #dc2626; }
+        .combo-input {
+            border: none; outline: none; flex: 1; min-width: 60px;
+            font-size: 0.875rem; padding: 2px 0; background: transparent;
+        }
+        .combo-dropdown {
+            position: absolute; top: 100%; left: 0; right: 0;
+            background: white; border: 1px solid #d1d5db; border-radius: 0.5rem;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.15); z-index: 30;
+            max-height: 200px; overflow-y: auto; margin-top: 2px;
+        }
+        .combo-dropdown.hidden { display: none; }
+        .combo-option {
+            padding: 6px 10px; font-size: 0.875rem; cursor: pointer;
+            white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+        }
+        .combo-option:hover, .combo-option.highlighted { background: #eff6ff; color: #1d4ed8; }
+        .combo-option.selected { background: #dbeafe; font-weight: 500; }
+        .combo-no-match { padding: 6px 10px; font-size: 0.75rem; color: #9ca3af; }
+
+        /* 动态条件行样式 */
+        .condition-row {
+            display: flex; align-items: center; gap: 6px;
+            padding: 4px 8px; background: #f9fafb; border-radius: 0.5rem;
+            border: 1px solid #e5e7eb; font-size: 0.875rem;
+        }
+        .condition-row select, .condition-row input {
+            border: 1px solid #d1d5db; border-radius: 0.375rem;
+            padding: 4px 8px; font-size: 0.875rem; background: white;
+        }
+        .condition-row select { min-width: 90px; }
+        .condition-row input { min-width: 100px; }
+        .condition-remove {
+            cursor: pointer; color: #9ca3af; font-size: 1rem; line-height: 1;
+            padding: 2px 4px; border-radius: 0.25rem;
+        }
+        .condition-remove:hover { color: #dc2626; background: #fee2e2; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -86,6 +140,16 @@
                         <div class="text-xs text-gray-500 mb-2">更多字段筛选</div>
                         <div id="more-filters-content" class="flex flex-wrap gap-3 items-center">
                             <!-- 由 renderFilterBar() 动态生成 -->
+                        </div>
+                    </div>
+                    <!-- 动态条件构建器 -->
+                    <div id="condition-builder" class="border-t pt-3 mt-3">
+                        <div class="flex items-center gap-2 mb-2">
+                            <span class="text-xs text-gray-500">高级条件</span>
+                            <button onclick="addConditionRow()" class="text-xs text-blue-600 hover:underline">+ 添加条件</button>
+                        </div>
+                        <div id="condition-rows-container" class="flex flex-wrap gap-2 items-center">
+                            <!-- 由 renderConditionRows() 动态生成 -->
                         </div>
                     </div>
                 </div>
@@ -2176,6 +2240,9 @@
         let listTotalPages = 1;
         let listPageSize = 50;
         let listFiltered = []; // 当前筛选后的全部结果，分页仅取其中一页渲染
+        window._comboSelections = new Map(); // controlId → Set of selected values (combo box 多选状态)
+        window._conditionRows = [];           // 动态条件行：[{ id, field, op, value }]
+        let _conditionNextId = 1;             // 条件行 ID 计数器
         let customProductFields = [];
         let customSupplierFields = [];
         let deletedSystemProductFields = [];
@@ -2307,55 +2374,64 @@
 
         // 获取筛选后的商品列表
         function getFilteredProducts() {
-            // 获取常用筛选值
-            const filterMargin = document.getElementById('filterMargin')?.value || '';
-            const filterExclusive = document.getElementById('filterExclusive')?.value || '';
-            const filterBrandLevel = document.getElementById('filterBrandLevel')?.value || '';
-            const filterLogistics = document.getElementById('filterLogistics')?.value || '';
-            const filterStockStatus = document.getElementById('filterStockStatus')?.value || '';
-            const filterSupplier = document.getElementById('filterSupplier')?.value || '';
-            const filterShipFrom = document.getElementById('filterShipFrom')?.value || '';
-            const filterStockType = document.getElementById('filterStockType')?.value || '';
+            const getCombo = (id) => getComboValues('filter' + id.charAt(0).toUpperCase() + id.slice(1));
+            const filterMargin = getCombo('margin');
+            const filterExclusive = getCombo('exclusive');
+            const filterBrandLevel = getCombo('brandLevel');
+            const filterLogistics = getCombo('logistics');
+            const filterStockStatus = getCombo('stockStatus');
+            const filterSupplier = getCombo('supplier');
+            const filterShipFrom = getCombo('shipFrom');
+            const filterStockType = getCombo('stockType');
             const filterSearch = (document.getElementById('filterSearch')?.value || '').toLowerCase();
-
-            // 获取更多筛选值
-            const filterCategory = document.getElementById('filterCategory')?.value || '';
-            const filterStatus = document.getElementById('filterStatus')?.value || '';
-            const filterBrand = document.getElementById('filterBrand')?.value || '';
-            const filterOrigin = document.getElementById('filterOrigin')?.value || '';
-            const filterTaxIncluded = document.getElementById('filterTaxIncluded')?.value || '';
-            const filterSugarFree = document.getElementById('filterSugarFree')?.value || '';
-            const filterOrganic = document.getElementById('filterOrganic')?.value || '';
-            const filterFreightIncluded = document.getElementById('filterFreightIncluded')?.value || '';
-            const filterDefaultExpress = document.getElementById('filterDefaultExpress')?.value || '';
+            const filterCategory = getCombo('category');
+            const filterStatus = getCombo('status');
+            const filterBrand = getCombo('brand');
+            const filterOrigin = getCombo('origin');
+            const filterTaxIncluded = getCombo('taxIncluded');
+            const filterSugarFree = getCombo('sugarFree');
+            const filterOrganic = getCombo('organic');
+            const filterFreightIncluded = getCombo('freightIncluded');
+            const filterDefaultExpress = getCombo('defaultExpress');
 
             return products.filter(p => {
-                // 毛利率筛选
-                if (filterMargin) {
+                if (filterMargin.length > 0) {
                     const margin = parseFloat(calculateMargin(p.retailPrice, p.purchasePrice));
-                    if (filterMargin === 'low' && margin >= 25) return false;
-                    if (filterMargin === 'mid' && (margin < 25 || margin >= 35)) return false;
-                    if (filterMargin === 'high' && margin < 35) return false;
+                    let ok = false;
+                    if (filterMargin.includes('low') && margin < 25) ok = true;
+                    if (filterMargin.includes('mid') && margin >= 25 && margin < 35) ok = true;
+                    if (filterMargin.includes('high') && margin >= 35) ok = true;
+                    if (!ok) return false;
                 }
-                if (filterExclusive && String(p.isExclusive) !== filterExclusive) return false;
-                if (filterBrandLevel && p.brandLevel !== filterBrandLevel) return false;
-                if (filterLogistics && p.logisticsMode !== filterLogistics) return false;
-                if (filterStockStatus && p.stockStatus !== filterStockStatus) return false;
-                if (filterSupplier && p.supplierId !== filterSupplier) return false;
-                if (filterShipFrom && p.shipFrom !== filterShipFrom) return false;
-                if (filterStockType && p.stockType !== filterStockType) return false;
-                if (filterCategory && p.category !== filterCategory) return false;
-                if (filterStatus && p.status !== filterStatus) return false;
-                if (filterBrand && p.brand !== filterBrand) return false;
-                if (filterOrigin && p.origin !== filterOrigin) return false;
-                if (filterTaxIncluded && String(p.taxIncluded) !== filterTaxIncluded) return false;
-                if (filterSugarFree && String(p.isSugarFree) !== filterSugarFree) return false;
-                if (filterOrganic && String(p.isOrganic) !== filterOrganic) return false;
-                if (filterFreightIncluded && String(p.freightIncluded) !== filterFreightIncluded) return false;
-                if (filterDefaultExpress && p.defaultExpress !== filterDefaultExpress) return false;
+                if (filterExclusive.length > 0 && !filterExclusive.includes(String(p.isExclusive))) return false;
+                if (filterBrandLevel.length > 0 && !filterBrandLevel.includes(p.brandLevel)) return false;
+                if (filterLogistics.length > 0 && !filterLogistics.includes(p.logisticsMode)) return false;
+                if (filterStockStatus.length > 0 && !filterStockStatus.includes(p.stockStatus)) return false;
+                if (filterSupplier.length > 0 && !filterSupplier.includes(p.supplierId)) return false;
+                if (filterShipFrom.length > 0 && !filterShipFrom.includes(p.shipFrom)) return false;
+                if (filterStockType.length > 0 && !filterStockType.includes(p.stockType)) return false;
+                if (filterCategory.length > 0 && !filterCategory.includes(p.category)) return false;
+                if (filterStatus.length > 0 && !filterStatus.includes(p.status)) return false;
+                if (filterBrand.length > 0 && !filterBrand.includes(p.brand)) return false;
+                if (filterOrigin.length > 0 && !filterOrigin.includes(p.origin)) return false;
+                if (filterTaxIncluded.length > 0 && !filterTaxIncluded.includes(String(p.taxIncluded))) return false;
+                if (filterSugarFree.length > 0 && !filterSugarFree.includes(String(p.isSugarFree))) return false;
+                if (filterOrganic.length > 0 && !filterOrganic.includes(String(p.isOrganic))) return false;
+                if (filterFreightIncluded.length > 0 && !filterFreightIncluded.includes(String(p.freightIncluded))) return false;
+                if (filterDefaultExpress.length > 0 && !filterDefaultExpress.includes(p.defaultExpress)) return false;
                 if (filterSearch && !p.name.toLowerCase().includes(filterSearch) &&
                     !p.sku.toLowerCase().includes(filterSearch) &&
                     !(p.barcode && p.barcode.includes(filterSearch))) return false;
+
+                for (const cond of window._conditionRows) {
+                    if (!cond.value || cond.value.trim() === '') {
+                        // 为空/不为空 不需要输入值，其余运算符跳过
+                        if (cond.op !== 'empty' && cond.op !== 'notEmpty') continue;
+                    }
+                    const val = getProductFieldValue(p, cond.field);
+                    if (!matchCondition(val, cond.op, cond.value)) return false;
+                }
+
                 return true;
             });
         }
@@ -2665,6 +2741,584 @@
             }
         }
 
+        // ========== Combo Box 状态管理 ==========
+        function getComboValues(controlId) {
+            const set = window._comboSelections.get(controlId);
+            return set ? [...set] : [];
+        }
+
+        function setComboValues(controlId, values) {
+            if (!values || values.length === 0) {
+                window._comboSelections.delete(controlId);
+            } else {
+                window._comboSelections.set(controlId, new Set(values));
+            }
+            // 更新 DOM 中的 chip 显示
+            const container = document.querySelector(`.combo-box[data-control-id="${controlId}"]`);
+            if (container) {
+                renderComboTags(container);
+                // 更新下拉中的已选状态
+                const dropdown = container.querySelector('.combo-dropdown');
+                if (dropdown && !dropdown.classList.contains('hidden')) {
+                    renderComboDropdownOptions(container);
+                }
+            }
+        }
+
+        function resetAllCombos() {
+            window._comboSelections.clear();
+            document.querySelectorAll('.combo-box').forEach(container => {
+                renderComboTags(container);
+                const input = container.querySelector('.combo-input');
+                if (input) input.value = '';
+                const dropdown = container.querySelector('.combo-dropdown');
+                if (dropdown) dropdown.classList.add('hidden');
+            });
+            // 也清空条件行
+            window._conditionRows = [];
+            renderConditionRows();
+        }
+
+        function renderComboTags(container) {
+            const controlId = container.getAttribute('data-control-id');
+            const tagsEl = container.querySelector('.combo-tags');
+            if (!tagsEl) return;
+            const values = getComboValues(controlId);
+            tagsEl.innerHTML = values.map(v =>
+                `<span class="combo-chip">${escapeHtml(v)}<span class="combo-chip-remove" onclick="event.stopPropagation();removeComboValue(this.closest('.combo-box'),'${escapeJsStr(v)}')">&times;</span></span>`
+            ).join('');
+            // 根据是否有选中值调整 placeholder
+            const input = container.querySelector('.combo-input');
+            if (input) input.placeholder = values.length > 0 ? '' : (container.getAttribute('data-placeholder') || '全部');
+        }
+
+        function escapeHtml(str) {
+            const div = document.createElement('div');
+            div.textContent = str;
+            return div.innerHTML.replace(/"/g, '&quot;');
+        }
+
+        // 用于嵌入在 HTML 属性的 JS 字符串中（如 onclick="...'...'"）
+        function escapeJsStr(str) {
+            return String(str).replace(/\\/g, '\\\\').replace(/'/g, "\\'").replace(/\n/g, '\\n').replace(/\r/g, '');
+        }
+
+        // ========== Combo Box 交互 ==========
+        function openComboDropdown(container) {
+            closeAllComboDropdowns(container);
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (!dropdown) return;
+            renderComboDropdownOptions(container);
+            dropdown.classList.remove('hidden');
+        }
+
+        function closeAllComboDropdowns(except) {
+            document.querySelectorAll('.combo-dropdown').forEach(dd => {
+                if (dd !== except && !dd.classList.contains('hidden')) {
+                    dd.classList.add('hidden');
+                }
+            });
+        }
+
+        function renderComboDropdownOptions(container) {
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (!dropdown) return;
+            const controlId = container.getAttribute('data-control-id');
+            const selectedValues = getComboValues(controlId);
+            let options = container._options || [];
+            // 过滤：匹配输入文字
+            const input = container.querySelector('.combo-input');
+            const filterText = (input ? input.value : '').toLowerCase();
+            const filtered = options.filter(opt => {
+                const label = (typeof opt === 'string') ? opt : (opt.label || opt.value || '');
+                return label.toLowerCase().includes(filterText);
+            });
+            const hasExactMatch = options.some(opt => {
+                const val = (typeof opt === 'string') ? opt : opt.value;
+                return (val || '').toString().toLowerCase() === filterText;
+            });
+
+            if (filtered.length === 0 && filterText) {
+                dropdown.innerHTML = `<div class="combo-option combo-no-match">无匹配项，按回车使用"${escapeHtml(filterText)}"</div>`;
+            } else {
+                dropdown.innerHTML = filtered.map((opt, i) => {
+                    const val = (typeof opt === 'string') ? opt : opt.value;
+                    const label = (typeof opt === 'string') ? opt : (opt.label || opt.value);
+                    const sel = selectedValues.includes(val) ? ' selected' : '';
+                    return `<div class="combo-option${sel}" data-value="${escapeHtml(val)}" data-idx="${i}"
+                        onclick="event.stopPropagation();selectComboValue(this.closest('.combo-box'), '${escapeJsStr(val)}')">${escapeHtml(label)}</div>`;
+                }).join('');
+                // 如果有输入文字且没有精确匹配项，追加"使用此值"选项
+                if (filterText && !hasExactMatch && !selectedValues.includes(filterText)) {
+                    dropdown.innerHTML += `<div class="combo-option" style="color:#3b82f6;border-top:1px solid #e5e7eb;margin-top:2px;padding-top:6px"
+                        data-value="${escapeHtml(filterText)}"
+                        onclick="event.stopPropagation();selectComboValue(this.closest('.combo-box'), '${escapeJsStr(filterText)}')">使用 "${escapeHtml(filterText)}"</div>`;
+                }
+            }
+        }
+
+        function filterComboDropdown(input) {
+            const container = input.closest('.combo-box');
+            if (!container) return;
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (dropdown && dropdown.classList.contains('hidden')) {
+                openComboDropdown(container);
+            } else {
+                renderComboDropdownOptions(container);
+            }
+        }
+
+        function selectComboValue(container, value) {
+            const controlId = container.getAttribute('data-control-id');
+            const existing = window._comboSelections.get(controlId) || new Set();
+            existing.add(value);
+            window._comboSelections.set(controlId, existing);
+            // 清空输入
+            const input = container.querySelector('.combo-input');
+            if (input) input.value = '';
+            renderComboTags(container);
+            renderComboDropdownOptions(container);
+            renderList(true);
+        }
+
+        function removeComboValue(container, value) {
+            const controlId = container.getAttribute('data-control-id');
+            const existing = window._comboSelections.get(controlId);
+            if (existing) {
+                existing.delete(value);
+                if (existing.size === 0) {
+                    window._comboSelections.delete(controlId);
+                }
+            }
+            renderComboTags(container);
+            renderComboDropdownOptions(container);
+            renderList(true);
+        }
+
+        function handleComboKeydown(event, input) {
+            const container = input.closest('.combo-box');
+            if (!container) return;
+            const dropdown = container.querySelector('.combo-dropdown');
+
+            if (event.key === 'Escape') {
+                closeAllComboDropdowns();
+                return;
+            }
+            if (event.key === 'Backspace' && input.value === '') {
+                const controlId = container.getAttribute('data-control-id');
+                const values = getComboValues(controlId);
+                if (values.length > 0) {
+                    event.preventDefault();
+                    const lastVal = values[values.length - 1];
+                    removeComboValue(container, lastVal);
+                }
+                return;
+            }
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (dropdown && dropdown.classList.contains('hidden')) {
+                    openComboDropdown(container);
+                } else {
+                    moveComboHighlight(container, 1);
+                }
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveComboHighlight(container, -1);
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (dropdown && !dropdown.classList.contains('hidden')) {
+                    const highlighted = dropdown.querySelector('.combo-option.highlighted');
+                    if (highlighted) {
+                        selectComboValue(container, highlighted.getAttribute('data-value'));
+                    } else {
+                        // 尝试用输入文字作为自定义值
+                        const text = input.value.trim();
+                        if (text) {
+                            selectComboValue(container, text);
+                        }
+                    }
+                } else {
+                    const text = input.value.trim();
+                    if (text) {
+                        selectComboValue(container, text);
+                    }
+                }
+                return;
+            }
+        }
+
+        function moveComboHighlight(container, delta) {
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (!dropdown || dropdown.classList.contains('hidden')) return;
+            const options = dropdown.querySelectorAll('.combo-option:not(.combo-no-match)');
+            if (options.length === 0) return;
+            let currentIdx = -1;
+            options.forEach((opt, i) => { if (opt.classList.contains('highlighted')) currentIdx = i; });
+            if (currentIdx >= 0) options[currentIdx].classList.remove('highlighted');
+            let newIdx = currentIdx + delta;
+            if (newIdx < 0) newIdx = options.length - 1;
+            if (newIdx >= options.length) newIdx = 0;
+            options[newIdx].classList.add('highlighted');
+            options[newIdx].scrollIntoView({ block: 'nearest' });
+        }
+
+        // ========== 动态条件行 (Part B) ==========
+        const CONDITION_FIELDS = [
+            { field: 'supplierId', label: '供应商', type: 'text-eq' },
+            { field: 'brand', label: '品牌', type: 'text-eq' },
+            { field: 'category', label: '分类', type: 'text-eq' },
+            { field: 'name', label: '商品名称', type: 'text-contains' },
+            { field: 'sku', label: 'SKU', type: 'text-contains' },
+            { field: 'barcode', label: '产品条码', type: 'text-contains' },
+            { field: 'retailPrice', label: '零售价', type: 'number' },
+            { field: 'purchasePrice', label: '集采价', type: 'number' },
+            { field: 'normalExpressPrice', label: '代发价', type: 'number' },
+            { field: 'margin', label: '毛利率(%)', type: 'number' },
+            { field: 'shipFrom', label: '发货地', type: 'text-eq' },
+            { field: 'origin', label: '产地', type: 'text-eq' },
+            { field: 'status', label: '状态', type: 'text-eq' },
+            { field: 'stockType', label: '库存类型', type: 'text-eq' },
+            { field: 'stockStatus', label: '备货状态', type: 'text-eq' },
+            { field: 'logisticsMode', label: '一件代发', type: 'text-eq' },
+            { field: 'isExclusive', label: '是否包销', type: 'text-eq' },
+            { field: 'taxIncluded', label: '含税标识', type: 'text-eq' },
+            { field: 'isSugarFree', label: '无糖标识', type: 'text-eq' },
+            { field: 'isOrganic', label: '有机标识', type: 'text-eq' },
+            { field: 'freightIncluded', label: '运费包含', type: 'text-eq' },
+            { field: 'defaultExpress', label: '快递公司', type: 'text-eq' },
+            { field: 'brandLevel', label: '品牌级别', type: 'text-eq' },
+        ];
+
+        function getOperators(fieldDef) {
+            if (fieldDef.type === 'number') {
+                return [
+                    { value: 'gt', label: '>' },
+                    { value: 'gte', label: '>=' },
+                    { value: 'lt', label: '<' },
+                    { value: 'lte', label: '<=' },
+                    { value: 'eq', label: '=' },
+                    { value: 'neq', label: '!=' },
+                    { value: 'empty', label: '为空' },
+                    { value: 'notEmpty', label: '不为空' },
+                ];
+            } else if (fieldDef.type === 'text-contains') {
+                return [
+                    { value: 'contains', label: '包含' },
+                    { value: 'notContains', label: '不含' },
+                    { value: 'empty', label: '为空' },
+                    { value: 'notEmpty', label: '不为空' },
+                ];
+            } else {
+                return [
+                    { value: 'eq', label: '等于' },
+                    { value: 'neq', label: '不等于' },
+                    { value: 'empty', label: '为空' },
+                    { value: 'notEmpty', label: '不为空' },
+                ];
+            }
+        }
+
+        function getProductFieldValue(p, field) {
+            if (field === 'margin') {
+                return calculateMargin(p.retailPrice, p.purchasePrice);
+            }
+            const val = p[field];
+            return val !== undefined && val !== null ? String(val) : '';
+        }
+
+        function matchCondition(val, op, target) {
+            // 空值判断不看 target，只看 val 是否为空
+            if (op === 'empty') {
+                return val === undefined || val === null || val.toString().trim() === '';
+            }
+            if (op === 'notEmpty') {
+                return val !== undefined && val !== null && val.toString().trim() !== '';
+            }
+            const v = (val || '').toString().toLowerCase();
+            const t = (target || '').toString().toLowerCase();
+            switch (op) {
+                case 'eq': return v === t;
+                case 'neq': return v !== t;
+                case 'contains': return v.includes(t);
+                case 'notContains': return !v.includes(t);
+                case 'gt': return parseFloat(val) > parseFloat(target);
+                case 'gte': return parseFloat(val) >= parseFloat(target);
+                case 'lt': return parseFloat(val) < parseFloat(target);
+                case 'lte': return parseFloat(val) <= parseFloat(target);
+                default: return true;
+            }
+        }
+
+        function renderConditionRows() {
+            const container = document.getElementById('condition-rows-container');
+            if (!container) return;
+            if (window._conditionRows.length === 0) {
+                container.innerHTML = '';
+                return;
+            }
+            container.innerHTML = window._conditionRows.map(row => {
+                const fieldDef = CONDITION_FIELDS.find(f => f.field === row.field) || CONDITION_FIELDS[3];
+                const operators = getOperators(fieldDef);
+                const fieldOptions = CONDITION_FIELDS.map(f =>
+                    `<option value="${f.field}" ${f.field === row.field ? 'selected' : ''}>${f.label}</option>`
+                ).join('');
+                const opOptions = operators.map(op =>
+                    `<option value="${op.value}" ${op.value === row.op ? 'selected' : ''}>${op.label}</option>`
+                ).join('');
+                const rowId = row.id;
+                const value = escapeHtml(row.value || '');
+                const isEmptyOp = row.op === 'empty' || row.op === 'notEmpty';
+                let valueInput;
+                if (isEmptyOp) {
+                    valueInput = `<span class="text-gray-400 text-xs" style="min-width:80px">（无需输入）</span>`;
+                } else if (fieldDef.type === 'number') {
+                    valueInput = `<input type="number" value="${value}" placeholder="数值"
+                        onchange="updateConditionRow(${rowId}, 'value', this.value)" style="width:80px">`;
+                } else if (fieldDef.type === 'text-eq') {
+                    valueInput = `<div class="combo-box" data-cond-row="${rowId}" style="min-width:140px">
+                        <div class="combo-input-area" style="min-height:28px;padding:2px 6px" onclick="this.querySelector('.combo-input').focus()">
+                            <input class="combo-input" value="${value}" placeholder="选择或输入"
+                                onfocus="openCondDropdown(this)"
+                                oninput="filterCondDropdown(this);updateConditionRow(${rowId}, 'value', this.value)"
+                                onkeydown="handleCondKeydown(event, this, ${rowId})">
+                        </div>
+                        <div class="combo-dropdown hidden"></div>
+                    </div>`;
+                } else {
+                    valueInput = `<input type="text" value="${value}" placeholder="输入关键词"
+                        oninput="updateConditionRow(${rowId}, 'value', this.value)">`;
+                }
+                return `<div class="condition-row" data-row-id="${rowId}">
+                    <select onchange="onConditionFieldChange(${rowId}, this.value)">${fieldOptions}</select>
+                    <select onchange="onConditionOpChange(${rowId}, this.value)">${opOptions}</select>
+                    ${valueInput}
+                    <span class="condition-remove" onclick="removeConditionRow(${rowId})" title="删除条件">&times;</span>
+                </div>`;
+            }).join('');
+
+            // 预填充所有条件行 combo box 的 _options
+            container.querySelectorAll('.combo-box[data-cond-row]').forEach(cb => {
+                const rowId = parseInt(cb.getAttribute('data-cond-row'));
+                const row = window._conditionRows.find(r => r.id === rowId);
+                if (row) {
+                    const vals = getFieldAvailableValues(row.field);
+                    cb._options = vals.map(v => ({ value: v, label: String(v) }));
+                }
+            });
+        }
+
+        function getFieldAvailableValues(field) {
+            if (!products || products.length === 0) return [];
+            const fieldMap = {
+                'supplierId': 'supplierId',
+                'brand': 'brand',
+                'category': 'category',
+                'shipFrom': 'shipFrom',
+                'origin': 'origin',
+                'status': 'status',
+                'stockType': 'stockType',
+                'stockStatus': 'stockStatus',
+                'logisticsMode': 'logisticsMode',
+                'isExclusive': 'isExclusive',
+                'taxIncluded': 'taxIncluded',
+                'isSugarFree': 'isSugarFree',
+                'isOrganic': 'isOrganic',
+                'freightIncluded': 'freightIncluded',
+                'defaultExpress': 'defaultExpress',
+                'brandLevel': 'brandLevel',
+            };
+            const fieldKey = fieldMap[field] || field;
+            // 转为字符串再过滤，保留 "false" / "0" 等合法值
+            return [...new Set(products.map(p => {
+                const v = p[fieldKey];
+                return (v !== undefined && v !== null && v !== '') ? String(v) : null;
+            }).filter(v => v !== null))].sort();
+        }
+
+        function openCondDropdown(input) {
+            closeAllComboDropdowns();
+            const container = input.closest('.combo-box');
+            if (!container) return;
+            const fieldValues = getFieldAvailableValuesForContainer(container);
+            container._options = fieldValues.map(v => ({ value: v, label: String(v) }));
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (dropdown) {
+                renderCondDropdownOptions(container);
+                dropdown.classList.remove('hidden');
+            }
+        }
+
+        function getFieldAvailableValuesForContainer(comboContainer) {
+            const rowId = parseInt(comboContainer.getAttribute('data-cond-row'));
+            const row = window._conditionRows.find(r => r.id === rowId);
+            if (row) {
+                return getFieldAvailableValues(row.field);
+            }
+            return [];
+        }
+
+        function filterCondDropdown(input) {
+            const container = input.closest('.combo-box');
+            if (!container) return;
+            if (!container._options || container._options.length === 0) {
+                const fieldValues = getFieldAvailableValuesForContainer(container);
+                container._options = fieldValues.map(v => ({ value: v, label: String(v) }));
+            }
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (dropdown && dropdown.classList.contains('hidden')) {
+                dropdown.classList.remove('hidden');
+            }
+            renderCondDropdownOptions(container);
+        }
+
+        function renderCondDropdownOptions(container) {
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (!dropdown) return;
+            const rowId = parseInt(container.getAttribute('data-cond-row'));
+            const row = window._conditionRows.find(r => r.id === rowId);
+            if (!row) return;
+            const input = container.querySelector('.combo-input');
+            const filterText = (input ? input.value : '').toLowerCase();
+            const options = container._options || [];
+            const filtered = options.filter(opt => {
+                const label = (typeof opt === 'string') ? opt : (opt.label || opt.value || '');
+                return label.toLowerCase().includes(filterText);
+            });
+
+            if (filtered.length === 0) {
+                dropdown.innerHTML = `<div class="combo-option combo-no-match">${filterText ? '无匹配项' : '暂无数据'}</div>`;
+            } else {
+                dropdown.innerHTML = filtered.map((opt, i) => {
+                    const val = (typeof opt === 'string') ? opt : opt.value;
+                    const label = (typeof opt === 'string') ? opt : (opt.label || opt.value);
+                    return `<div class="combo-option" data-value="${escapeHtml(val)}" data-idx="${i}"
+                        onclick="event.stopPropagation();selectCondOption(this)">${escapeHtml(label)}</div>`;
+                }).join('');
+            }
+        }
+
+        function selectCondOption(optionEl) {
+            const val = optionEl.getAttribute('data-value');
+            const container = optionEl.closest('.combo-box');
+            if (!container) return;
+            const rowId = parseInt(container.getAttribute('data-cond-row'));
+            const input = container.querySelector('.combo-input');
+            if (input) input.value = val;
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (dropdown) dropdown.classList.add('hidden');
+            updateConditionRow(rowId, 'value', val);
+        }
+
+        function handleCondKeydown(event, input, rowId) {
+            const container = input.closest('.combo-box');
+            if (!container) return;
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (event.key === 'Escape') {
+                closeAllComboDropdowns();
+                return;
+            }
+            if (event.key === 'ArrowDown') {
+                event.preventDefault();
+                if (dropdown && dropdown.classList.contains('hidden')) {
+                    openCondDropdown(input);
+                } else {
+                    moveComboHighlight(container, 1);
+                }
+                return;
+            }
+            if (event.key === 'ArrowUp') {
+                event.preventDefault();
+                moveComboHighlight(container, -1);
+                return;
+            }
+            if (event.key === 'Enter') {
+                event.preventDefault();
+                if (dropdown && !dropdown.classList.contains('hidden')) {
+                    const highlighted = dropdown.querySelector('.combo-option.highlighted');
+                    if (highlighted) {
+                        const val = highlighted.getAttribute('data-value');
+                        input.value = val;
+                        dropdown.classList.add('hidden');
+                        updateConditionRow(rowId, 'value', val);
+                    }
+                }
+                return;
+            }
+        }
+
+        function addConditionRow() {
+            const id = _conditionNextId++;
+            // 默认：商品名称 包含
+            window._conditionRows.push({ id, field: 'name', op: 'contains', value: '' });
+            renderConditionRows();
+            // 聚焦新行的输入框
+            setTimeout(() => {
+                const row = document.querySelector(`.condition-row[data-row-id="${id}"]`);
+                if (row) {
+                    const input = row.querySelector('input');
+                    if (input) input.focus();
+                }
+            }, 50);
+        }
+
+        function removeConditionRow(id) {
+            window._conditionRows = window._conditionRows.filter(r => r.id !== id);
+            renderConditionRows();
+            renderList(true);
+        }
+
+        function onConditionOpChange(id, newOp) {
+            const row = window._conditionRows.find(r => r.id === id);
+            if (!row) return;
+            const wasEmpty = row.op === 'empty' || row.op === 'notEmpty';
+            const isEmpty = newOp === 'empty' || newOp === 'notEmpty';
+            row.op = newOp;
+            // 切换到空值运算符时清空 value；切回时也需要重建 DOM 来显示输入框
+            if (isEmpty !== wasEmpty) {
+                row.value = '';
+                renderConditionRows();
+                renderList();
+            } else {
+                renderList();
+            }
+        }
+
+        function updateConditionRow(id, key, value) {
+            const row = window._conditionRows.find(r => r.id === id);
+            if (row) {
+                row[key] = value;
+                renderList();
+            }
+        }
+
+        function onConditionFieldChange(id, newField) {
+            const row = window._conditionRows.find(r => r.id === id);
+            if (!row) return;
+            const fieldDef = CONDITION_FIELDS.find(f => f.field === newField);
+            if (!fieldDef) return;
+            const operators = getOperators(fieldDef);
+            // 如果当前运算符不适用新字段类型，重置为第一个
+            const validOps = operators.map(o => o.value);
+            if (!validOps.includes(row.op)) {
+                row.op = operators[0].value;
+            }
+            row.field = newField;
+            row.value = '';
+            renderConditionRows();
+            // 聚焦新输入框
+            setTimeout(() => {
+                const rowEl = document.querySelector(`.condition-row[data-row-id="${id}"]`);
+                if (rowEl) {
+                    const input = rowEl.querySelector('input');
+                    if (input) input.focus();
+                }
+            }, 50);
+        }
+
         // ========== 筛选栏动态渲染 ==========
         function renderFilterBar() {
             const priorityContainer = document.getElementById('priority-filters');
@@ -2685,8 +3339,34 @@
                 .map(filterId => renderFilterControl(filterId))
                 .join('');
 
+            // 初始化 select 类型 combo box 的 _options
+            initComboSelectOptions();
             // 初始化动态选项
             initFilterOptions();
+            // 恢复 combo box 的已选状态
+            restoreComboSelections();
+            // 渲染条件行（如果有）
+            renderConditionRows();
+        }
+
+        function initComboSelectOptions() {
+            // 为所有 select 类型的 combo box 设置 _options
+            Object.keys(FILTER_DEFINITIONS).forEach(filterId => {
+                const def = FILTER_DEFINITIONS[filterId];
+                if (def.type !== 'select') return;
+                const controlId = 'filter' + filterId.charAt(0).toUpperCase() + filterId.slice(1);
+                const container = document.querySelector(`.combo-box[data-control-id="${controlId}"]`);
+                if (container) {
+                    container._options = def.options.filter(opt => opt.value !== '').map(opt => opt);
+                }
+            });
+        }
+
+        function restoreComboSelections() {
+            // renderFilterBar 重建了 DOM，需要把 _comboSelections 中的状态恢复到 DOM chips 中
+            document.querySelectorAll('.combo-box').forEach(container => {
+                renderComboTags(container);
+            });
         }
 
         function renderFilterControl(filterId) {
@@ -2694,17 +3374,34 @@
             if (!def) return '';
 
             const controlId = 'filter' + filterId.charAt(0).toUpperCase() + filterId.slice(1);
+            const placeholder = def.placeholder || '全部' + def.label;
 
             switch (def.type) {
-                case 'select':
-                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList(true)">
-                        ${def.options.map(opt => `<option value="${opt.value}">${opt.label}</option>`).join('')}
-                    </select>`;
+                case 'select': {
+                    return `<div class="combo-box" data-control-id="${controlId}" data-placeholder="${escapeHtml(placeholder)}">
+                        <div class="combo-input-area" onclick="this.querySelector('.combo-input').focus()">
+                            <span class="combo-tags"></span>
+                            <input class="combo-input" placeholder="${escapeHtml(placeholder)}"
+                                onfocus="openComboDropdown(this.closest('.combo-box'))"
+                                oninput="filterComboDropdown(this)"
+                                onkeydown="handleComboKeydown(event, this)">
+                        </div>
+                        <div class="combo-dropdown hidden"></div>
+                    </div>`;
+                }
 
-                case 'dynamicSelect':
-                    return `<select id="${controlId}" class="border rounded-lg px-3 py-2 text-sm" onchange="renderList(true)">
-                        <option value="">全部${def.label}</option>
-                    </select>`;
+                case 'dynamicSelect': {
+                    return `<div class="combo-box" data-control-id="${controlId}" data-placeholder="${escapeHtml(placeholder)}">
+                        <div class="combo-input-area" onclick="this.querySelector('.combo-input').focus()">
+                            <span class="combo-tags"></span>
+                            <input class="combo-input" placeholder="${escapeHtml(placeholder)}"
+                                onfocus="openComboDropdown(this.closest('.combo-box'))"
+                                oninput="filterComboDropdown(this)"
+                                onkeydown="handleComboKeydown(event, this)">
+                        </div>
+                        <div class="combo-dropdown hidden"></div>
+                    </div>`;
+                }
 
                 case 'text':
                     return `<input type="text" id="${controlId}"
@@ -2718,93 +3415,107 @@
         }
 
         function initFilterOptions() {
-            // 如果products为空，不处理
             if (!products || products.length === 0) return;
 
-            // 发货地
             const shipFromValues = [...new Set(products.map(p => p.shipFrom).filter(Boolean))];
-            populateSelectOptions('filterShipFrom', shipFromValues, '全部发货地');
+            setComboDynamicOptions('filterShipFrom', shipFromValues);
 
-            // 供应商
             const supplierValues = [...new Set(products.map(p => p.supplierId).filter(Boolean))];
-            populateSelectOptions('filterSupplier', supplierValues, '全部供应商');
+            setComboDynamicOptions('filterSupplier', supplierValues);
 
-            // 品牌
             const brandValues = [...new Set(products.map(p => p.brand).filter(Boolean))];
-            populateSelectOptions('filterBrand', brandValues, '全部品牌');
+            setComboDynamicOptions('filterBrand', brandValues);
 
-            // 产地
             const originValues = [...new Set(products.map(p => p.origin).filter(Boolean))];
-            populateSelectOptions('filterOrigin', originValues, '全部产地');
+            setComboDynamicOptions('filterOrigin', originValues);
+        }
+
+        function setComboDynamicOptions(controlId, values) {
+            const container = document.querySelector(`.combo-box[data-control-id="${controlId}"]`);
+            if (!container) {
+                // 可能 filter 被移到了 more-filters 或不在当前配置中
+                return;
+            }
+            container._options = values.sort().map(v => ({ value: v, label: v }));
+            // 如果下拉是打开的，刷新选项显示
+            const dropdown = container.querySelector('.combo-dropdown');
+            if (dropdown && !dropdown.classList.contains('hidden')) {
+                renderComboDropdownOptions(container);
+            }
         }
 
         function populateSelectOptions(selectId, values, defaultLabel) {
-            const select = document.getElementById(selectId);
-            if (!select) return;
-
-            const currentValue = select.value;
-            select.innerHTML = `<option value="">${defaultLabel}</option>` +
-                values.sort().map(v => `<option value="${v}">${v}</option>`).join('');
-            if (values.includes(currentValue)) {
-                select.value = currentValue;
-            }
+            // 保留兼容：旧版 <select> 元素已不再使用，改为操作 combo box
+            setComboDynamicOptions(selectId, values);
         }
 
         // ========== 商品列表 ==========
         function renderList(resetPage = true) {
             if (resetPage) listCurrentPage = 1;
-            // 刷新动态筛选选项（品牌、供应商、发货地、产地等）
             initFilterOptions();
 
-            // 获取所有筛选值
-            const getFilterVal = (id) => document.getElementById(id)?.value || '';
-            const filterMargin = getFilterVal('filterMargin');
-            const filterExclusive = getFilterVal('filterExclusive');
-            const filterBrandLevel = getFilterVal('filterBrandLevel');
-            const filterLogistics = getFilterVal('filterLogistics');
-            const filterStockStatus = getFilterVal('filterStockStatus');
-            const filterSupplier = getFilterVal('filterSupplier');
-            const filterShipFrom = getFilterVal('filterShipFrom');
-            const filterStockType = getFilterVal('filterStockType');
-            const filterSearch = (getFilterVal('filterSearch')).toLowerCase();
-            const filterCategory = getFilterVal('filterCategory');
-            const filterStatus = getFilterVal('filterStatus');
-            const filterBrand = getFilterVal('filterBrand');
-            const filterOrigin = getFilterVal('filterOrigin');
-            const filterTaxIncluded = getFilterVal('filterTaxIncluded');
-            const filterSugarFree = getFilterVal('filterSugarFree');
-            const filterOrganic = getFilterVal('filterOrganic');
-            const filterFreightIncluded = getFilterVal('filterFreightIncluded');
-            const filterDefaultExpress = getFilterVal('filterDefaultExpress');
+            // 获取 combo box 筛选值（返回数组），搜索框仍用 text input
+            const getCombo = (id) => getComboValues('filter' + id.charAt(0).toUpperCase() + id.slice(1));
+            const filterMargin = getCombo('margin');
+            const filterExclusive = getCombo('exclusive');
+            const filterBrandLevel = getCombo('brandLevel');
+            const filterLogistics = getCombo('logistics');
+            const filterStockStatus = getCombo('stockStatus');
+            const filterSupplier = getCombo('supplier');
+            const filterShipFrom = getCombo('shipFrom');
+            const filterStockType = getCombo('stockType');
+            const filterSearch = (document.getElementById('filterSearch')?.value || '').toLowerCase();
+            const filterCategory = getCombo('category');
+            const filterStatus = getCombo('status');
+            const filterBrand = getCombo('brand');
+            const filterOrigin = getCombo('origin');
+            const filterTaxIncluded = getCombo('taxIncluded');
+            const filterSugarFree = getCombo('sugarFree');
+            const filterOrganic = getCombo('organic');
+            const filterFreightIncluded = getCombo('freightIncluded');
+            const filterDefaultExpress = getCombo('defaultExpress');
 
             // 筛选
             let filtered = products.filter(p => {
-                // 毛利率筛选
-                if (filterMargin) {
+                // 毛利率筛选（多选OR：选中low=毛利率<25%, mid=25-35%, high=≥35%）
+                if (filterMargin.length > 0) {
                     const margin = parseFloat(calculateMargin(p.retailPrice, p.purchasePrice));
-                    if (filterMargin === 'low' && margin >= 25) return false;
-                    if (filterMargin === 'mid' && (margin < 25 || margin >= 35)) return false;
-                    if (filterMargin === 'high' && margin < 35) return false;
+                    let ok = false;
+                    if (filterMargin.includes('low') && margin < 25) ok = true;
+                    if (filterMargin.includes('mid') && margin >= 25 && margin < 35) ok = true;
+                    if (filterMargin.includes('high') && margin >= 35) ok = true;
+                    if (!ok) return false;
                 }
-                if (filterExclusive && String(p.isExclusive) !== filterExclusive) return false;
-                if (filterBrandLevel && p.brandLevel !== filterBrandLevel) return false;
-                if (filterLogistics && p.logisticsMode !== filterLogistics) return false;
-                if (filterStockStatus && p.stockStatus !== filterStockStatus) return false;
-                if (filterSupplier && p.supplierId !== filterSupplier) return false;
-                if (filterShipFrom && p.shipFrom !== filterShipFrom) return false;
-                if (filterStockType && p.stockType !== filterStockType) return false;
-                if (filterCategory && p.category !== filterCategory) return false;
-                if (filterStatus && p.status !== filterStatus) return false;
-                if (filterBrand && p.brand !== filterBrand) return false;
-                if (filterOrigin && p.origin !== filterOrigin) return false;
-                if (filterTaxIncluded && String(p.taxIncluded) !== filterTaxIncluded) return false;
-                if (filterSugarFree && String(p.isSugarFree) !== filterSugarFree) return false;
-                if (filterOrganic && String(p.isOrganic) !== filterOrganic) return false;
-                if (filterFreightIncluded && String(p.freightIncluded) !== filterFreightIncluded) return false;
-                if (filterDefaultExpress && p.defaultExpress !== filterDefaultExpress) return false;
+                if (filterExclusive.length > 0 && !filterExclusive.includes(String(p.isExclusive))) return false;
+                if (filterBrandLevel.length > 0 && !filterBrandLevel.includes(p.brandLevel)) return false;
+                if (filterLogistics.length > 0 && !filterLogistics.includes(p.logisticsMode)) return false;
+                if (filterStockStatus.length > 0 && !filterStockStatus.includes(p.stockStatus)) return false;
+                if (filterSupplier.length > 0 && !filterSupplier.includes(p.supplierId)) return false;
+                if (filterShipFrom.length > 0 && !filterShipFrom.includes(p.shipFrom)) return false;
+                if (filterStockType.length > 0 && !filterStockType.includes(p.stockType)) return false;
+                if (filterCategory.length > 0 && !filterCategory.includes(p.category)) return false;
+                if (filterStatus.length > 0 && !filterStatus.includes(p.status)) return false;
+                if (filterBrand.length > 0 && !filterBrand.includes(p.brand)) return false;
+                if (filterOrigin.length > 0 && !filterOrigin.includes(p.origin)) return false;
+                if (filterTaxIncluded.length > 0 && !filterTaxIncluded.includes(String(p.taxIncluded))) return false;
+                if (filterSugarFree.length > 0 && !filterSugarFree.includes(String(p.isSugarFree))) return false;
+                if (filterOrganic.length > 0 && !filterOrganic.includes(String(p.isOrganic))) return false;
+                if (filterFreightIncluded.length > 0 && !filterFreightIncluded.includes(String(p.freightIncluded))) return false;
+                if (filterDefaultExpress.length > 0 && !filterDefaultExpress.includes(p.defaultExpress)) return false;
                 if (filterSearch && !p.name.toLowerCase().includes(filterSearch) &&
                     !p.sku.toLowerCase().includes(filterSearch) &&
                     !(p.barcode && p.barcode.includes(filterSearch))) return false;
+
+                // 动态条件行（AND）
+                for (const cond of window._conditionRows) {
+                    if (!cond.value || cond.value.trim() === '') {
+                        // 为空/不为空 不需要输入值，其余运算符跳过
+                        if (cond.op !== 'empty' && cond.op !== 'notEmpty') continue;
+                    }
+                    const val = getProductFieldValue(p, cond.field);
+                    if (!matchCondition(val, cond.op, cond.value)) return false;
+                }
+
                 return true;
             });
 
@@ -3558,7 +4269,7 @@
         }
 
         function setFilterStatus(status) {
-            document.getElementById('filterStatus').value = status;
+            setComboValues('filterStatus', status ? [status] : []);
             renderList();
 
             // 更新按钮样式
@@ -3569,12 +4280,10 @@
         }
 
         function resetFilters() {
-            // 重置所有筛选条件
-            Object.keys(FILTER_DEFINITIONS).forEach(filterId => {
-                const controlId = 'filter' + filterId.charAt(0).toUpperCase() + filterId.slice(1);
-                const el = document.getElementById(controlId);
-                if (el) el.value = '';
-            });
+            resetAllCombos();
+            // 清空搜索框
+            const searchEl = document.getElementById('filterSearch');
+            if (searchEl) searchEl.value = '';
             renderList();
         }
 
@@ -9213,6 +9922,14 @@
             m.addEventListener('click', (e) => {
                 if (e.target === m) m.classList.remove('active');
             });
+        });
+
+        // 点击 combo box 外部关闭下拉
+        document.addEventListener('click', (e) => {
+            const clickedCombo = e.target.closest('.combo-box');
+            if (!clickedCombo) {
+                closeAllComboDropdowns();
+            }
         });
 
         // ========== 初始化 ==========
