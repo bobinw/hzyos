@@ -84,6 +84,11 @@
             padding: 2px 4px; border-radius: 0.25rem;
         }
         .condition-remove:hover { color: #dc2626; background: #fee2e2; }
+
+        /* 字段拖拽排序 */
+        .field-row { cursor: grab; transition: background 0.15s; }
+        .field-row.dragging { opacity: 0.4; }
+        .field-row.drag-over { background: #dbeafe; border-top: 2px solid #3b82f6; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -9440,15 +9445,18 @@
 
             const hasProducts = products && products.length > 0;
             document.getElementById('product-fields-list').innerHTML = allFields.map((f, index) => `
-                <tr class="hover:bg-gray-50">
+                <tr class="field-row" draggable="true" data-index="${index}" data-name="${escapeHtml(f.name)}"
+                    ondragstart="handleFieldDragStart(event, 'product')"
+                    ondragover="handleFieldDragOver(event)"
+                    ondragleave="handleFieldDragLeave(event)"
+                    ondrop="handleFieldDrop(event, 'product')"
+                    ondragend="handleFieldDragEnd(event)">
                     <td class="px-3 py-2 font-medium">${f.name}</td>
                     <td class="px-3 py-2 text-gray-500">${groupNames[f.group] || f.group}</td>
                     <td class="px-3 py-2 text-gray-400 text-xs">${f.keywords ? f.keywords.join(', ') : '-'}</td>
                     <td class="px-3 py-2 text-center">
-                        <button onclick="moveProductField('${f.name}', -1)" class="text-gray-500 hover:text-gray-700 text-xs mr-1" ${index === 0 ? 'disabled style="opacity:0.3"' : ''}>↑</button>
-                        <button onclick="moveProductField('${f.name}', 1)" class="text-gray-500 hover:text-gray-700 text-xs mr-2" ${index === allFields.length - 1 ? 'disabled style="opacity:0.3"' : ''}>↓</button>
-                        <button onclick="editProductField('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
-                        ${(f.isCustom || !hasProducts) ? `<button onclick="deleteProductField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
+                        <button onclick="editProductField('${escapeHtml(f.name)}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
+                        ${(f.isCustom || !hasProducts) ? `<button onclick="deleteProductField('${escapeHtml(f.name)}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
                     </td>
                 </tr>
             `).join('');
@@ -9510,25 +9518,67 @@
             location.reload();
         }
 
-        function moveProductField(name, direction) {
-            const allFields = getAllProductFields();
-            const currentIndex = allFields.findIndex(f => f.name === name);
-            const newIndex = currentIndex + direction;
+        // 拖拽排序状态
+        let _dragState = { type: null, fromIndex: -1, fromName: '' };
 
-            if (newIndex < 0 || newIndex >= allFields.length) return;
+        function handleFieldDragStart(e, type) {
+            _dragState.type = type;
+            _dragState.fromIndex = parseInt(e.target.closest('tr').dataset.index);
+            _dragState.fromName = e.target.closest('tr').dataset.name;
+            e.dataTransfer.effectAllowed = 'move';
+            e.target.closest('tr').classList.add('dragging');
+        }
 
-            // 更新排序数组
-            if (!productFieldOrder || productFieldOrder.length === 0) {
-                productFieldOrder = allFields.map(f => f.name);
+        function handleFieldDragOver(e) {
+            e.preventDefault();
+            e.dataTransfer.dropEffect = 'move';
+            const tr = e.target.closest('tr.field-row');
+            if (tr) tr.classList.add('drag-over');
+        }
+
+        function handleFieldDragLeave(e) {
+            const tr = e.target.closest('tr.field-row');
+            if (tr) tr.classList.remove('drag-over');
+        }
+
+        function handleFieldDrop(e, type) {
+            e.preventDefault();
+            const tr = e.target.closest('tr.field-row');
+            if (!tr) return;
+            tr.classList.remove('drag-over');
+            const toIndex = parseInt(tr.dataset.index);
+            const toName = tr.dataset.name;
+            if (_dragState.type !== type || _dragState.fromIndex === toIndex) return;
+
+            const orderKey = type === 'product' ? 'productFieldOrder' : 'supplierFieldOrder';
+            let order = type === 'product' ? productFieldOrder : supplierFieldOrder;
+
+            // 确保 order 已初始化
+            if (!order || order.length === 0) {
+                const allFields = type === 'product' ? getAllProductFields() : getAllSupplierFields();
+                order = allFields.map(f => f.name);
+                if (type === 'product') productFieldOrder = order;
+                else supplierFieldOrder = order;
             }
 
-            // 交换位置
-            const temp = productFieldOrder[currentIndex];
-            productFieldOrder[currentIndex] = productFieldOrder[newIndex];
-            productFieldOrder[newIndex] = temp;
+            // 移动：将 fromName 插入到 toName 之前
+            const fromPos = order.indexOf(_dragState.fromName);
+            const toPos = order.indexOf(toName);
+            if (fromPos >= 0 && toPos >= 0) {
+                order.splice(fromPos, 1);
+                const insertAt = fromPos < toPos ? order.indexOf(toName) + 1 : order.indexOf(toName);
+                order.splice(insertAt, 0, _dragState.fromName);
+            }
 
             saveData();
-            renderProductFieldsList();
+            if (type === 'product') renderProductFieldsList();
+            else renderSupplierFieldsList();
+        }
+
+        function handleFieldDragEnd(e) {
+            document.querySelectorAll('tr.field-row').forEach(tr => {
+                tr.classList.remove('dragging', 'drag-over');
+            });
         }
 
         function showAddProductFieldModal() {
@@ -9672,13 +9722,16 @@
 
             const hasSuppliers = suppliers && suppliers.length > 0;
             document.getElementById('supplier-fields-list').innerHTML = allFields.map((f, index) => `
-                <tr class="hover:bg-gray-50">
+                <tr class="field-row" draggable="true" data-index="${index}" data-name="${escapeHtml(f.name)}"
+                    ondragstart="handleFieldDragStart(event, 'supplier')"
+                    ondragover="handleFieldDragOver(event)"
+                    ondragleave="handleFieldDragLeave(event)"
+                    ondrop="handleFieldDrop(event, 'supplier')"
+                    ondragend="handleFieldDragEnd(event)">
                     <td class="px-3 py-2 font-medium">${f.name}</td>
                     <td class="px-3 py-2 text-gray-500">${typeNames[f.type] || f.type}</td>
                     <td class="px-3 py-2 text-gray-400 text-xs">${f.options ? f.options.join(', ') : '-'}</td>
                     <td class="px-3 py-2 text-center">
-                        <button onclick="moveSupplierField('${f.name}', -1)" class="text-gray-500 hover:text-gray-700 text-xs mr-1" ${index === 0 ? 'disabled style="opacity:0.3"' : ''}>↑</button>
-                        <button onclick="moveSupplierField('${f.name}', 1)" class="text-gray-500 hover:text-gray-700 text-xs mr-2" ${index === allFields.length - 1 ? 'disabled style="opacity:0.3"' : ''}>↓</button>
                         <button onclick="editSupplierFieldModal('${f.name}')" class="text-green-600 hover:underline text-xs mr-2">编辑</button>
                         ${(f.isCustom || !hasSuppliers) ? `<button onclick="deleteSupplierField('${f.name}')" class="text-red-600 hover:underline text-xs">删除</button>` : ''}
                     </td>
@@ -9724,27 +9777,6 @@
             }
 
             return result;
-        }
-
-        function moveSupplierField(name, direction) {
-            const allFields = getAllSupplierFields();
-            const currentIndex = allFields.findIndex(f => f.name === name);
-            const newIndex = currentIndex + direction;
-
-            if (newIndex < 0 || newIndex >= allFields.length) return;
-
-            // 更新排序数组
-            if (!supplierFieldOrder || supplierFieldOrder.length === 0) {
-                supplierFieldOrder = allFields.map(f => f.name);
-            }
-
-            // 交换位置
-            const temp = supplierFieldOrder[currentIndex];
-            supplierFieldOrder[currentIndex] = supplierFieldOrder[newIndex];
-            supplierFieldOrder[newIndex] = temp;
-
-            saveData();
-            renderSupplierFieldsList();
         }
 
         function toggleSupplierFieldOptions() {
