@@ -7099,30 +7099,32 @@
             }
         }
 
-        // 从sheet名提取品牌名
+        // 从sheet名提取品牌名：词典精准匹配优先，匹配不到则用整个sheet名
         function extractBrandFromSheetName(sheetName) {
-            const separators = ['+', '_', '-', ' ', '｜', '|'];
-            const suffixesToRemove = ['产品', '商品', '清单', '目录', '价格表', '报价单', '库存', '东莞', '深圳', '广州', '永尚', '福利', '团购'];
+            if (!sheetName) return '';
+            const brandDict = buildBrandDictionary();
 
-            let brandName = sheetName;
-
-            // 尝试按分隔符分割，取第一部分
+            // 按分隔符拆成片段，逐段用品牌词典匹配
+            const separators = ['+', '_', '-', ' ', '｜', '|', '、', '，', ',', '/', '\\'];
             for (const sep of separators) {
-                if (brandName.includes(sep)) {
-                    const parts = brandName.split(sep);
-                    brandName = parts[0].trim();
-                    break;
+                if (sheetName.includes(sep)) {
+                    const parts = sheetName.split(sep).map(p => p.trim()).filter(Boolean);
+                    for (const part of parts) {
+                        if (part.length < 2) continue;
+                        for (const brand of brandDict) {
+                            if (part === brand || part.includes(brand)) return brand;
+                        }
+                    }
                 }
             }
 
-            // 去除常见后缀
-            for (const suffix of suffixesToRemove) {
-                if (brandName.endsWith(suffix) && brandName.length > suffix.length) {
-                    brandName = brandName.slice(0, -suffix.length).trim();
-                }
+            // sheet名整体与品牌词典做子串匹配
+            for (const brand of brandDict) {
+                if (sheetName.includes(brand)) return brand;
             }
 
-            return brandName || sheetName;
+            // 词典匹配不到，直接返回sheet名
+            return sheetName;
         }
 
         // 自动映射字段
