@@ -5895,15 +5895,44 @@
             });
         }
 
-        // 表头行下拉改变时，实时更新高亮
         function wizardBrandModeChanged(sel) {
             if (!window._batchWizard) return;
+            const wizard = window._batchWizard;
             const sheetName = sel.dataset.sheet;
             const mode = sel.value;
-            if (!window._batchWizard.brandConfig) window._batchWizard.brandConfig = {};
-            window._batchWizard.brandConfig[sheetName] = { mode, value: window._batchWizard.brandConfig[sheetName]?.value || window._batchWizard.sheetBrands?.[sheetName] || '' };
-            // 重新渲染以更新品牌预览/输入框
-            renderWizardStep1();
+            if (!wizard.brandConfig) wizard.brandConfig = {};
+            const oldValue = wizard.brandConfig[sheetName]?.value || wizard.sheetBrands?.[sheetName] || '';
+            wizard.brandConfig[sheetName] = { mode, value: mode === 'product' ? '' : oldValue };
+
+            // 只更新当前 sheet 卡片内的品牌预览/输入，不重渲染整个 Step 1
+            const container = sel.closest('.flex.items-center.gap-2');
+            if (!container) return;
+            // 移除旧的 input 或 span（紧跟在 select 后面的兄弟元素）
+            const next = sel.nextElementSibling;
+            if (next) next.remove();
+
+            const brandValue = wizard.brandConfig[sheetName]?.value || '';
+            const sheetBrand = wizard.sheetBrands?.[sheetName] || '';
+            const preview = mode === 'sheet' ? (sheetBrand || '(未识别)') : (mode === 'manual' ? (brandValue || '(待输入)') : '(从商品名提取)');
+            const maxLen = 10;
+            const display = preview.length > maxLen ? preview.substring(0, maxLen) + '...' : preview;
+
+            if (mode === 'manual') {
+                const input = document.createElement('input');
+                input.type = 'text';
+                input.className = 'border rounded px-1.5 py-0.5 text-xs w-24 wizard-brand-input';
+                input.dataset.sheet = sheetName;
+                input.value = brandValue;
+                input.placeholder = '品牌名';
+                input.oninput = function() { wizardBrandInputChanged(input); };
+                sel.insertAdjacentElement('afterend', input);
+            } else {
+                const span = document.createElement('span');
+                span.className = 'text-xs text-blue-600 truncate max-w-[100px]';
+                span.title = preview;
+                span.textContent = display;
+                sel.insertAdjacentElement('afterend', span);
+            }
         }
 
         function wizardBrandInputChanged(inp) {
@@ -6041,8 +6070,8 @@
             let sheetsHTML = activeSheets.map((sd) => {
                 const mapping = mappings[sd.name] || {};
                 const bCfg = (brandConfig && brandConfig[sd.name]) || {};
-                const brand = bCfg.value || '';
                 const brandMode = bCfg.mode || 'sheet';
+                const brand = brandMode === 'product' ? '' : (bCfg.value || '');
                 const brandLabel = brandMode === 'product' ? '(从商品名提取)' : (brandMode === 'manual' ? '(手动输入)' : '(Sheet名)');
                 const mappingSummary = sd.headers.slice(0, 6).map((h, i) => {
                     const target = mapping[i] || smartMatchField(String(h || ''), '集采价');
@@ -6219,28 +6248,13 @@
                     // Set up supplier context
                     selectedSupplierId = supplierId;
                     window.multiSheetContext = { activeSheet: sd.name };
-                    window.pendingBrandName = sheetBrands[sd.name] || '';
+                    // 'product' 模式：不做整 sheet 统一品牌，导入时逐行匹配
+                    const bCfg = (brandConfig && brandConfig[sd.name]) || {};
+                    let brandName = (bCfg.mode === 'product') ? '' : (sheetBrands[sd.name] || '');
+                    window.pendingBrandName = brandName || null;
 
-                    let brandName = sheetBrands[sd.name] || '';
-                    // 'product' mode: extract brand from product name column
-                    if (!brandName && brandConfig && brandConfig[sd.name] && brandConfig[sd.name].mode === 'product') {
-                        // 找到映射到"商品名称"的列（支持重命名后的字段名）
-                        const nameField = resolveFieldName('商品名称');
-                        const nameColEntry = Object.entries(sheetMapping).find(([idx, field]) => field === nameField);
-                        if (nameColEntry) {
-                            const colIdx = parseInt(nameColEntry[0]);
-                            // 从所有数据行中取第一个非空的商品名来提取品牌
-                            for (const row of sd.dataRows) {
-                                const productName = String(row[colIdx] || '').trim();
-                                if (productName) {
-                                    // 取前2-4个中文字符作为品牌名
-                                    const chineseMatch = productName.match(/^[一-鿿]{2,4}/);
-                                    if (chineseMatch) { brandName = chineseMatch[0]; break; }
-                                }
-                            }
-                        }
-                    }
                     const result = await executeBatchSingleSheetImport(sd.name, supplierId, brandName);
+                    window.pendingBrandName = null;
                     if (result) {
                         totalAdded += result.added || 0;
                         totalUpdated += result.updated || 0;
@@ -6279,6 +6293,20 @@
             const mappings = currentMappings;
             let added = 0, updated = 0;
 
+            // Build brand candidates for per-row matching (only when no fixed brandName)
+            let brandCandidates = null;
+            if (!brandName) {
+                const nameField = resolveFieldName('商品名称');
+                const nameColEntry = Object.entries(mappings).find(([idx, field]) => field === nameField);
+                if (nameColEntry) {
+                    const colIdx = parseInt(nameColEntry[0]);
+                    const fakeRows = rows.map(r => [String(r[colIdx] || '').trim()]).filter(r => r[0].length >= 2);
+                    if (fakeRows.length >= 2) {
+                        brandCandidates = extractBrandFromProductNames(['商品名称'], fakeRows);
+                    }
+                }
+            }
+
             for (let ri = 0; ri < rows.length; ri++) {
                 const row = rows[ri];
                 const rowData = {};
@@ -6309,8 +6337,13 @@
                 rowData.source = rowData.source || '批量导入';
                 rowData.createdAt = rowData.createdAt || new Date().toISOString().split('T')[0];
 
-                // Apply brand
-                if (brandName && !rowData.brand) rowData.brand = brandName;
+                // 品牌设置优先级：固定品牌名 > 字段映射 > 逐行商品名匹配
+                if (brandName && !rowData.brand) {
+                    rowData.brand = brandName;
+                } else if (!rowData.brand && brandCandidates) {
+                    const rowBrand = matchBrandForName(rowData.name, brandCandidates);
+                    if (rowBrand) rowData.brand = rowBrand;
+                }
 
                 // Skip empty rows
                 if (!rowData.name && !sku && !barcode) continue;
@@ -6895,11 +6928,43 @@
             }
         }
 
-        // 从商品名称分析提取品牌名（分析多个商品名的共同前缀）
-        function extractBrandFromProductNames(headers, dataRows) {
-            // 找产品名称列：优先字段映射，其次header关键词
-            let nameColIndex = -1;
+        // 构建品牌词典：现有商品品牌 + 常见行业品牌种子
+        function buildBrandDictionary() {
+            const brands = new Set();
+            const seedBrands = [
+                '五芳斋', '三只松鼠', '良品铺子', '百草味', '来伊份', '洽洽',
+                '伊利', '蒙牛', '光明', '君乐宝', '安慕希', '纯甄',
+                '康师傅', '统一', '今麦郎', '白象',
+                '旺旺', '徐福记', '盼盼', '达利园', '好丽友',
+                '雀巢', '德芙', '费列罗', '好时',
+                '中粮', '首农', '北大荒',
+                '鲁花', '金龙鱼', '福临门', '多力',
+                '海天', '李锦记', '厨邦', '太太乐',
+                '五粮液', '茅台', '洋河', '剑南春', '泸州老窖', '古井贡酒',
+                '张裕', '长城', '王朝',
+                '立白', '蓝月亮', '滴露', '威露士',
+                '维达', '清风', '心相印', '洁柔',
+                '苏泊尔', '九阳', '美的', '格力',
+                '华为', '小米',
+                '稻香村', '杏花楼', '广州酒家', '陶陶居',
+                '知味观', '楼外楼', '绿柳居',
+                '高邮', '永康杯业',
+            ];
+            seedBrands.forEach(b => brands.add(b));
+            try {
+                if (typeof products !== 'undefined' && Array.isArray(products)) {
+                    products.forEach(p => {
+                        if (p.brand && p.brand.trim()) brands.add(p.brand.trim());
+                    });
+                }
+            } catch (e) {}
+            return [...brands].sort((a, b) => b.length - a.length);
+        }
 
+        // 从商品名称分析提取品牌名（品牌词典匹配 + 表内共同前缀提取）
+        function extractBrandFromProductNames(headers, dataRows) {
+            // 找产品名称列
+            let nameColIndex = -1;
             const nameSelectEl = document.querySelector('.sheet-field-select[data-header]');
             if (nameSelectEl) {
                 document.querySelectorAll('.sheet-field-select').forEach(select => {
@@ -6908,7 +6973,6 @@
                     }
                 });
             }
-
             if (nameColIndex === -1) {
                 const nameKeywords = ['产品名称', '商品名称', '品名', '名称', '货品名称', '产品名', '货名'];
                 headers.forEach((h, idx) => {
@@ -6918,77 +6982,86 @@
                     }
                 });
             }
-
             if (nameColIndex === -1) return null;
 
-            // 常见无意义词/后缀，排除
-            const stopWords = ['礼盒', '套装', '组合', '精选', '有机', '进口', '原味', '经典',
-                '包装', '礼袋', '手提', '大礼包', '特级', '一级', '甄选', '尊享', '豪华',
-                '年货', '春节', '中秋', '端午', '福利', '团购', '员工', '企业', '定制',
-                '新款', '爆款', '热销', '推荐', '新品', '限量', '促销', '特价', '批发',
-                '克', '千克', '公斤', '斤', '毫升', '升', '盒', '袋', '箱', '个', '包', '罐'];
+            const names = dataRows.map(r => String(r[nameColIndex] || '').trim()).filter(n => n.length >= 2);
+            if (names.length === 0) return null;
 
-            // 分割符号
-            const separators = ['-', '—', ' ', '·', '|', '/', '（', '(', '【', '['];
-
-            // 统计每个候选品牌的频率
             const candidates = {};
 
-            dataRows.forEach(row => {
-                const rawName = String(row[nameColIndex] || '').trim();
-                if (!rawName || rawName.length < 2) return;
+            // 策略1：品牌词典匹配（已知品牌作为子串出现在商品名中）
+            const brandDict = buildBrandDictionary();
+            for (const name of names) {
+                for (const brand of brandDict) {
+                    if (name.includes(brand)) {
+                        candidates[brand] = (candidates[brand] || 0) + 1;
+                    }
+                }
+            }
 
-                // 提取品牌前缀（分隔符之前的部分）
-                let brandPart = rawName;
+            // 策略2：表内共同前缀提取
+            // 取分隔符之前的部分，排序后比较相邻项，找最长公共前缀
+            const separators = ['-', '—', '·', '|', '/', '（', '(', '【', '[', ' '];
+            const nonBrandWords = ['端午', '中秋', '春节', '年货', '福利', '员工', '企业', '团购',
+                '定制', '新款', '爆款', '热销', '推荐', '新品', '限量', '促销', '特价', '批发',
+                '精选', '有机', '进口', '原味', '经典', '特级', '一级', '甄选', '尊享', '豪华',
+                '礼盒', '套装', '组合', '大礼包', '手提', '礼袋', '包装',
+                '一', '二', '三', 'A', 'B', 'C', 'D'];
+
+            const prefixes = names.map(name => {
+                let part = name;
                 for (const sep of separators) {
-                    const idx = brandPart.indexOf(sep);
-                    if (idx >= 2) {
-                        brandPart = brandPart.substring(0, idx).trim();
-                        break;
+                    const idx = part.indexOf(sep);
+                    if (idx >= 2) { part = part.substring(0, idx); break; }
+                }
+                return part;
+            }).filter(p => p.length >= 2);
+
+            if (prefixes.length >= 2) {
+                const sorted = [...new Set(prefixes)].sort();
+                for (let i = 0; i < sorted.length - 1; i++) {
+                    const a = sorted[i], b = sorted[i + 1];
+                    let j = 0;
+                    while (j < a.length && j < b.length && a[j] === b[j]) j++;
+                    const lcp = a.substring(0, j);
+                    if (lcp.length >= 2 && !nonBrandWords.includes(lcp)) {
+                        candidates[lcp] = (candidates[lcp] || 0) + 1;
                     }
                 }
-
-                // 移除末尾的停用词
-                let cleaned = brandPart;
-                for (const sw of stopWords) {
-                    if (cleaned.endsWith(sw) && cleaned.length > sw.length + 1) {
-                        cleaned = cleaned.substring(0, cleaned.length - sw.length);
+                // 同步计数：用每个 LCP 回检所有商品名，看实际命中几个
+                for (const lcp of Object.keys(candidates)) {
+                    let hitCount = 0;
+                    for (const name of names) {
+                        if (name.includes(lcp)) hitCount++;
                     }
+                    candidates[lcp] = hitCount;
                 }
+            }
 
-                if (cleaned.length >= 2) {
-                    candidates[cleaned] = (candidates[cleaned] || 0) + 1;
-                }
-            });
-
-            // 过滤：至少出现在2个商品中
-            const sorted = Object.entries(candidates)
+            // 过滤：至少出现在2个商品中，按频率和长度排序
+            const sortedCandidates = Object.entries(candidates)
                 .filter(([_, count]) => count >= 2)
-                .sort((a, b) => b[1] - a[1]);
+                .sort((a, b) => b[1] - a[1] || b[0].length - a[0].length);
 
-            if (sorted.length === 0) return [];
+            if (sortedCandidates.length === 0) return [];
 
-            // 返回前5个候选（去重：更长的如果包含更短的且频率相同，保留更长的）
+            // 去重：短的是长的子串且出现次数相同 → 保留长的
             const result = [];
-            for (const [brand, count] of sorted) {
+            for (const [brand, count] of sortedCandidates) {
                 if (result.length >= 5) break;
-                // 检查是否被已有结果包含
-                const isSubset = result.some(r => r.includes(brand) && r !== brand);
-                if (!isSubset) {
-                    result.push(brand);
-                }
+                const isSubset = result.some(r => r.includes(brand));
+                if (!isSubset) result.push(brand);
             }
             return result;
         }
 
-        // 根据品牌候选列表，从单个商品名称中匹配品牌
+        // 根据品牌候选列表，从单个商品名称中匹配品牌（子串匹配，不限开头）
         function matchBrandForName(name, candidates) {
             if (!name || !candidates || candidates.length === 0) return null;
             const cleaned = name.trim();
-            // 按长度降序排列，优先匹配更长的品牌名（如"伊利纯牛奶"优先于"伊利"）
             const sorted = [...candidates].sort((a, b) => b.length - a.length);
             for (const brand of sorted) {
-                if (cleaned.startsWith(brand) && cleaned.length > brand.length) {
+                if (cleaned.includes(brand) && cleaned.length > brand.length) {
                     return brand;
                 }
             }
@@ -7329,6 +7402,16 @@
                 // 无效的SKU值（表示没有值）
                 const invalidSkuValues = ['/', '-', '无', 'NA', 'N/A', 'NULL', 'null', ''];
 
+                // Build brand candidates for per-row matching (only when no fixed brandName)
+                let brandCandidates = null;
+                if (!brandName && fieldToIndex['商品名称'] !== undefined) {
+                    const nameIdx = fieldToIndex['商品名称'];
+                    const fakeRows = rows.map(r => [String(r[nameIdx] || '').trim()]).filter(r => r[0].length >= 2);
+                    if (fakeRows.length >= 2) {
+                        brandCandidates = extractBrandFromProductNames(['商品名称'], fakeRows);
+                    }
+                }
+
                 for (let rowIndex = 0; rowIndex < rows.length; rowIndex++) {
                     const row = rows[rowIndex];
                     let sku = fieldToIndex['供应商SKU'] !== undefined ? String(row[fieldToIndex['供应商SKU']] || '').trim() : '';
@@ -7369,9 +7452,12 @@
                             }
                         }
 
-                        // 应用品牌名（用户已确认选择，覆盖已有品牌）
+                        // 品牌设置优先级：固定品牌名 > 字段映射 > 逐行商品名匹配
                         if (brandName) {
                             existingProduct.brand = brandName;
+                        } else if (!existingProduct.brand && brandCandidates) {
+                            const rowBrand = matchBrandForName(existingProduct.name || '', brandCandidates);
+                            if (rowBrand) existingProduct.brand = rowBrand;
                         }
 
                         existingProduct.updatedAt = new Date().toISOString().split('T')[0];
@@ -7388,7 +7474,7 @@
                             supplierId: supplierId,
                             sku: sku,
                             name: fieldToIndex['商品名称'] !== undefined ? row[fieldToIndex['商品名称']] : '',
-                            brand: brandName || '', // 应用品牌名
+                            brand: brandName || (brandCandidates && fieldToIndex['商品名称'] !== undefined ? (matchBrandForName(String(row[fieldToIndex['商品名称']] || ''), brandCandidates) || '') : ''),
                             category: '食品礼盒',
                             unit: '盒',
                             status: '待审核',
