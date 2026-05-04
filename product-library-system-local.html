@@ -5678,7 +5678,7 @@
                 }
                 if (score > bestScore) { bestScore = score; bestRow = r; }
             }
-            return bestScore >= 5 ? bestRow : 0;
+            return bestScore >= 3 ? bestRow : 0;
         }
 
         // 用全局模板匹配表头（三阶段：精确 → 子串包含 → 关键词）
@@ -5718,13 +5718,11 @@
             for (const name of sheetNames) {
                 const sheet = pendingWorkbookData.workbook.Sheets[name];
                 const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                // 自动检测表头行
                 const headerIdx = detectBestHeaderRow(jsonData, normTemplate);
                 const headers = (jsonData[headerIdx] || []).map(h => String(h || ''));
-                const dataRows = jsonData.slice(headerIdx + 1).filter(r => r && r.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
-                const sampleRows = dataRows.slice(0, 3);
-                headerRows[name] = headerIdx + 1; // 1-based
-                sheetsData.push({ name, headers, sampleRows, dataRows, rowCount: dataRows.length, allRows: jsonData });
+                const sampleRows = jsonData.slice(headerIdx + 1, headerIdx + 4).filter(r => r && r.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
+                headerRows[name] = headerIdx + 1;
+                sheetsData.push({ name, headers, sampleRows, allRows: jsonData, rowCount: pendingWorkbookData.sheets[name].rowCount - headerIdx - 1 });
             }
 
             // 用汇总模板匹配字段
@@ -6152,12 +6150,247 @@
             executeBatchImport();
         }
 
-        // 提取单个sheet的ExcelJS浮动图片（复用 _exceljsPromise）
+        // Web Worker 解析 Excel（将重型 XLSX 解析移到独立线程，避免主线程阻塞/OOM 崩溃）
+        let _parseWorkerBlobUrl = null;
+        function createParseWorker() {
+            if (_parseWorkerBlobUrl) URL.revokeObjectURL(_parseWorkerBlobUrl);
+            const workerScript = `
+var XLSX = null;
+self.onmessage = function(e) {
+    var msg = e.data;
+    if (msg.type === 'parse') {
+        try {
+            if (!XLSX) {
+                importScripts('https://cdn.sheetjs.com/xlsx-0.20.3/package/dist/xlsx.full.min.js');
+            }
+            var data = new Uint8Array(msg.arrayBuffer);
+            self.postMessage({ type: 'progress', message: '正在解析Excel文件...', percent: 10 });
+            var workbook = XLSX.read(data, { type: 'array' });
+            var sheetNames = msg.sheetNames;
+            var headerRows = msg.headerRows || {};
+            var total = sheetNames.length;
+            for (var i = 0; i < total; i++) {
+                var name = sheetNames[i];
+                var hr = headerRows[name] || 1;
+                self.postMessage({
+                    type: 'progress',
+                    message: '提取: ' + name + ' (' + (i + 1) + '/' + total + ')',
+                    percent: 30 + Math.round((i / total) * 65),
+                    current: i + 1,
+                    total: total
+                });
+                var sheet = workbook.Sheets[name];
+                var headers = [];
+                var rows = [];
+                var rowIdxMap = {};
+                if (sheet) {
+                    var jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+                    headers = jsonData[hr - 1] || [];
+                    for (var r = hr; r < jsonData.length; r++) {
+                        var row = jsonData[r];
+                        var hasVal = false;
+                        if (row) {
+                            for (var c = 0; c < row.length; c++) {
+                                if (row[c] !== null && row[c] !== undefined && String(row[c]).trim() !== '') {
+                                    hasVal = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (hasVal) {
+                            rowIdxMap[rows.length] = r + 1;
+                            rows.push(row);
+                        }
+                    }
+                    // 释放 sheet 数据引用，减少 Worker 内存
+                    jsonData = null;
+                }
+                // 逐 sheet 发送，不在 Worker 里累积大对象
+                self.postMessage({
+                    type: 'sheet',
+                    sheetName: name,
+                    headers: headers,
+                    rows: rows,
+                    rowIndexToExcelRow: rowIdxMap
+                });
+            }
+            self.postMessage({ type: 'complete', total: total });
+        } catch (err) {
+            self.postMessage({ type: 'error', message: err.message || '解析失败', stack: err.stack });
+        }
+    }
+};`;
+            const blob = new Blob([workerScript], { type: 'application/javascript' });
+            _parseWorkerBlobUrl = URL.createObjectURL(blob);
+            return new Worker(_parseWorkerBlobUrl);
+        }
+
+        // 延迟加载 ExcelJS workbook（仅首次图片提取时加载 178MB 级别的大文件）
+        function ensureExcelJS() {
+            if (!pendingWorkbookData) return Promise.reject('no pending data');
+            if (!pendingWorkbookData._exceljsPromise) {
+                pendingWorkbookData._exceljsPromise = (async () => {
+                    const wb = new ExcelJS.Workbook();
+                    await wb.xlsx.load(pendingWorkbookData.arrayBuffer);
+                    return wb;
+                })();
+            }
+            return pendingWorkbookData._exceljsPromise;
+        }
+        function ensureJSZip() {
+            if (!pendingWorkbookData) return Promise.reject('no pending data');
+            if (!pendingWorkbookData._zipPromise) {
+                pendingWorkbookData._zipPromise = JSZip.loadAsync(pendingWorkbookData.arrayBuffer);
+            }
+            return pendingWorkbookData._zipPromise;
+        }
+
+        // JSZip + DOMParser 逐 sheet 解析：SST 只加载一次，sheet XML 逐个解析即释放
+        async function parseSheetsOneByOne(arrayBuffer, sheetNames, headerRows, onProgress) {
+            const zip = await ensureJSZipInternal(arrayBuffer);
+            const total = sheetNames.length;
+            const sheets = {};
+
+            // 解析 workbook.xml 获取 sheet 名 → 文件路径映射
+            const wbXmlStr = await zip.file('xl/workbook.xml').async('text');
+            const wbXml = new DOMParser().parseFromString(wbXmlStr, 'text/xml');
+            const relsXmlStr = await zip.file('xl/_rels/workbook.xml.rels').async('text');
+            const relsXml = new DOMParser().parseFromString(relsXmlStr, 'text/xml');
+            const sheetPathMap = {};
+            wbXml.querySelectorAll('sheet').forEach(s => {
+                const name = s.getAttribute('name');
+                const rId = s.getAttribute('r:id') || s.getAttribute('id');
+                relsXml.querySelectorAll('Relationship').forEach(rel => {
+                    if (rel.getAttribute('Id') === rId) {
+                        sheetPathMap[name] = 'xl/' + rel.getAttribute('Target');
+                    }
+                });
+            });
+
+            // 解析共享字符串表（SST），全 sheets 共用，只加载一次
+            let sst = [];
+            try {
+                const sstStr = await zip.file('xl/sharedStrings.xml').async('text');
+                if (sstStr) {
+                    const sstXml = new DOMParser().parseFromString(sstStr, 'text/xml');
+                    sstXml.querySelectorAll('si').forEach(si => {
+                        const t = si.querySelector('t');
+                        sst.push(t ? (t.textContent || '') : '');
+                    });
+                }
+            } catch (e) {}
+            // 释放 SST DOM
+            const sstLen = sst.length;
+
+            // 列字母 → 数字
+            function colLetterToNum(col) {
+                let n = 0;
+                for (let i = 0; i < col.length; i++) n = n * 26 + (col.charCodeAt(i) - 64);
+                return n;
+            }
+
+            for (let i = 0; i < total; i++) {
+                const name = sheetNames[i];
+                const hr = headerRows[name] || 1;
+
+                if (onProgress) onProgress({
+                    type: 'progress',
+                    message: '解析: ' + name + ' (' + (i + 1) + '/' + total + ')',
+                    percent: 10 + Math.round((i / total) * 85),
+                    current: i + 1, total: total
+                });
+
+                const path = sheetPathMap[name];
+                if (!path) {
+                    sheets[name] = { headers: [], rows: [], rowIndexToExcelRow: {} };
+                    continue;
+                }
+
+                try {
+                    const xmlStr = await zip.file(path).async('text');
+                    const xml = new DOMParser().parseFromString(xmlStr, 'text/xml');
+
+                    // 提取所有行
+                    const rowEls = xml.querySelectorAll('row');
+                    if (rowEls.length === 0) {
+                        sheets[name] = { headers: [], rows: [], rowIndexToExcelRow: {} };
+                        continue;
+                    }
+
+                    // 第一遍：确定最大列数
+                    let maxCol = 0;
+                    const rowMap = {};
+                    rowEls.forEach(row => {
+                        const rNum = parseInt(row.getAttribute('r'));
+                        const cells = row.querySelectorAll('c');
+                        const cellMap = {};
+                        cells.forEach(c => {
+                            const ref = c.getAttribute('r');
+                            const colL = ref.replace(/\d/g, '');
+                            const colNum = colLetterToNum(colL);
+                            if (colNum > maxCol) maxCol = colNum;
+                            const t = c.getAttribute('t');
+                            const vEl = c.querySelector('v');
+                            let val = '';
+                            if (t === 's' && vEl) {
+                                const idx = parseInt(vEl.textContent);
+                                val = (idx < sstLen) ? (sst[idx] || '') : '';
+                            } else if (t === 'inlineStr') {
+                                const isEl = c.querySelector('is');
+                                const tt = isEl ? isEl.querySelector('t') : null;
+                                val = tt ? (tt.textContent || '') : '';
+                            } else if (vEl) {
+                                val = vEl.textContent || '';
+                            }
+                            cellMap[colNum - 1] = val;
+                        });
+                        rowMap[rNum] = cellMap;
+                    });
+
+                    // 构建二维数组
+                    const maxRow = Math.max(...Object.keys(rowMap).map(Number), 1);
+                    const jsonData = [];
+                    for (let r = 1; r <= maxRow; r++) {
+                        const cm = rowMap[r] || {};
+                        const arr = [];
+                        for (let c = 0; c < maxCol; c++) arr.push(cm[c] !== undefined ? cm[c] : '');
+                        jsonData.push(arr);
+                    }
+
+                    // 提取表头和有效数据行
+                    const headers = (jsonData[hr - 1] || []).map(c => String(c || ''));
+                    const rows = [];
+                    const rowIdxMap = {};
+                    for (let r = hr; r < jsonData.length; r++) {
+                        const row = jsonData[r];
+                        if (row && row.some(c => c !== null && c !== undefined && String(c).trim() !== '')) {
+                            rowIdxMap[rows.length] = r + 1;
+                            rows.push(row);
+                        }
+                    }
+                    sheets[name] = { headers, rows, rowIndexToExcelRow: rowIdxMap };
+                } catch (e) {
+                    sheets[name] = { headers: [], rows: [], rowIndexToExcelRow: {} };
+                }
+
+                // 出让主线程，更新进度条
+                await new Promise(r => setTimeout(r, 10));
+            }
+
+            return sheets;
+        }
+
+        // 内部 JSZip 加载（不依赖 pendingWorkbookData）
+        function ensureJSZipInternal(arrayBuffer) {
+            return JSZip.loadAsync(arrayBuffer);
+        }
+
+        // 提取单个sheet的ExcelJS浮动图片（延迟加载 ExcelJS）
         async function extractExcelJSImages(sheetName) {
             const rowImages = {};
-            if (!pendingWorkbookData || !pendingWorkbookData._exceljsPromise) return rowImages;
+            if (!pendingWorkbookData) return rowImages;
             try {
-                const wb = await pendingWorkbookData._exceljsPromise;
+                const wb = await ensureExcelJS();
                 const ws = wb.getWorksheet(sheetName);
                 if (!ws) return rowImages;
                 let images = ws._images || [];
@@ -6223,22 +6456,45 @@
             let totalAdded = 0, totalUpdated = 0, totalErrors = 0;
             const importedSheets = [];
 
-            for (const sd of sheetsData) {
+            // Web Worker 后台解析：将重型 XLSX 解析移到独立线程
+            showImportOverlay('正在后台解析Excel文件...', 0);
+            await new Promise(r => setTimeout(r, 30));
+
+            const sheetNames = sheetsData.map(sd => sd.name);
+            const headerRows = {};
+            sheetsData.forEach(sd => {
+                headerRows[sd.name] = (window._batchWizard && window._batchWizard.headerRows && window._batchWizard.headerRows[sd.name]) || 1;
+            });
+
+            const workerSheets = await parseSheetsOneByOne(
+                pendingWorkbookData.arrayBuffer,
+                sheetNames,
+                headerRows,
+                (msg) => showImportOverlay(msg.message, msg.percent)
+            );
+
+            const totalSheets = sheetsData.length;
+
+            for (let si = 0; si < sheetsData.length; si++) {
+                const sd = sheetsData[si];
+                const basePct = Math.round((si / totalSheets) * 100);
                 try {
-                    showImportOverlay(`正在导入 ${sd.name}...`, Math.round((importedSheets.length / sheetsData.length) * 100));
-                    const sheet = pendingWorkbookData.workbook.Sheets[sd.name];
-                    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                    const headers = sd.headers;
-                    const rows = sd.dataRows;
-                    const headerRow = (window._batchWizard && window._batchWizard.headerRows && window._batchWizard.headerRows[sd.name]) || 1;
-                    const rowIndexToExcelRow = {};
-                    rows.forEach((r, i) => { rowIndexToExcelRow[i] = headerRow + 1 + i; });
+                    const ws = workerSheets[sd.name];
+                    const headers = ws.headers;
+                    const rows = ws.rows;
+                    const rowIndexToExcelRow = ws.rowIndexToExcelRow;
+                    const headerRow = headerRows[sd.name] || 1;
 
-                    // 提取图片：ExcelJS 浮动图 + DISPIMG 嵌入图
+                    // 步骤2/3：提取图片（首次 sheet 触发 ExcelJS/JSZip 加载，后续复用缓存）
+                    showImportOverlay(`${sd.name} — 提取图片...`, basePct + Math.round(30 / totalSheets));
+                    await new Promise(r => setTimeout(r, 30));
                     const rowImages = await extractExcelJSImages(sd.name);
-                    try { await extractDispimgImages(pendingWorkbookData.arrayBuffer, sd.name, jsonData, headerRow, rowImages); } catch (e) {}
+                    try { await extractDispimgImages(pendingWorkbookData.arrayBuffer, sd.name, rows, headerRow, rowImages); } catch (e) {}
 
-                    window.excelData = { allRows: rows, headerRow, headers, rows, rowIndexToExcelRow, rowImages, sheetName: sd.name };
+                    // 步骤3/3：导入数据行
+                    showImportOverlay(`${sd.name} — 导入 ${rows.length} 行数据...`, basePct + Math.round(60 / totalSheets));
+                    await new Promise(r => setTimeout(r, 30));
+                    window.excelData = { allRows: [headers, ...rows], headerRow, headers, rows, rowIndexToExcelRow, rowImages, sheetName: sd.name };
 
                     // Apply mappings
                     const sheetMapping = mappings[sd.name] || {};
@@ -6401,39 +6657,25 @@
                     updateImportOverlay('解析Excel结构...', 60);
                     const arrayBuffer = e.target.result;
 
-                    // 使用 SheetJS 读取数据
+                    // SheetJS 轻量读取：仅解析前20行，减少大文件内存占用
                     const data = new Uint8Array(arrayBuffer);
-                    const workbook = XLSX.read(data, { type: 'array' });
+                    const workbook = XLSX.read(data, { type: 'array', sheetRows: 20 });
 
                     updateImportOverlay('分析工作表...', 80);
 
                     // 检查是否有多个sheet
                     if (workbook.SheetNames.length > 1) {
-                        // 存储数据供后续使用
-                        pendingWorkbookData = {
-                            workbook,
-                            arrayBuffer,
-                            sheets: {}
-                        };
-                        // 预加载 ExcelJS workbook 和 JSZip，避免每次导入 sheet 时重复解析整个文件
-                        pendingWorkbookData._exceljsPromise = (async () => {
-                            const wb = new ExcelJS.Workbook();
-                            await wb.xlsx.load(arrayBuffer);
-                            return wb;
-                        })();
-                        pendingWorkbookData._zipPromise = JSZip.loadAsync(arrayBuffer);
+                        // 存储数据供后续使用（图片提取延迟到实际导入时）
+                        pendingWorkbookData = { workbook, arrayBuffer, sheets: {} };
 
-                        // 获取每个sheet的基本信息
+                        // 获取每个sheet的基本信息（仅解析第一行拿表头，不完整解析）
                         workbook.SheetNames.forEach(name => {
                             const sheet = workbook.Sheets[name];
-                            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-                            const rowCount = jsonData.length;
-                            const colCount = jsonData[0] ? jsonData[0].length : 0;
+                            const range = XLSX.utils.decode_range(sheet['!ref'] || 'A1');
                             pendingWorkbookData.sheets[name] = {
-                                rowCount,
-                                colCount,
-                                headers: jsonData[0] || [],
-                                imported: false // 标记是否已导入
+                                rowCount: range.e.r - range.s.r + 1,
+                                colCount: range.e.c - range.s.c + 1,
+                                imported: false
                             };
                         });
 
@@ -6689,11 +6931,15 @@
                 return;
             }
 
-            // 读取sheet数据
-            const sheet = pendingWorkbookData.workbook.Sheets[sheetName];
-            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
-            const headers = jsonData[0] || [];
-            const dataRows = jsonData.slice(1).filter(row => row && row.some(cell => cell !== undefined && cell !== ''));
+            // Worker 后台解析完整数据
+            const workerSheets = await parseSheetsOneByOne(
+                pendingWorkbookData.arrayBuffer,
+                [sheetName],
+                { [sheetName]: 1 }
+            );
+            const ws = workerSheets[sheetName];
+            const headers = ws.headers;
+            const dataRows = ws.rows;
 
             // 存储到window供品牌识别函数使用
             window.pendingDataRows = dataRows;
@@ -7229,7 +7475,14 @@
             // 从弹窗获取字段映射（在DOM移除前捕获）
             const fieldToIndex = {};
             const headerToField = {};  // {Excel列名: 系统字段} 用于自动积累模板
-            const headers = pendingWorkbookData.sheets[sheetName].headers;
+            // Worker 后台解析完整数据（避免主线程阻塞）
+            const workerSheets = await parseSheetsOneByOne(
+                pendingWorkbookData.arrayBuffer,
+                [sheetName],
+                { [sheetName]: 1 }
+            );
+            const ws = workerSheets[sheetName];
+            const headers = ws.headers;
             document.querySelectorAll('.sheet-field-select').forEach(select => {
                 const index = parseInt(select.dataset.index);
                 const field = select.value;
@@ -7278,23 +7531,13 @@
             };
 
             try {
-                updateImportOverlay('读取工作表数据...', 20);
+                updateImportOverlay('工作表数据已就绪...', 20);
 
-                const sheet = pendingWorkbookData.workbook.Sheets[sheetName];
-                const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                const rows = ws.rows;
+                const rowIndexToExcelRow = ws.rowIndexToExcelRow;
 
-                if (jsonData.length < 2) {
+                if (rows.length === 0) {
                     throw new Error('工作表数据不足');
-                }
-
-                const rows = [];
-                const rowIndexToExcelRow = [];
-
-                for (let i = 1; i < jsonData.length; i++) {
-                    if (jsonData[i] && jsonData[i].some(cell => cell !== undefined && cell !== '')) {
-                        rows.push(jsonData[i]);
-                        rowIndexToExcelRow.push(i + 1);
-                    }
                 }
 
                 updateImportOverlay('提取图片...', 40);
@@ -7303,8 +7546,8 @@
                 const rowImages = {};
                 try {
                     let exceljsWorkbook;
-                    if (pendingWorkbookData && pendingWorkbookData._exceljsPromise) {
-                        exceljsWorkbook = await pendingWorkbookData._exceljsPromise;
+                    if (pendingWorkbookData) {
+                        exceljsWorkbook = await ensureExcelJS();
                     } else {
                         exceljsWorkbook = new ExcelJS.Workbook();
                         await exceljsWorkbook.xlsx.load(pendingWorkbookData.arrayBuffer);
@@ -7573,32 +7816,38 @@
 
             try {
                 let exceljsWorkbook;
-                if (pendingWorkbookData && pendingWorkbookData._exceljsPromise) {
-                    exceljsWorkbook = await pendingWorkbookData._exceljsPromise;
+                if (pendingWorkbookData) {
+                    exceljsWorkbook = await ensureExcelJS();
                 } else {
                     exceljsWorkbook = new ExcelJS.Workbook();
                     await exceljsWorkbook.xlsx.load(pendingWorkbookData.arrayBuffer);
                 }
 
+                // Worker 后台解析所有选中 sheet
+                const hrMap = {};
+                selectedSheets.forEach(n => { hrMap[n] = 1; });
+                const workerSheets = await parseSheetsOneByOne(
+                    pendingWorkbookData.arrayBuffer,
+                    selectedSheets,
+                    hrMap
+                );
+
                 for (const sheetName of selectedSheets) {
-                    const sheet = pendingWorkbookData.workbook.Sheets[sheetName];
-                    const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                    const ws = workerSheets[sheetName];
 
                     console.log(`\n=== 处理Sheet: ${sheetName} ===`);
 
-                    if (!headers && jsonData.length > 0) {
-                        headers = jsonData[0];
+                    if (!headers && ws.headers.length > 0) {
+                        headers = ws.headers;
                         allRows = [headers];
                     }
 
-                    // 跳过表头行（从第2行开始）
-                    for (let i = 1; i < jsonData.length; i++) {
-                        if (jsonData[i] && jsonData[i].some(cell => cell !== undefined && cell !== '')) {
-                            allRows.push(jsonData[i]);
-                            rowIndexToExcelRow[currentRowIndex] = i + 1;
-                            rowIndexToSheet[currentRowIndex] = sheetName;
-                            currentRowIndex++;
-                        }
+                    // 合并数据行，跨 sheet 统一行号
+                    for (let i = 0; i < ws.rows.length; i++) {
+                        allRows.push(ws.rows[i]);
+                        rowIndexToExcelRow[currentRowIndex] = ws.rowIndexToExcelRow[i];
+                        rowIndexToSheet[currentRowIndex] = sheetName;
+                        currentRowIndex++;
                     }
 
                     // 提取图片 - 多种方式检测
@@ -7714,33 +7963,32 @@
         }
 
         async function processExcelSheet(workbook, sheetName, arrayBuffer) {
-            const sheet = workbook.Sheets[sheetName];
-            const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+            // 上传阶段仅解析了前20行，Worker 后台解析完整数据
+            showImportOverlay(`正在解析 ${sheetName || '工作表'}...`, 10);
+            await new Promise(r => setTimeout(r, 30));
 
-            if (jsonData.length < 2) {
+            const ab = (pendingWorkbookData && pendingWorkbookData.arrayBuffer) || arrayBuffer;
+            if (!ab) {
+                alert('文件数据已丢失，请重新上传');
+                return;
+            }
+
+            const workerSheets = await parseSheetsOneByOne(ab, [sheetName], { [sheetName]: 1 });
+            const ws = workerSheets[sheetName];
+
+            if (!ws.rows.length) {
                 alert('Excel 文件数据不足');
                 return;
             }
 
-            showImportOverlay(`正在加载 ${sheetName || '工作表'}...`, 10);
-
-            // 创建行号映射：过滤后的行索引 -> 原始 Excel 行号
-            const filteredRows = [];
-            const rowIndexToExcelRow = []; // 映射：数据行索引 -> Excel行号
-            for (let i = 1; i < jsonData.length; i++) {
-                const row = jsonData[i];
-                if (row.some(cell => cell !== undefined && cell !== '')) {
-                    filteredRows.push(row);
-                    rowIndexToExcelRow.push(i + 1); // Excel 行号 (1-based)
-                }
-            }
+            showImportOverlay(`正在加载 ${sheetName || '工作表'}...`, 30);
 
             window.excelData = {
-                allRows: jsonData,  // 存储所有行
-                headerRow: 1,       // 默认表头在第1行
-                headers: jsonData[0],
-                rows: filteredRows,
-                rowIndexToExcelRow: rowIndexToExcelRow, // 新增：行号映射
+                allRows: [ws.headers, ...ws.rows],
+                headerRow: 1,
+                headers: ws.headers,
+                rows: ws.rows,
+                rowIndexToExcelRow: ws.rowIndexToExcelRow,
                 rowImages: {},
                 sheetName: sheetName
             };
@@ -7756,8 +8004,8 @@
             try {
                 updateImportOverlay('正在解析Excel图片...', 30);
                 let exceljsWorkbook;
-                if (pendingWorkbookData && pendingWorkbookData._exceljsPromise) {
-                    exceljsWorkbook = await pendingWorkbookData._exceljsPromise;
+                if (pendingWorkbookData) {
+                    exceljsWorkbook = await ensureExcelJS();
                 } else {
                     exceljsWorkbook = new ExcelJS.Workbook();
                     await exceljsWorkbook.xlsx.load(arrayBuffer);
@@ -8128,8 +8376,8 @@
         async function extractDispimgImages(arrayBuffer, sheetName, jsonData, headerRow, rowImages) {
             // 1. 打开 XLSX（优先使用缓存）
             let zip;
-            if (pendingWorkbookData && pendingWorkbookData._zipPromise) {
-                zip = await pendingWorkbookData._zipPromise;
+            if (pendingWorkbookData) {
+                zip = await ensureJSZip();
             } else {
                 zip = await JSZip.loadAsync(arrayBuffer);
             }

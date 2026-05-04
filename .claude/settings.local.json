@@ -2,7 +2,10 @@
   "permissions": {
     "allow": [
       "Bash(py *)",
-      "Bash(/c/Program Files/nodejs/node *)"
+      "Bash(/c/Program Files/nodejs/node *)",
+      "Bash(node -e ' *)",
+      "Bash(node --check ./_check_js.js)",
+      "Bash(rm ./_check_js.js)"
     ]
   }
 }
