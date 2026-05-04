@@ -7099,53 +7099,9 @@
             }
         }
 
-        // 从sheet名提取品牌名：词典精准匹配优先，匹配不到则取分隔符前段+去后缀
+        // 从sheet名提取品牌名：直接用sheet原名
         function extractBrandFromSheetName(sheetName) {
-            if (!sheetName) return '';
-            const brandDict = buildBrandDictionary();
-            const separators = ['+', '_', '-', ' ', '｜', '|', '、', '，', ',', '/', '\\'];
-
-            // 策略1：按分隔符拆成片段，逐段用品牌词典匹配
-            for (const sep of separators) {
-                if (sheetName.includes(sep)) {
-                    const parts = sheetName.split(sep).map(p => p.trim()).filter(Boolean);
-                    for (const part of parts) {
-                        if (part.length < 2) continue;
-                        for (const brand of brandDict) {
-                            if (part === brand || part.includes(brand)) return brand;
-                        }
-                    }
-                }
-            }
-
-            // 策略2：sheet名整体与品牌词典做子串匹配
-            for (const brand of brandDict) {
-                if (sheetName.includes(brand)) return brand;
-            }
-
-            // 策略3（兜底）：取第一个分隔符之前的部分，去数字和后缀
-            let brandName = sheetName;
-            for (const sep of separators) {
-                if (brandName.includes(sep)) {
-                    brandName = brandName.split(sep)[0].trim();
-                    break;
-                }
-            }
-            brandName = brandName.replace(/[\d\-_\s]+$/, '').trim();
-            const suffixes = ['产品', '商品', '清单', '目录', '价格表', '报价单', '库存',
-                '福利', '团购', '东莞', '深圳', '广州', '永尚', '新品', '新款', '系列', '礼盒'];
-            let changed = true;
-            while (changed) {
-                changed = false;
-                for (const s of suffixes) {
-                    if (brandName.endsWith(s) && brandName.length > s.length + 1) {
-                        brandName = brandName.slice(0, -s.length).trim();
-                        changed = true;
-                    }
-                }
-            }
-
-            return brandName || sheetName;
+            return (sheetName || '').trim();
         }
 
         // 自动映射字段
