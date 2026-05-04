@@ -3662,7 +3662,7 @@
             const row = window._conditionRows.find(r => r.id === id);
             if (row) {
                 row[key] = value;
-                renderList();
+                debouncedRenderList();
             }
         }
 
@@ -3778,7 +3778,7 @@
                     return `<input type="text" id="${controlId}"
                         placeholder="${def.placeholder || def.label}"
                         class="border rounded-lg px-3 py-2 text-sm w-48"
-                        onkeyup="renderList()">`;
+                        onkeyup="debouncedRenderList()">`;
 
                 default:
                     return '';
@@ -3821,6 +3821,11 @@
         }
 
         // ========== 商品列表 ==========
+        let _renderListTimer = null;
+        function debouncedRenderList(resetPage = false) {
+            clearTimeout(_renderListTimer);
+            _renderListTimer = setTimeout(() => renderList(resetPage), 300);
+        }
         function renderList(resetPage = true) {
             if (resetPage) listCurrentPage = 1;
             initFilterOptions();
@@ -5681,6 +5686,34 @@
             return bestScore >= 3 ? bestRow : 0;
         }
 
+        // 检测并拼接多行表头（合并单元格场景：父级分类行 + 子字段行）
+        function buildMultiRowHeaders(allRows, headerIdx) {
+            const childHeaders = (allRows[headerIdx] || []).map(h => String(h || '').trim());
+            if (headerIdx <= 0) return childHeaders;
+
+            // 检查上一行是否为父级分类行（合并单元格导致唯一值显著少于子行）
+            const parentRow = allRows[headerIdx - 1] || [];
+            const parentFilled = [];
+            let lastVal = '';
+            for (let c = 0; c < Math.max(parentRow.length, childHeaders.length); c++) {
+                const val = String(parentRow[c] || '').trim();
+                if (val) lastVal = val;
+                parentFilled.push(lastVal);
+            }
+            const uniqueParents = new Set(parentFilled.filter(v => v));
+            const uniqueChildren = new Set(childHeaders.filter(v => v));
+            if (uniqueParents.size === 0 || uniqueParents.size > uniqueChildren.size * 0.5) {
+                return childHeaders; // 不是分类行
+            }
+
+            // 拼接：父级 - 子字段
+            return childHeaders.map((child, i) => {
+                const parent = parentFilled[i] || '';
+                if (parent && child && parent !== child) return parent + '-' + child;
+                return child || parent || '';
+            });
+        }
+
         // 用全局模板匹配表头（三阶段：精确 → 子串包含 → 关键词）
         function matchHeadersWithGlobalTemplate(headers, normTemplate) {
             const mappings = {};
@@ -5719,7 +5752,7 @@
                 const sheet = pendingWorkbookData.workbook.Sheets[name];
                 const jsonData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
                 const headerIdx = detectBestHeaderRow(jsonData, normTemplate);
-                const headers = (jsonData[headerIdx] || []).map(h => String(h || ''));
+                const headers = buildMultiRowHeaders(jsonData, headerIdx);
                 const sampleRows = jsonData.slice(headerIdx + 1, headerIdx + 4).filter(r => r && r.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
                 headerRows[name] = headerIdx + 1;
                 sheetsData.push({ name, headers, sampleRows, allRows: jsonData, rowCount: pendingWorkbookData.sheets[name].rowCount - headerIdx - 1 });
@@ -5972,7 +6005,7 @@
 
                 const headerIdx = headerRow - 1;
                 const allRows = sd.allRows;
-                const newHeaders = (allRows[headerIdx] || []).map(h => String(h || ''));
+                const newHeaders = buildMultiRowHeaders(allRows, headerIdx);
                 const newDataRows = allRows.slice(headerIdx + 1).filter(r => r && r.some(c => c !== null && c !== undefined && String(c).trim() !== ''));
 
                 sd.headers = newHeaders;
@@ -7017,7 +7050,11 @@ self.onmessage = function(e) {
                                     <tbody id="sheetMappingBody">
                                         ${headers.map((h, i) => {
                                             const hStr = String(h || '').trim();
-                                            const matchedField = allFields.find(f => f.name === hStr || f.keywords?.some(k => hStr.includes(k)));
+                                            let matchedField = allFields.find(f => f.name === hStr || f.keywords?.some(k => hStr.includes(k)));
+                                            if (!matchedField) {
+                                                const smartMatch = smartMatchField(hStr, '集采价');
+                                                if (smartMatch && smartMatch !== '(忽略)') matchedField = { name: smartMatch };
+                                            }
                                             return `
                                                 <tr class="hover:bg-gray-50">
                                                     <td class="px-3 py-2 border-b">${hStr || '(空列)'}</td>
@@ -7373,6 +7410,10 @@ self.onmessage = function(e) {
                     }
                 }
 
+                if (!matched) {
+                    const sm = smartMatchField(hStr, '集采价');
+                    if (sm && sm !== '(忽略)') matched = sm;
+                }
                 if (matched) {
                     select.value = matched;
                 }
@@ -9588,6 +9629,15 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                 if (f.keywords && f.keywords.some(kw => h.includes(kw.toLowerCase().replace(/[_\s]/g, '')))) return f.name;
             }
 
+            // 无匹配：自动创建自定义字段（用户可在映射UI中确认/修改/重新映射）
+            const originalName = (fieldName || '').trim();
+            if (originalName && originalName.length > 0 && !/^[\d\s\.\,\;\:\!\?\-\+％％%]+$/.test(originalName)) {
+                const allFieldsNow = getAllProductFields();
+                if (!allFieldsNow.some(f => f.name === originalName) && !customProductFields.some(f => f.name === originalName && f.isCustom)) {
+                    customProductFields.push({ name: originalName, group: 'other', keywords: [], isCustom: true, autoCreated: true });
+                }
+                return originalName;
+            }
             return '(忽略)';
         }
 
