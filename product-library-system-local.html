@@ -168,6 +168,7 @@
                     <button onclick="setFilterStatus('待审核')" class="px-4 py-2 bg-white border rounded-lg text-sm hover:bg-gray-50" id="btn-status-pending">待审核</button>
                     <button onclick="setFilterStatus('已过期')" class="px-4 py-2 bg-white border rounded-lg text-sm hover:bg-gray-50" id="btn-status-expired">已过期</button>
                     <button onclick="detectProductDuplicates()" class="ml-4 px-4 py-2 bg-orange-100 text-orange-700 border border-orange-200 rounded-lg text-sm hover:bg-orange-200">🔍 检测重复</button>
+                    <button onclick="analyzePrice()" class="ml-2 px-4 py-2 bg-green-100 text-green-700 border border-green-200 rounded-lg text-sm hover:bg-green-200">💰 价格分析</button>
                 </div>
 
                 <!-- 批量操作栏 -->
@@ -4699,7 +4700,7 @@
                 }
 
                 // 按条码检测
-                if (p.barcode) {
+                if (isValidBarcode(p.barcode)) {
                     if (barcodeMap.has(p.barcode)) {
                         // 避免重复添加（同一个商品可能已被SKU检测到）
                         if (!duplicates.find(d => d.product.id === p.id)) {
@@ -4819,6 +4820,383 @@
             document.getElementById('modal-product-duplicates').remove();
             renderList();
             alert(`已删除 ${selectedIds.length} 条重复商品`);
+        }
+
+        // 条码合规检测（纯数字≥6位）
+        function isValidBarcode(barcode) {
+            if (!barcode) return false;
+            return /^[0-9]{6,18}$/.test(String(barcode).trim());
+        }
+
+        // ========== 最优价格分析 ==========
+        function normalizeName(name) {
+            if (!name) return '';
+            let s = name.replace(/[\s，。！、（）\(\)【】\[\]{}《》""''：:；;？?！!…\-—/\\|@#$%^&*+=~`]+/g, '');
+            s = s.replace(/\d+(\.\d+)?(g|kg|ml|L|斤|两|克|千克|毫升|升|盒|袋|箱|瓶|罐|桶|包|个|条|只)/g, '');
+            return s.toLowerCase();
+        }
+
+        function normalizeNameSimple(name) {
+            if (!name) return '';
+            return name.replace(/\s+/g, '').toLowerCase();
+        }
+
+        function charSimilarity(a, b) {
+            if (!a || !b) return 0;
+            const setA = new Set([...a]);
+            const setB = new Set([...b]);
+            const intersection = [...setA].filter(c => setB.has(c)).length;
+            const union = new Set([...a, ...b]).size;
+            return union === 0 ? 0 : intersection / union;
+        }
+
+        // 检查两个产品的单品规格是否兼容（都有规格时则必须相同）
+        function compatibleWeight(a, b) {
+            const wa = (a.weight || '').trim().toLowerCase();
+            const wb = (b.weight || '').trim().toLowerCase();
+            if (wa && wb) return wa === wb;
+            return true; // 至少一个没规格，无约束
+        }
+
+        // 检查两个产品的品牌是否模糊相同
+        function compatibleBrand(a, b) {
+            const ba = (a.brand || '').replace(/\s+/g, '').toLowerCase();
+            const bb = (b.brand || '').replace(/\s+/g, '').toLowerCase();
+            if (ba && bb) return ba.includes(bb) || bb.includes(ba) || charSimilarity(ba, bb) >= 0.7;
+            return true; // 至少一个没品牌，无约束
+        }
+
+        // 从商品名中提取单品规格
+        function extractSpecFromName(name) {
+            if (!name) return null;
+            const m = name.match(/(\d+(?:\.\d+)?)\s*(g|kg|ml|l|斤|两|克|千克|毫升|升|盒|袋|箱|瓶|罐|桶|包|个|条|只)/i);
+            return m ? (m[1] + m[2]).toLowerCase() : null;
+        }
+
+        function analyzePrice() {
+            const pool = getFilteredProducts();
+            if (pool.length < 2) { alert('至少需要 2 个商品才能进行价格分析'); return; }
+
+            // 显示加载遮罩
+            const overlay = document.createElement('div');
+            overlay.id = 'price-analysis-loading';
+            overlay.className = 'modal active';
+            overlay.innerHTML = `<div class="bg-white rounded-lg shadow-xl p-8 text-center" style="min-width:320px">
+                <div style="width:32px;height:32px;border:4px solid #e5e7eb;border-top-color:#2563eb;border-radius:50%;animation:spin 0.8s linear infinite;margin:0 auto 12px;"></div>
+                <style scoped>@keyframes spin{to{transform:rotate(360deg)}}</style>
+                <div class="text-lg font-bold mb-1">正在分析价格...</div>
+                <div class="text-sm text-gray-500" id="price-progress">共 ${pool.length} 个商品，三级匹配中...</div>
+            </div>`;
+            document.body.appendChild(overlay);
+
+            // 让浏览器先渲染 loading，再开始计算
+            setTimeout(() => {
+                try {
+                const t0 = performance.now();
+                const groups = [];
+                const matched = new Set();
+                const prog = (msg) => { const el = document.getElementById('price-progress'); if (el) el.textContent = msg; };
+
+                // === 第1级：条码精确匹配 ===
+                prog('L1 条码匹配中...');
+                const barcodeMap = new Map();
+                for (let i = 0; i < pool.length; i++) {
+                    const p = pool[i];
+                    if (!isValidBarcode(p.barcode) || matched.has(p.id)) continue;
+                    if (!barcodeMap.has(p.barcode)) barcodeMap.set(p.barcode, []);
+                    barcodeMap.get(p.barcode).push(p);
+                }
+                for (const [barcode, prods] of barcodeMap) {
+                    if (prods.length >= 2) {
+                        prods.forEach(p => matched.add(p.id));
+                        groups.push({ level: 1, matchType: '条码相同: ' + barcode, products: prods });
+                    }
+                }
+                console.log('L1 done:', groups.filter(g => g.level === 1).length, 'groups,', matched.size, 'matched');
+
+                // === 第2级：名称标准化或京东链接相同 ===
+                prog('L2 名称/链接匹配中...');
+                const unmatched2 = pool.filter(p => !matched.has(p.id));
+                const nameGroupMap = new Map();
+                const jdGroupMap = new Map();
+                const assigned2 = new Set();
+
+                for (let i = 0; i < unmatched2.length; i++) {
+                    const p = unmatched2[i];
+                    const nn = normalizeNameSimple(p.name);
+                    if (nn) {
+                        if (!nameGroupMap.has(nn)) nameGroupMap.set(nn, []);
+                        nameGroupMap.get(nn).push(p);
+                    }
+                    if (p.jdLink) {
+                        if (!jdGroupMap.has(p.jdLink)) jdGroupMap.set(p.jdLink, []);
+                        jdGroupMap.get(p.jdLink).push(p);
+                    }
+                }
+                // 名称分组内按单品规格+品牌进一步拆分
+                for (const [nn, prods] of nameGroupMap) {
+                    if (prods.length < 2) continue;
+                    const used2 = new Set();
+                    for (let i = 0; i < prods.length; i++) {
+                        if (used2.has(prods[i].id)) continue;
+                        const subgroup = [prods[i]];
+                        used2.add(prods[i].id);
+                        for (let j = i + 1; j < prods.length; j++) {
+                            if (used2.has(prods[j].id)) continue;
+                            if (!compatibleWeight(prods[i], prods[j])) continue;
+                            if (!compatibleBrand(prods[i], prods[j])) continue;
+                            subgroup.push(prods[j]);
+                            used2.add(prods[j].id);
+                        }
+                        if (subgroup.length >= 2) {
+                            subgroup.forEach(p => { matched.add(p.id); assigned2.add(p.id); });
+                            groups.push({ level: 2, matchType: '名称相同: ' + subgroup[0].name, products: subgroup });
+                        }
+                    }
+                }
+                // 京东链接分组
+                for (const [link, prods] of jdGroupMap) {
+                    const remaining = prods.filter(p => !assigned2.has(p.id));
+                    if (remaining.length >= 2) {
+                        remaining.forEach(p => matched.add(p.id));
+                        groups.push({ level: 2, matchType: '京东链接相同', products: remaining });
+                    }
+                }
+                console.log('L2 done:', groups.filter(g => g.level === 2).length, 'groups,', matched.size, 'total matched');
+
+                // === 第3级：模糊匹配（按品牌分组优化） ===
+                const unmatched3 = pool.filter(p => !matched.has(p.id));
+                prog('L3 模糊匹配中... (' + unmatched3.length + ' 个商品待匹配)');
+                console.log('L3 start: ' + unmatched3.length + ' unmatched, ' + pool.length + ' total');
+
+                // 预计算规范化名称
+                const normCache = {};
+                for (let i = 0; i < unmatched3.length; i++) {
+                    normCache[unmatched3[i].id] = normalizeName(unmatched3[i].name);
+                }
+
+                // 按品牌分组
+                const brandGroups = new Map();
+                for (let i = 0; i < unmatched3.length; i++) {
+                    const p = unmatched3[i];
+                    const bk = p.brand || '__nobrand__';
+                    if (!brandGroups.has(bk)) brandGroups.set(bk, []);
+                    brandGroups.get(bk).push(p);
+                }
+                console.log('L3 brand groups:', brandGroups.size);
+
+                const fuzzyMatched = new Set();
+                let totalBrands = brandGroups.size, done = 0;
+                for (const [brand, products] of brandGroups) {
+                    done++;
+                    if (done % 10 === 0 || done === totalBrands) {
+                        prog('L3 模糊匹配中... ' + done + '/' + totalBrands + ' 品牌组');
+                    }
+                    for (let i = 0; i < products.length; i++) {
+                        if (fuzzyMatched.has(products[i].id)) continue;
+                        const cluster = [products[i]];
+                        const ni = normCache[products[i].id];
+                        const specI = products[i].weight || extractSpecFromName(products[i].name);
+                        for (let j = i + 1; j < products.length; j++) {
+                            if (fuzzyMatched.has(products[j].id)) continue;
+                            const pi = products[i], pj = products[j];
+                            const nj = normCache[pj.id];
+                            const specJ = pj.weight || extractSpecFromName(pj.name);
+
+                            // 单品规格硬约束：双方都有则必须相同
+                            if (specI && specJ && specI.trim().toLowerCase() !== specJ.trim().toLowerCase()) continue;
+
+                            // 条码否定项：双方都有合规条码且不同 → 必然不是同一产品
+                            if (isValidBarcode(pi.barcode) && isValidBarcode(pj.barcode) && pi.barcode !== pj.barcode) continue;
+
+                            let score = 0;
+
+                            if (ni && nj && (ni.includes(nj) || nj.includes(ni))) score += 50;
+                            else if (ni && nj && charSimilarity(ni, nj) >= 0.6) score += 30;
+
+                            // 规格匹配（双方都有且一致时加分；不是硬约束的那部分已通过上面 continue 处理）
+                            if (specI && specJ) score += 20;
+                            if (pi.mainImage && pj.mainImage && pi.mainImage === pj.mainImage) score += 30;
+                            if (pi.brand && pj.brand && pi.brand === pj.brand) score += 10;
+
+                            if (score >= 50) {
+                                cluster.push(pj);
+                                fuzzyMatched.add(pj.id);
+                            }
+                        }
+                        if (cluster.length >= 2) {
+                            cluster.forEach(p => fuzzyMatched.add(p.id));
+                            groups.push({ level: 3, matchType: '模糊匹配: ' + cluster[0].name, products: cluster });
+                        }
+                    }
+                }
+                console.log('L3 done:', groups.filter(g => g.level === 3).length, 'groups, total groups:', groups.length);
+
+                const elapsed = ((performance.now() - t0) / 1000).toFixed(1);
+                console.log('价格分析完成: ' + groups.length + ' 组, 耗时 ' + elapsed + 's');
+
+                overlay.remove();
+                if (groups.length === 0) {
+                    alert('未找到可比较价格的同类产品（已扫描 ' + pool.length + ' 个商品，请确认商品数据中有条码/相同名称/相同链接）');
+                } else {
+                    showPriceAnalysisModal(groups);
+                }
+                } catch (e) {
+                    overlay.remove();
+                    console.error('价格分析出错:', e);
+                    alert('价格分析出错: ' + e.message + '。请打开控制台(F12)查看详情。');
+                }
+            }, 30);
+        }
+
+        function showPriceAnalysisModal(groups) {
+            const old = document.getElementById('modal-price-analysis');
+            if (old) old.remove();
+
+            const modal = document.createElement('div');
+            modal.id = 'modal-price-analysis';
+            modal.className = 'modal active';
+            modal.onclick = (e) => { if (e.target === modal) modal.remove(); };
+
+            // 统计
+            let totalGroups = groups.length;
+            let totalProducts = 0, totalSaving = 0;
+            groups.forEach(g => {
+                totalProducts += g.products.length;
+                const prices = g.products.map(p => Number(p.purchasePrice) || 0).filter(v => v > 0);
+                if (prices.length >= 2) {
+                    const min = Math.min(...prices);
+                    prices.forEach(v => totalSaving += (v - min));
+                }
+            });
+
+            const renderGroupTable = (g) => {
+                const prices = g.products.map(p => Number(p.purchasePrice) || 0);
+                const minPrice = prices.length > 0 ? Math.min(...prices.filter(v => v > 0)) : 0;
+                const supplierNames = {};
+                suppliers.forEach(s => { supplierNames[s.id] = s.name || s.companyName || s.id; });
+
+                return g.products.map(p => {
+                    const price = Number(p.purchasePrice) || 0;
+                    const np = Number(p.normalExpressPrice) || 0;
+                    const diff = minPrice > 0 && price > 0 ? price - minPrice : 0;
+                    const pct = minPrice > 0 && price > 0 ? ((diff / minPrice) * 100).toFixed(1) : '0';
+                    const isLowest = minPrice > 0 && price === minPrice;
+                    return `<tr class="${isLowest ? 'bg-green-50' : ''}">
+                        <td class="px-2 py-1 border text-xs">${supplierNames[p.supplierId] || p.supplierId}</td>
+                        <td class="px-2 py-1 border text-xs">${p.name || '-'}</td>
+                        <td class="px-2 py-1 border text-xs">${p.brand || '-'}</td>
+                        <td class="px-2 py-1 border text-xs">${p.barcode || '-'}</td>
+                        <td class="px-2 py-1 border text-xs font-mono ${isLowest ? 'text-green-700 font-bold' : ''}">${price > 0 ? '¥' + price.toFixed(2) : '-'}</td>
+                        <td class="px-2 py-1 border text-xs font-mono ${diff > 0 ? 'text-red-600' : ''}">${diff > 0 ? '+¥' + diff.toFixed(2) + ' (' + pct + '%)' : (minPrice > 0 ? '最低价 ✓' : '-')}</td>
+                        <td class="px-2 py-1 border text-xs font-mono">${np > 0 ? '¥' + np.toFixed(2) : '-'}</td>
+                    </tr>`;
+                }).join('');
+            };
+
+            const levelTabs = [1, 2, 3].map(lv => {
+                const lvGroups = groups.filter(g => g.level === lv);
+                return lvGroups.length > 0 ? `<button onclick="switchPriceTab(${lv})" id="price-tab-${lv}" class="px-3 py-1 text-xs rounded-full ${lv === 1 ? 'bg-blue-600 text-white' : 'bg-gray-100'}">
+                    L${lv} ${lv === 1 ? '条码' : lv === 2 ? '名称/链接' : '模糊'} (${lvGroups.length}组)
+                </button>` : '';
+            }).filter(Boolean).join('');
+
+            const lvNames = { 1: '条码精确匹配', 2: '名称/京东链接匹配', 3: '模糊匹配' };
+            const allGroupsHtml = groups.map(g => `
+                <div class="price-group-${g.level} mb-3 border rounded-lg p-2">
+                    <div class="text-xs font-medium text-gray-500 mb-1">${g.matchType} <span class="text-blue-600">(${g.products.length}个报价)</span></div>
+                    <table class="w-full text-xs border-collapse">
+                        <thead class="bg-gray-50"><tr>
+                            <th class="px-2 py-1 border text-left">供应商</th><th class="px-2 py-1 border text-left">商品名称</th><th class="px-2 py-1 border text-left">品牌</th><th class="px-2 py-1 border text-left">条码</th><th class="px-2 py-1 border text-right">集采价</th><th class="px-2 py-1 border text-right">差价</th><th class="px-2 py-1 border text-right">代发价</th>
+                        </tr></thead>
+                        <tbody>${renderGroupTable(g)}</tbody>
+                    </table>
+                </div>
+            `).join('');
+
+            modal.innerHTML = `<div class="bg-white rounded-lg shadow-xl w-full max-w-5xl max-h-[90vh] overflow-auto m-4">
+                <div class="p-4 border-b sticky top-0 bg-white z-10">
+                    <div class="flex justify-between items-center">
+                        <h3 class="font-bold text-lg text-green-700">💰 最优价格分析</h3>
+                        <button onclick="document.getElementById('modal-price-analysis').remove()" class="text-gray-400 hover:text-gray-600 text-lg">✕</button>
+                    </div>
+                    <div class="text-xs text-gray-500 mt-1">
+                        分析 ${totalProducts} 个商品，共 ${totalGroups} 个可比组，潜在节省 ¥${totalSaving.toFixed(2)}
+                    </div>
+                    <div class="flex gap-2 mt-2">${levelTabs}
+                        <button onclick="exportPriceAnalysis()" class="ml-auto px-3 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700">📥 导出Excel</button>
+                    </div>
+                </div>
+                <div class="p-4" id="price-analysis-content">
+                    ${allGroupsHtml}
+                </div>
+            </div>`;
+            document.body.appendChild(modal);
+
+            // 保存数据供导出使用
+            modal._groups = groups;
+            modal._supplierNames = {};
+            suppliers.forEach(s => { modal._supplierNames[s.id] = s.name || s.companyName || s.id; });
+        }
+
+        function switchPriceTab(lv) {
+            [1, 2, 3].forEach(l => {
+                const btn = document.getElementById('price-tab-' + l);
+                if (btn) btn.className = l === lv ? 'px-3 py-1 text-xs rounded-full bg-blue-600 text-white' : 'px-3 py-1 text-xs rounded-full bg-gray-100';
+            });
+            document.querySelectorAll('[class^="price-group-"]').forEach(el => {
+                el.style.display = el.classList.contains('price-group-' + lv) ? '' : 'none';
+            });
+        }
+
+        function exportPriceAnalysis() {
+            const modal = document.getElementById('modal-price-analysis');
+            if (!modal || !modal._groups) return;
+            const groups = modal._groups;
+
+            const rows = [['匹配级别', '匹配方式', '商品名称', '供应商', '品牌', '条码', '集采价', '组内最低价', '差价', '差价%', '代发价(参考)']];
+
+            groups.forEach(g => {
+                const prices = g.products.map(p => Number(p.purchasePrice) || 0).filter(v => v > 0);
+                const minPrice = prices.length > 0 ? Math.min(...prices) : 0;
+                const lvName = { 1: 'L1-条码', 2: 'L2-名称/链接', 3: 'L3-模糊' }[g.level];
+
+                g.products.forEach(p => {
+                    const price = Number(p.purchasePrice) || 0;
+                    const np = Number(p.normalExpressPrice) || 0;
+                    const diff = minPrice > 0 && price > 0 ? price - minPrice : 0;
+                    const pct = minPrice > 0 && price > 0 ? ((diff / minPrice) * 100).toFixed(1) + '%' : '';
+                    rows.push([
+                        lvName,
+                        g.matchType,
+                        p.name || '',
+                        modal._supplierNames[p.supplierId] || p.supplierId,
+                        p.brand || '',
+                        p.barcode || '',
+                        price > 0 ? price.toFixed(2) : '',
+                        minPrice > 0 ? minPrice.toFixed(2) : '',
+                        diff > 0 ? '+' + diff.toFixed(2) : (minPrice > 0 ? '0' : ''),
+                        pct,
+                        np > 0 ? np.toFixed(2) : ''
+                    ]);
+                });
+            });
+
+            const wb = XLSX.utils.book_new();
+            const ws = XLSX.utils.aoa_to_sheet(rows);
+            ws['!cols'] = [
+                { wch: 12 }, { wch: 25 }, { wch: 35 }, { wch: 18 }, { wch: 14 },
+                { wch: 16 }, { wch: 10 }, { wch: 10 }, { wch: 10 }, { wch: 8 }, { wch: 14 }
+            ];
+            XLSX.utils.book_append_sheet(wb, ws, '价格分析');
+            const buffer = XLSX.write(wb, { type: 'array', bookType: 'xlsx' });
+            const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = '价格分析_' + new Date().toISOString().slice(0, 10) + '.xlsx';
+            a.click();
+            URL.revokeObjectURL(url);
         }
 
         // ========== 单个编辑 ==========
@@ -4997,7 +5375,7 @@
             p.majorCategory = document.getElementById('edit-majorCategory').value;
             p.category = document.getElementById('edit-category').value;
             p.unit = document.getElementById('edit-unit').value;
-            p.barcode = document.getElementById('edit-barcode').value;
+            p.barcode = isValidBarcode(document.getElementById('edit-barcode').value) ? document.getElementById('edit-barcode').value : '';
             p.boxSpec = document.getElementById('edit-boxSpec').value;
             p.brand = document.getElementById('edit-brand').value;
             p.brandLevel = document.getElementById('edit-brandLevel').value;
@@ -7014,7 +7392,7 @@ self.onmessage = function(e) {
                     const val = row[parseInt(colIdx)];
                     const strVal = val !== undefined && val !== null ? String(val).trim() : '';
                     setProductField(rowData, fieldName, strVal, headers[parseInt(colIdx)]);
-                    if (fieldName === '产品条码') barcode = strVal;
+                    if (fieldName === '产品条码') barcode = rowData.barcode || '';
                     if (fieldName === '供应商SKU') sku = strVal;
                 });
 
@@ -8061,15 +8439,6 @@ self.onmessage = function(e) {
                 let added = 0;
                 let updated = 0;
                 let matchDetails = []; // 调试信息
-
-                // 检测条码是否合规
-                function isValidBarcode(barcode) {
-                    if (!barcode) return false;
-                    // 条码应为纯数字，长度6-18位
-                    // 支持格式: EAN-13, EAN-8, UPC-A, ISBN等
-                    const barcodePattern = /^[0-9]{6,18}$/;
-                    return barcodePattern.test(barcode);
-                }
 
                 // 无效的SKU值（表示没有值）
                 const invalidSkuValues = ['/', '-', '无', 'NA', 'N/A', 'NULL', 'null', ''];
@@ -10089,7 +10458,7 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             else if (fieldName === '单位') product.unit = val;
 
             // 规格包装
-            else if (fieldName === '产品条码') product.barcode = val;
+            else if (fieldName === '产品条码') product.barcode = isValidBarcode(val) ? val : '';
             else if (fieldName === '外箱条码') product.boxBarcode = val;
             else if (fieldName === '箱规') product.boxSpec = val;
             else if (fieldName === '内配') product.innerConfig = val;
@@ -10852,7 +11221,7 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                     else if (field === '单位') product.unit = value;
 
                     // 规格包装
-                    else if (field === '产品条码') product.barcode = value;
+                    else if (field === '产品条码') product.barcode = isValidBarcode(value) ? value : '';
                     else if (field === '外箱条码') product.boxBarcode = value;
                     else if (field === '箱规') product.boxSpec = value;
                     else if (field === '内配') product.innerConfig = value;
