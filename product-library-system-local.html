@@ -257,7 +257,7 @@
                             <select id="batch-price-type" class="w-full border rounded-lg px-3 py-2">
                                 <option value="purchasePrice">集采价</option>
                                 <option value="retailPrice">零售价</option>
-                                <option value="normalExpressPrice">一件代发价</option>
+                                <option value="normalExpressPrice">代发价</option>
                             </select>
                         </div>
                         <div>
@@ -298,7 +298,8 @@
                                     <option value="sku">供应商SKU</option>
                                     <option value="supplierId">供应商</option>
                                     <option value="brand">品牌</option>
-                                    <option value="category">分类</option>
+                                    <option value="majorCategory">大类</option>
+                                    <option value="category">品类</option>
                                     <option value="unit">单位</option>
                                     <option value="barcode">产品条码</option>
                                     <option value="boxBarcode">外箱条码</option>
@@ -308,8 +309,8 @@
                                     <option value="innerConfig">内配</option>
                                     <option value="productSize">产品尺寸</option>
                                     <option value="boxSize">整箱尺寸</option>
-                                    <option value="weight">净含量</option>
-                                    <option value="grossWeight">产品毛重</option>
+                                    <option value="weight">单品规格</option>
+                                    <option value="grossWeight">单品重量</option>
                                     <option value="boxWeight">整箱重量</option>
                                 </optgroup>
                                 <optgroup label="产品属性">
@@ -326,22 +327,32 @@
                                     <option value="retailPrice">零售价</option>
                                     <option value="channelPrice">渠道价</option>
                                     <option value="groupPrice">团购价</option>
-                                    <option value="normalExpressPrice">一件代发价</option>
-                                    <option value="dropshipFreight">一件代发运费</option>
+                                    <option value="normalExpressPrice">代发价</option>
+                                    <option value="dropshipFreight">代发运费</option>
+                                    <option value="jdsfExpressPrice">京东顺丰代发价</option>
+                                    <option value="jdsfExpressFreight">京东顺丰代发运费</option>
                                 </optgroup>
                                 <optgroup label="物流供应链">
-                                    <option value="logisticsMode">物流方式</option>
                                     <option value="shipFrom">发货地</option>
                                     <option value="freightIncluded">运费包含</option>
                                     <option value="noPostArea">不包邮区域</option>
                                     <option value="defaultExpress">默认快递公司</option>
                                     <option value="stockType">库存类型</option>
                                     <option value="stockStatus">备货状态</option>
-                                    <option value="leadTime">备货周期</option>
                                     <option value="moq">最小起订量</option>
-                                    <option value="isExclusive">包销产品</option>
+                                    <option value="productType">产品类型</option>
+                                    <option value="supportsDropship">支持代发</option>
+                                    <option value="priceExpiry">价格有效期</option>
                                 </optgroup>
-                                <optgroup label="其他">
+                                <optgroup label="电商参考">
+                                    <option value="jdLink">京东链接</option>
+                                    <option value="jdPrice">京东价</option>
+                                    <option value="tbLink">淘宝链接</option>
+                                    <option value="tbPrice">淘宝价</option>
+                                    <option value="pddLink">拼多多链接</option>
+                                    <option value="pddPrice">拼多多价</option>
+                                </optgroup>
+                                <optgroup label="媒体/备注">
                                     <option value="status">状态</option>
                                     <option value="remark">备注</option>
                                 </optgroup>
@@ -1089,6 +1100,13 @@
                             </div>
                         </div>
 
+                        <!-- 产品属性 -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">产品属性</h4>
+                            <div class="flex flex-wrap gap-3" id="required-product">
+                            </div>
+                        </div>
+
                         <!-- 价格字段 -->
                         <div>
                             <h4 class="text-sm font-medium text-gray-700 mb-2">价格字段</h4>
@@ -1096,9 +1114,37 @@
                             </div>
                         </div>
 
-                        <!-- 其他字段 -->
+                        <!-- 物流供应链 -->
                         <div>
-                            <h4 class="text-sm font-medium text-gray-700 mb-2">其他字段</h4>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">物流供应链</h4>
+                            <div class="flex flex-wrap gap-3" id="required-delivery">
+                            </div>
+                        </div>
+
+                        <!-- 供应链属性 -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">供应链属性</h4>
+                            <div class="flex flex-wrap gap-3" id="required-supply">
+                            </div>
+                        </div>
+
+                        <!-- 电商参考 -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">电商参考</h4>
+                            <div class="flex flex-wrap gap-3" id="required-ecommerce">
+                            </div>
+                        </div>
+
+                        <!-- 图片媒体 -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">图片媒体</h4>
+                            <div class="flex flex-wrap gap-3" id="required-media">
+                            </div>
+                        </div>
+
+                        <!-- 状态及其他 -->
+                        <div>
+                            <h4 class="text-sm font-medium text-gray-700 mb-2">状态及其他</h4>
                             <div class="flex flex-wrap gap-3" id="required-other">
                             </div>
                         </div>
@@ -1637,16 +1683,16 @@
 
         // 系统标准字段
         const SYSTEM_FIELDS = {
-            core: ['供应商ID', '供应商SKU', '商品名称', '分类', '单位', '产品条码', '外箱条码', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量', '品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码', '集采价', '零售价', '渠道价', '团购价', '集采毛利率', '一件代发价', '一件代发运费', '一件代发毛利率', '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司', '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期', '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价', '产品图片', '详情图', '备注'],
-            spec: [],
-            product: [],
-            price: [],
-            delivery: [],
-            supply: [],
-            ecommerce: [],
-            media: [],
-            other: [],
-            status: ['录入来源', '录入时间', '最后更新']
+            core: ['供应商ID', '供应商SKU', '商品名称', '大类', '品类', '单位'],
+            spec: ['产品条码', '外箱条码', '箱规', '内配', '产品尺寸', '整箱尺寸', '单品规格', '单品重量', '整箱重量'],
+            product: ['品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码'],
+            price: ['集采价', '零售价', '渠道价', '团购价', '集采毛利率', '代发价', '代发运费', '代发毛利率', '京东顺丰代发价', '京东顺丰代发运费', '京东顺丰代发毛利率'],
+            delivery: ['发货地', '运费包含', '不包邮区域', '默认快递公司'],
+            supply: ['库存类型', '备货状态', '最小起订量', '产品类型', '支持代发', '价格有效期'],
+            ecommerce: ['京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价'],
+            media: ['产品图片', '详情图'],
+            other: ['备注'],
+            status: ['状态', '录入来源', '录入时间', '最后更新']
         };
 
         // 所有字段列表（用于映射选择）
@@ -1666,49 +1712,49 @@
         // 默认示例商品数据（用于重置）
         const DEFAULT_PRODUCTS = [
             {
-                id: 1, supplierId: 'wufangzhai', sku: 'WFZ-001', name: '五芳斋粽子礼盒', category: '食品礼盒', unit: '盒',
-                barcode: '6923456789012', boxBarcode: '6923456789019', spec: '1.2kg/盒', boxSpec: '12盒/箱', innerConfig: '10粽8蛋', productSize: '30×25×8cm', boxSize: '45×35×30cm', weight: 1.5, grossWeight: 1.8, boxWeight: 18,
+                id: 1, supplierId: 'wufangzhai', sku: 'WFZ-001', name: '五芳斋粽子礼盒', majorCategory: '食品', category: '礼盒', unit: '盒',
+                barcode: '6923456789012', boxBarcode: '6923456789019', weight: '1.2kg/盒', boxSpec: '12盒/箱', innerConfig: '10粽8蛋', productSize: '30×25×8cm', boxSize: '45×35×30cm', grossWeight: 1.8, boxWeight: 18,
                 brand: '五芳斋', brandLevel: '全国品牌', origin: '浙江嘉兴', shelfLife: '180天', ingredients: '糯米、猪肉、咸蛋黄等', isSugarFree: false, isOrganic: false, taxCode: '1030101000000000000',
-                purchasePrice: 68, channelPrice: 72, groupPrice: 70, specialPrice: '', retailPrice: 89,
+                purchasePrice: 68, channelPrice: 72, groupPrice: 70, retailPrice: 89,
                 normalExpressPrice: 78,
-                logisticsMode: '集采', shipFrom: '嘉兴', freightIncluded: true, noPostArea: '', defaultExpress: '中通',
-                stockType: '现货', stockStatus: '充足', leadTime: '0天', moq: '10箱', isExclusive: false, priceExpiry: '2026-06-30',
+                shipFrom: '嘉兴', freightIncluded: true, noPostArea: '', defaultExpress: '中通',
+                stockType: '现货', stockStatus: '充足', moq: '10箱', productType: '普通', supportsDropship: false, priceExpiry: '2026-06-30',
                 jdLink: 'https://item.jd.com/123456.html', jdPrice: 89, tbLink: '', tbPrice: '', pddLink: '', pddPrice: '',
                 mainImage: 'https://img14.360buyimg.com/n1/jfs/t1/123456/01.jpg', detailImages: 'https://img14.360buyimg.com/n1/jfs/t1/123456/02.jpg,https://img14.360buyimg.com/n1/jfs/t1/123456/03.jpg',
                 status: '上架中', source: 'Excel导入', createdAt: '2026-04-20', updatedAt: '2026-04-25'
             },
             {
-                id: 2, supplierId: 'gaoyou', sku: 'GY-YD-001', name: '咸鸭蛋礼盒', category: '食品礼盒', unit: '盒',
-                barcode: '6923456789029', boxBarcode: '6923456789026', spec: '20枚/盒', boxSpec: '8盒/箱', innerConfig: '20枚咸鸭蛋', productSize: '28×20×6cm', boxSize: '40×30×25cm', weight: 1.8, grossWeight: 2.0, boxWeight: 15,
+                id: 2, supplierId: 'gaoyou', sku: 'GY-YD-001', name: '咸鸭蛋礼盒', majorCategory: '食品', category: '礼盒', unit: '盒',
+                barcode: '6923456789029', boxBarcode: '6923456789026', weight: '20枚/盒', boxSpec: '8盒/箱', innerConfig: '20枚咸鸭蛋', productSize: '28×20×6cm', boxSize: '40×30×25cm', grossWeight: 2.0, boxWeight: 15,
                 brand: '高邮', brandLevel: '地方品牌', origin: '江苏高邮', shelfLife: '90天', ingredients: '鸭蛋、食盐、水', isSugarFree: true, isOrganic: false, taxCode: '1030102000000000000',
-                purchasePrice: 32, channelPrice: 35, groupPrice: 33, specialPrice: '', retailPrice: 45,
+                purchasePrice: 32, channelPrice: 35, groupPrice: 33, retailPrice: 45,
                 normalExpressPrice: 42,
-                logisticsMode: '代发', shipFrom: '高邮', freightIncluded: false, noPostArea: '新疆、西藏', defaultExpress: '圆通',
-                stockType: '需预订', stockStatus: '需提前3天', leadTime: '3天', moq: '5箱', isExclusive: false, priceExpiry: '2026-06-15',
+                shipFrom: '高邮', freightIncluded: false, noPostArea: '新疆、西藏', defaultExpress: '圆通',
+                stockType: '需预订', stockStatus: '需提前3天', moq: '5箱', productType: '普通', supportsDropship: true, priceExpiry: '2026-06-15',
                 jdLink: '', jdPrice: '', tbLink: 'https://detail.tmall.com/123456', tbPrice: 45, pddLink: '', pddPrice: '',
                 mainImage: 'https://img.alicdn.com/imgextra/i1/123456/O1CN01.jpg', detailImages: '',
                 status: '上架中', source: '手动录入', createdAt: '2026-04-21', updatedAt: '2026-04-21'
             },
             {
-                id: 3, supplierId: 'sanshisongsu', sku: 'SZS-JG-001', name: '坚果礼盒', category: '食品礼盒', unit: '盒',
-                barcode: '6923456789043', boxBarcode: '6923456789040', spec: '1.5kg/盒', boxSpec: '6盒/箱', innerConfig: '12袋独立装', productSize: '35×28×10cm', boxSize: '50×40×35cm', weight: 1.8, boxWeight: 11,
+                id: 3, supplierId: 'sanshisongsu', sku: 'SZS-JG-001', name: '坚果礼盒', majorCategory: '食品', category: '礼盒', unit: '盒',
+                barcode: '6923456789043', boxBarcode: '6923456789040', weight: '1.5kg/盒', boxSpec: '6盒/箱', innerConfig: '12袋独立装', productSize: '35×28×10cm', boxSize: '50×40×35cm', grossWeight: 1.8, boxWeight: 11,
                 brand: '三只松鼠', brandLevel: '全国品牌', origin: '安徽芜湖', shelfLife: '240天', ingredients: '夏威夷果、腰果、核桃等', isSugarFree: false, isOrganic: false, taxCode: '1030103000000000000',
-                purchasePrice: 55, channelPrice: 58, groupPrice: 56, specialPrice: '', retailPrice: 78,
+                purchasePrice: 55, channelPrice: 58, groupPrice: 56, retailPrice: 78,
                 normalExpressPrice: '',
-                logisticsMode: '集采', shipFrom: '芜湖', freightIncluded: true, noPostArea: '', defaultExpress: '韵达',
-                stockType: '现货', stockStatus: '充足', leadTime: '0天', moq: '5箱', isExclusive: false, priceExpiry: '2026-08-31',
+                shipFrom: '芜湖', freightIncluded: true, noPostArea: '', defaultExpress: '韵达',
+                stockType: '现货', stockStatus: '充足', moq: '5箱', productType: '普通', supportsDropship: false, priceExpiry: '2026-08-31',
                 jdLink: 'https://item.jd.com/234567.html', jdPrice: 78, tbLink: '', tbPrice: '', pddLink: '', pddPrice: '',
                 mainImage: 'https://img14.360buyimg.com/n1/jfs/t1/234567/01.jpg', detailImages: 'https://img14.360buyimg.com/n1/jfs/t1/234567/02.jpg',
                 source: 'Excel导入', createdAt: '2026-04-28', updatedAt: '2026-04-28'
             },
             {
-                id: 4, supplierId: 'yongkang', sku: 'YK-BB-001', name: '保温杯套装', category: '日用品', unit: '个',
-                barcode: '6923456789036', boxBarcode: '6923456789033', spec: '500ml', boxSpec: '24个/箱', innerConfig: '含杯套', productSize: '8×8×25cm', boxSize: '50×40×35cm', weight: 0.6, boxWeight: 15,
+                id: 4, supplierId: 'yongkang', sku: 'YK-BB-001', name: '保温杯套装', majorCategory: '日用', category: '杯具', unit: '个',
+                barcode: '6923456789036', boxBarcode: '6923456789033', weight: '500ml', boxSpec: '24个/箱', innerConfig: '含杯套', productSize: '8×8×25cm', boxSize: '50×40×35cm', grossWeight: 0.6, boxWeight: 15,
                 brand: '永康杯业', brandLevel: '地方品牌', origin: '浙江永康', shelfLife: '长期', ingredients: '', isSugarFree: false, isOrganic: false, taxCode: '1040101000000000000',
-                purchasePrice: 45, channelPrice: 48, groupPrice: 46, specialPrice: 40, retailPrice: 59,
+                purchasePrice: 45, channelPrice: 48, groupPrice: 46, retailPrice: 59,
                 normalExpressPrice: 55,
-                logisticsMode: '集采', shipFrom: '永康', freightIncluded: false, noPostArea: '内蒙古、甘肃', defaultExpress: '申通',
-                stockType: '需预订', stockStatus: '需提前15天', leadTime: '15天', moq: '50个', isExclusive: true, priceExpiry: '2026-12-31',
+                shipFrom: '永康', freightIncluded: false, noPostArea: '内蒙古、甘肃', defaultExpress: '申通',
+                stockType: '需预订', stockStatus: '需提前15天', moq: '50个', productType: '包销', supportsDropship: false, priceExpiry: '2026-12-31',
                 jdLink: 'https://item.jd.com/345678.html', jdPrice: 59, tbLink: '', tbPrice: '', pddLink: '', pddPrice: '',
                 mainImage: '', detailImages: '',
                 status: '上架中', source: '微信识别', createdAt: '2026-04-22', updatedAt: '2026-04-22'
@@ -1781,19 +1827,19 @@
                 id: 'price',
                 name: '价格',
                 description: '至少填写一个价格',
-                fields: ['集采价', '一件代发价'],
+                fields: ['集采价', '代发价'],
                 minRequired: 1
             }
         ];
 
         // 所有可选字段（按分类）
         const SELECTABLE_FIELDS = {
-            core: ['供应商SKU', '商品名称', '分类', '单位'],
-            spec: ['产品条码', '外箱条码', '箱规', '内配', '产品尺寸', '整箱尺寸', '净含量', '产品毛重', '整箱重量'],
-            price: ['集采价', '零售价', '渠道价', '团购价', '一件代发价', '一件代发运费'],
+            core: ['供应商SKU', '商品名称', '大类', '品类', '单位'],
+            spec: ['产品条码', '外箱条码', '箱规', '内配', '产品尺寸', '整箱尺寸', '单品规格', '单品重量', '整箱重量'],
+            price: ['集采价', '零售价', '渠道价', '团购价', '代发价', '代发运费', '京东顺丰代发价', '京东顺丰代发运费'],
             other: ['品牌', '品牌级别', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码',
-                    '物流方式', '发货地', '运费包含', '不包邮区域', '默认快递公司',
-                    '库存类型', '备货状态', '备货周期', '最小起订量', '包销产品', '价格有效期',
+                    '运费包含', '不包邮区域', '默认快递公司',
+                    '库存类型', '备货状态', '最小起订量', '产品类型', '支持代发', '价格有效期',
                     '京东链接', '京东价', '淘宝链接', '淘宝价', '拼多多链接', '拼多多价',
                     '产品图片', '详情图', '备注']
         };
@@ -2400,23 +2446,15 @@
                 ],
                 filterField: 'margin'
             },
-            exclusive: {
-                id: 'exclusive', label: '是否包销', type: 'select', group: 'supply',
+            productType: {
+                id: 'productType', label: '产品类型', type: 'select', group: 'supply',
                 options: [
-                    { value: '', label: '全部包销' },
-                    { value: 'true', label: '包销产品' },
-                    { value: 'false', label: '非包销' }
+                    { value: '', label: '全部产品类型' },
+                    { value: '包销', label: '包销' },
+                    { value: '定制', label: '定制' },
+                    { value: '普通', label: '普通' }
                 ],
-                filterField: 'isExclusive'
-            },
-            logistics: {
-                id: 'logistics', label: '一件代发', type: 'select', group: 'supply',
-                options: [
-                    { value: '', label: '全部一件代发' },
-                    { value: '代发', label: '支持一件代发' },
-                    { value: '集采', label: '仅集采' }
-                ],
-                filterField: 'logisticsMode'
+                filterField: 'productType'
             },
             shipFrom: {
                 id: 'shipFrom', label: '发货地', type: 'dynamicSelect', group: 'supply',
@@ -2445,7 +2483,7 @@
                 filterField: 'brand'
             },
             category: {
-                id: 'category', label: '分类', type: 'select', group: 'product',
+                id: 'category', label: '品类', type: 'select', group: 'product',
                 options: [
                     { value: '', label: '全部分类' },
                     { value: '食品礼盒', label: '食品礼盒' },
@@ -2519,34 +2557,79 @@
         };
 
         const COLUMN_DEFINITIONS = {
+            // 系统
             checkbox: { id: 'checkbox', label: '选择', type: 'system', required: true, width: '40px' },
+            actions: { id: 'actions', label: '操作', type: 'system', required: true, width: '110px' },
+            // 核心
             supplierId: { id: 'supplierId', label: '供应商', type: 'field', field: 'supplierId', width: '100px' },
-            brand: { id: 'brand', label: '品牌', type: 'field', field: 'brand', width: '100px' },
+            sku: { id: 'sku', label: 'SKU', type: 'field', field: 'sku', width: '100px' },
             name: { id: 'name', label: '商品名称', type: 'product', field: 'name', required: true, width: '200px' },
+            majorCategory: { id: 'majorCategory', label: '大类', type: 'field', field: 'majorCategory', width: '70px' },
+            category: { id: 'category', label: '品类', type: 'field', field: 'category', width: '80px' },
+            unit: { id: 'unit', label: '单位', type: 'field', field: 'unit', width: '60px' },
+            // 规格
+            barcode: { id: 'barcode', label: '产品条码', type: 'field', field: 'barcode', width: '100px' },
+            boxBarcode: { id: 'boxBarcode', label: '外箱条码', type: 'field', field: 'boxBarcode', width: '100px' },
+            boxSpec: { id: 'boxSpec', label: '箱规', type: 'field', field: 'boxSpec', width: '70px' },
+            innerConfig: { id: 'innerConfig', label: '内配', type: 'field', field: 'innerConfig', width: '80px' },
+            productSize: { id: 'productSize', label: '产品尺寸', type: 'field', field: 'productSize', width: '90px' },
+            boxSize: { id: 'boxSize', label: '整箱尺寸', type: 'field', field: 'boxSize', width: '90px' },
+            weight: { id: 'weight', label: '单品规格', type: 'field', field: 'weight', width: '80px' },
+            grossWeight: { id: 'grossWeight', label: '单品重量', type: 'field', field: 'grossWeight', width: '80px' },
+            boxWeight: { id: 'boxWeight', label: '整箱重量', type: 'field', field: 'boxWeight', width: '80px' },
+            // 品牌属性
+            brand: { id: 'brand', label: '品牌', type: 'field', field: 'brand', width: '100px' },
+            brandLevel: { id: 'brandLevel', label: '品牌级别', type: 'field', field: 'brandLevel', width: '80px' },
+            origin: { id: 'origin', label: '产地', type: 'field', field: 'origin', width: '80px' },
+            shelfLife: { id: 'shelfLife', label: '保质期', type: 'field', field: 'shelfLife', width: '80px' },
+            ingredients: { id: 'ingredients', label: '配料表', type: 'field', field: 'ingredients', width: '100px' },
+            isSugarFree: { id: 'isSugarFree', label: '是否无糖', type: 'field', field: 'isSugarFree', width: '80px', format: (v) => v === true || v === 'true' ? '是' : '否' },
+            isOrganic: { id: 'isOrganic', label: '是否有机', type: 'field', field: 'isOrganic', width: '80px', format: (v) => v === true || v === 'true' ? '是' : '否' },
+            taxCode: { id: 'taxCode', label: '税收编码', type: 'field', field: 'taxCode', width: '120px' },
+            // 价格
             retailPrice: { id: 'retailPrice', label: '零售价', type: 'price', field: 'retailPrice', width: '70px' },
             purchasePrice: { id: 'purchasePrice', label: '集采价', type: 'price', field: 'purchasePrice', width: '70px' },
-            normalExpressPrice: { id: 'normalExpressPrice', label: '代发价', type: 'price', field: 'normalExpressPrice', width: '70px' },
+            channelPrice: { id: 'channelPrice', label: '渠道价', type: 'price', field: 'channelPrice', width: '70px' },
+            groupPrice: { id: 'groupPrice', label: '团购价', type: 'price', field: 'groupPrice', width: '70px' },
             purchaseMargin: { id: 'purchaseMargin', label: '集采毛利率', type: 'margin', costField: 'purchasePrice', width: '80px' },
+            normalExpressPrice: { id: 'normalExpressPrice', label: '代发价', type: 'price', field: 'normalExpressPrice', width: '70px' },
+            dropshipFreight: { id: 'dropshipFreight', label: '代发运费', type: 'price', field: 'dropshipFreight', width: '80px' },
             dropshipMargin: { id: 'dropshipMargin', label: '代发毛利率', type: 'margin', costField: 'normalExpressPrice', width: '80px' },
-            actions: { id: 'actions', label: '操作', type: 'system', required: true, width: '110px' },
-            sku: { id: 'sku', label: 'SKU', type: 'field', field: 'sku', width: '100px' },
-            barcode: { id: 'barcode', label: '产品条码', type: 'field', field: 'barcode', width: '100px' },
-            category: { id: 'category', label: '分类', type: 'field', field: 'category', width: '80px' },
-            origin: { id: 'origin', label: '产地', type: 'field', field: 'origin', width: '80px' },
-            stockStatus: { id: 'stockStatus', label: '备货状态', type: 'field', field: 'stockStatus', width: '80px' },
+            jdsfExpressPrice: { id: 'jdsfExpressPrice', label: '京东顺丰代发价', type: 'price', field: 'jdsfExpressPrice', width: '100px' },
+            jdsfExpressFreight: { id: 'jdsfExpressFreight', label: '京东顺丰代发运费', type: 'price', field: 'jdsfExpressFreight', width: '100px' },
+            jdsfExpressMargin: { id: 'jdsfExpressMargin', label: '京东顺丰代发毛利率', type: 'margin', costField: 'jdsfExpressPrice', width: '100px' },
+            // 物流供应链
+            shipFrom: { id: 'shipFrom', label: '发货地', type: 'field', field: 'shipFrom', width: '80px' },
+            freightIncluded: { id: 'freightIncluded', label: '运费包含', type: 'field', field: 'freightIncluded', width: '80px', format: (v) => v === true || v === 'true' ? '是' : '否' },
+            noPostArea: { id: 'noPostArea', label: '不包邮区域', type: 'field', field: 'noPostArea', width: '100px' },
+            defaultExpress: { id: 'defaultExpress', label: '默认快递', type: 'field', field: 'defaultExpress', width: '80px' },
             stockType: { id: 'stockType', label: '库存类型', type: 'field', field: 'stockType', width: '80px' },
-            shipFrom: { id: 'shipFrom', label: '发货地', type: 'field', field: 'shipFrom', width: '80px' }
+            stockStatus: { id: 'stockStatus', label: '备货状态', type: 'field', field: 'stockStatus', width: '80px' },
+            moq: { id: 'moq', label: '最小起订量', type: 'field', field: 'moq', width: '90px' },
+            productType: { id: 'productType', label: '产品类型', type: 'field', field: 'productType', width: '80px' },
+            supportsDropship: { id: 'supportsDropship', label: '支持代发', type: 'field', field: 'supportsDropship', width: '80px', format: (v) => v === true || v === 'true' ? '是' : '否' },
+            priceExpiry: { id: 'priceExpiry', label: '价格有效期', type: 'field', field: 'priceExpiry', width: '90px' },
+            // 电商参考
+            jdLink: { id: 'jdLink', label: '京东链接', type: 'field', field: 'jdLink', width: '120px' },
+            jdPrice: { id: 'jdPrice', label: '京东价', type: 'price', field: 'jdPrice', width: '70px' },
+            tbLink: { id: 'tbLink', label: '淘宝链接', type: 'field', field: 'tbLink', width: '120px' },
+            tbPrice: { id: 'tbPrice', label: '淘宝价', type: 'price', field: 'tbPrice', width: '70px' },
+            pddLink: { id: 'pddLink', label: '拼多多链接', type: 'field', field: 'pddLink', width: '120px' },
+            pddPrice: { id: 'pddPrice', label: '拼多多价', type: 'price', field: 'pddPrice', width: '70px' },
+            // 媒体/备注
+            mainImage: { id: 'mainImage', label: '产品图片', type: 'field', field: 'mainImage', width: '100px' },
+            detailImages: { id: 'detailImages', label: '详情图', type: 'field', field: 'detailImages', width: '100px' },
         };
 
         // 默认用户配置
         const DEFAULT_FILTER_CONFIG = {
-            priorityFilters: ['margin', 'exclusive', 'logistics', 'shipFrom', 'stockStatus', 'search'],
-            moreFilters: ['supplier', 'brand', 'category', 'brandLevel', 'stockType', 'origin', 'sugarFree', 'organic', 'freightIncluded', 'defaultExpress']
+            priorityFilters: ['margin', 'productType', 'shipFrom', 'stockStatus', 'search'],
+            moreFilters: ['supplier', 'brand', 'category', 'brandLevel', 'stockType', 'origin', 'sugarFree', 'organic', 'freightIncluded', 'defaultExpress', 'moq', 'productType', 'supportsDropship', 'priceExpiry', 'status']
         };
 
         const DEFAULT_COLUMN_CONFIG = {
             visibleColumns: ['checkbox', 'supplierId', 'brand', 'name', 'retailPrice', 'purchasePrice', 'normalExpressPrice', 'purchaseMargin', 'dropshipMargin', 'actions'],
-            hiddenColumns: ['sku', 'barcode', 'category', 'origin', 'stockStatus', 'stockType', 'shipFrom']
+            hiddenColumns: ['sku', 'majorCategory', 'category', 'unit', 'barcode', 'boxBarcode', 'boxSpec', 'innerConfig', 'productSize', 'boxSize', 'weight', 'grossWeight', 'boxWeight', 'brandLevel', 'origin', 'shelfLife', 'ingredients', 'isSugarFree', 'isOrganic', 'taxCode', 'channelPrice', 'groupPrice', 'dropshipFreight', 'jdsfExpressPrice', 'jdsfExpressFreight', 'jdsfExpressMargin', 'shipFrom', 'freightIncluded', 'noPostArea', 'defaultExpress', 'stockType', 'stockStatus', 'moq', 'productType', 'supportsDropship', 'priceExpiry', 'jdLink', 'jdPrice', 'tbLink', 'tbPrice', 'pddLink', 'pddPrice', 'mainImage', 'detailImages']
         };
 
         let userFilterConfig = JSON.parse(JSON.stringify(DEFAULT_FILTER_CONFIG));
@@ -2580,6 +2663,304 @@
         let dataLoaded = false;
 
         // 异步初始化数据
+        // 自动迁移旧数据
+        function migrateFields(products) {
+            const KNOWN_MAJORS = ['食品', '日用', '数码', '家电', '办公', '美妆',
+                '母婴', '服装', '运动', '酒水', '饮料', '生鲜', '个护', '清洁',
+                '宠物', '汽车', '医药'];
+            const PRODUCT_TYPE_KEYWORDS = ['独家包销', '包销款', '包销', '定制款', '定制', '独家', 'OEM', 'ODM', '专供'];
+            let migrated = false;
+
+            for (const p of products) {
+                // 1. 拆分 分类 → 大类 + 品类
+                if (p.majorCategory === undefined) {
+                    const cat = (p.category || '').trim();
+                    let matched = '';
+                    for (const prefix of KNOWN_MAJORS) {
+                        if (cat.startsWith(prefix) && prefix.length > matched.length) {
+                            matched = prefix;
+                        }
+                    }
+                    p.majorCategory = matched || '';
+                    if (matched) p.category = cat.slice(matched.length) || cat;
+                    migrated = true;
+                }
+
+                // 2. weight number → string（从备注/品名找原单位线索，判断是克还是千克）
+                if (typeof p.weight === 'number' && p.weight > 0) {
+                    // 在备注和品名中找单位线索
+                    // 旧导入会把 [规格] 信息写入备注，如 "【规格】500g/袋"
+                    const clueText = [p.remark, p.name].filter(Boolean).join(' ');
+                    // 克线索：独立出现的 g 标记（非 kg 的一部分），或 "X克" 模式
+                    const hasGrams = /(?<![k千])g\b|\d+克(?!重)/.test(clueText);
+                    // kg线索
+                    const hasKg = /kg|千克|公斤/.test(clueText);
+
+                    if (hasGrams && !hasKg) {
+                        // 原单位克 → 转千克
+                        p.weight = parseFloat((p.weight / 1000).toFixed(3)) + 'kg';
+                    } else {
+                        // 默认 kg（原净含量字段的语义就是千克）
+                        p.weight = parseFloat(p.weight.toFixed(3)) + 'kg';
+                    }
+                    migrated = true;
+                } else if (typeof p.weight === 'string' && /^\d+kg$/.test(p.weight) && parseFloat(p.weight) > 100) {
+                    // 修复已迁移的错值：>100kg 大概率是克被误标为 kg
+                    const grams = parseFloat(p.weight);
+                    p.weight = parseFloat((grams / 1000).toFixed(3)) + 'kg';
+                    migrated = true;
+                }
+
+                // 3. isExclusive → productType
+                if (p.productType === undefined) {
+                    const searchText = [p.brand, p.remark, p.name].filter(Boolean).join(' ');
+                    let found = '';
+                    for (const kw of PRODUCT_TYPE_KEYWORDS) {
+                        if (searchText.includes(kw)) { found = kw; break; }
+                    }
+                    if (p.isExclusive === true || found === '包销' || found === '独家包销' || found === '包销款' || found === '独家') {
+                        p.productType = '包销';
+                    } else if (found === '定制' || found === '定制款' || found === 'OEM' || found === 'ODM' || found === '专供') {
+                        p.productType = '定制';
+                    } else {
+                        p.productType = '普通';
+                    }
+                    migrated = true;
+                }
+
+                // 4. 推断是否支持代发
+                if (p.supportsDropship === undefined) {
+                    p.supportsDropship = (p.normalExpressPrice > 0);
+                    migrated = true;
+                }
+
+                // 5. 清理孤儿属性
+                if ('spec' in p) { delete p.spec; migrated = true; }
+                if ('specialPrice' in p) { delete p.specialPrice; migrated = true; }
+            }
+
+            return migrated;
+        }
+
+        function migrateBrandStockRemarks(products, suppliers) {
+            if (localStorage.getItem('_brand_stock_remark_migrated') === '1') return false;
+
+            const BRAND_STOCK_MAP = {
+                '广州浩天': {
+                    '官栈': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '锋味派': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '真真老老': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '诸老大': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '稻香村': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '五芳斋': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '紫光园': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '广州酒家': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '陶陶居': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '榴芒一刻': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '刻凡': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '贝师傅': '【备货】端午期间主推，品牌直发，京东/顺丰/中通',
+                    '科尔沁': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '自然派': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '澳门永辉': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '法丽兹': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    'Mixx': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '洽洽': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '粒上皇': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '列夫': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '黎记': '【备货】全年常备，广州仓库备货，支持集采+代发，24小时出单，京东/中通',
+                    '德亚': '【备货】全年常备，东莞云仓直发，支持集采+代发，24小时出单，京东/中通',
+                    '官盏': '【备货】全年常备，东莞云仓直发，支持集采+代发，24小时出单，京东/中通',
+                    '觅宫燕': '【备货】全年常备，佛山品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '佳果源': '【备货】全年常备，江苏昆山直发，支持集采+代发，24小时出单，京东/中通',
+                    '元气森林': '【备货】全年常备，江苏昆山直发，支持集采+代发，24小时出单，京东/中通',
+                    '泰那兰': '【备货】全年常备，广州品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '十月稻田': '【备货】全年常备，广州品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '久久丫': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '周黑鸭': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '盐津铺子': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '王小卤': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '江中猴菇': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '如水': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '好麦多': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '桂格': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '徐福记': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '嘉士利': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '认养一头牛': '【备货】全年常备，品牌方发货，支持集采+代发，24小时出单，京东/中通',
+                    '拉面说': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '特诺娜': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '唐人神': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '雨润': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '海天': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '小鸡海蒂': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '萌宝鸭': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '姚朵朵': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '好想你': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '金燕耳': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '小罐茶': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '八马': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '白大师': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                    '新宝堂': '【备货】全年常备，品牌直发，支持集采+代发，24小时出单，京东/中通',
+                },
+                '甜卿品牌管理': {
+                    '官栈': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '德亚': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '纽仕兰': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '佳果源': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '林源春': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '沃隆': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '江中猴姑': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '北纬47度': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '欧扎克': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '有零有食': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '紫燕': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '鲁花': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '海天': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '刀唛': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '北大荒': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '十月稻田': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '贝蒂斯': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '特诺娜': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '洽洽': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '三只松鼠': '【备货】全年入仓主推，集采+代发，24小时内发货',
+                    '谢裕大': '【备货】主推，工厂直发，集采+代发，24小时内发货',
+                    '黄天鹅': '【备货】主推，工厂直发，集采+代发，24小时内发货',
+                    '百果园': '【备货】主推，工厂直发，集采+代发，24小时内发货',
+                    '费列罗': '【备货】主推，工厂直发，集采+代发，24小时内发货',
+                    '瑞士莲': '【备货】主推，工厂直发，集采+代发，24小时内发货',
+                    '瑞幸': '【备货】主推，工厂直发，集采+代发，24小时内发货',
+                    '榴芒一刻': '【备货】主推，工厂直发，集采+代发，24小时内发货',
+                    '姚生记': '【备货】工厂直发全年，集采+代发，24小时内发货',
+                    '松鲜鲜': '【备货】工厂直发全年，集采+代发，24小时内发货',
+                    '福东海': '【备货】工厂直发全年，集采+代发，24小时内发货',
+                    '蔡府': '【备货】工厂直发全年，集采+代发，24小时内发货',
+                    '好想你': '【备货】工厂直发全年，集采+代发，48小时内发货',
+                    '卓牧': '【备货】工厂直发全年，集采+代发，24小时内发货',
+                    '裕道府': '【备货】工厂直发全年，集采+代发，24小时内发货',
+                },
+                '广州礼邦': {
+                    '三只松鼠': '【备货】独家包销常备货',
+                    '百草味': '【备货】独家包销常备货',
+                    '亿滋': '【备货】独家包销常备货',
+                    '劲仔': '【备货】独家包销常备货',
+                    '盐津铺子': '【备货】独家包销常备货',
+                    '法丽兹': '【备货】独家包销常备货',
+                    '徐福记': '【备货】独家包销常备货',
+                    '旺旺': '【备货】独家包销常备货',
+                    '澳门永辉': '【备货】独家包销常备货',
+                    '桂格': '【备货】独家包销常备货',
+                    '南方黑芝麻': '【备货】独家包销常备货',
+                    '猫屎咖啡': '【备货】独家包销常备货',
+                    '王老吉': '【备货】独家包销常备货',
+                    '新京堂': '【备货】独家包销常备货',
+                    '费列罗': '【备货】独家包销常备货',
+                    '瑞士莲': '【备货】独家包销常备货',
+                    '怡口莲': '【备货】独家包销常备货',
+                    '雀巢': '【备货】独家包销常备货',
+                    '金沙河': '【备货】独家包销常备货',
+                    '海天': '【备货】独家包销常备货',
+                    '嘉顿': '【备货】优势品牌',
+                    '良品铺子': '【备货】优势品牌',
+                    '周黑鸭': '【备货】优势品牌',
+                    '科尔沁': '【备货】优势品牌',
+                    '自然派': '【备货】优势品牌',
+                    '德亚': '【备货】优势品牌',
+                    '佳果源': '【备货】优势品牌',
+                    '伊利': '【备货】优势品牌',
+                    '华祥苑': '【备货】优势品牌',
+                    '塞翁福': '【备货】优势品牌',
+                    '皇上皇': '【备货】优势品牌',
+                    '敬修堂': '【备货】优势品牌',
+                    '泡小燕': '【备货】优势品牌',
+                    '轻上': '【备货】优势品牌',
+                    '中茶': '【备货】优势品牌',
+                    '悦栈': '【备货】优势品牌',
+                },
+                '丰创&昶信': {
+                    '良品铺子': '【备货】支持一件代发，款到发货',
+                    '五芳斋': '【备货】支持一件代发，款到发货',
+                    '广州酒家': '【备货】支持一件代发，款到发货',
+                    '真真老老': '【备货】支持一件代发，款到发货',
+                    '三只松鼠': '【备货】支持一件代发，款到发货',
+                    '轩妈': '【备货】支持一件代发，款到发货',
+                    '诸老大': '【备货】支持一件代发，款到发货',
+                    '锋味派': '【备货】支持一件代发，款到发货',
+                    '三胖蛋': '【备货】支持一件代发，款到发货',
+                    '法丽兹': '【备货】支持一件代发，款到发货',
+                    '良橘堂': '【备货】支持一件代发，款到发货',
+                    '陶陶居': '【备货】支持一件代发，款到发货',
+                    '云鼎': '【备货】支持一件代发，款到发货',
+                    '旺旺': '【备货】支持一件代发，款到发货',
+                    '迪士尼': '【备货】支持一件代发，款到发货',
+                    '皇冠丹麦': '【备货】支持一件代发，款到发货',
+                    '澳门永辉': '【备货】支持一件代发，款到发货',
+                    '上好佳': '【备货】支持一件代发，款到发货',
+                    '官栈': '【备货】支持一件代发，款到发货',
+                    '蔡府': '【备货】支持一件代发，款到发货',
+                    '新宝堂': '【备货】支持一件代发，款到发货',
+                    '启泰': '【备货】支持一件代发，款到发货',
+                    '科尔沁': '【备货】广州云仓备货，全年主推，支持一件代发',
+                    '自然派': '【备货】广州云仓备货，全年主推，支持一件代发',
+                    '姚朵朵': '【备货】支持一件代发，款到发货',
+                    '姚生记': '【备货】支持一件代发，款到发货',
+                },
+                '深圳荣林华': {
+                    '洽洽': '【备货】有稳定备货库存，支持一件代发',
+                    '法丽兹': '【备货】有稳定备货库存，支持一件代发',
+                    '澳门永辉': '【备货】有稳定备货库存，支持一件代发',
+                    '无穷': '【备货】有稳定备货库存，支持一件代发',
+                    '劲仔': '【备货】有稳定备货库存，支持一件代发',
+                    '觅宫燕': '【备货】有稳定备货库存，支持一件代发',
+                },
+            };
+
+            const supplierNameMap = {};
+            suppliers.forEach(s => {
+                const name = s.name || s.companyName || '';
+                supplierNameMap[s.id] = name;
+            });
+
+            let updated = 0;
+            let skipped = 0;
+
+            products.forEach(p => {
+                const supplierName = supplierNameMap[p.supplierId] || '';
+                const brand = p.brand || '';
+
+                let stockInfo = null;
+                let matchedSupplier = null;
+
+                for (const [supplierKey, brandMap] of Object.entries(BRAND_STOCK_MAP)) {
+                    if (supplierName.includes(supplierKey)) {
+                        for (const [brandKey, info] of Object.entries(brandMap)) {
+                            if (brand.includes(brandKey)) {
+                                stockInfo = info;
+                                matchedSupplier = supplierKey;
+                                break;
+                            }
+                        }
+                        if (stockInfo) break;
+                    }
+                }
+
+                if (!stockInfo) {
+                    skipped++;
+                    return;
+                }
+
+                if ((p.remark || '').includes(stockInfo)) {
+                    skipped++;
+                    return;
+                }
+
+                const existingRemark = p.remark ? p.remark.trim() : '';
+                p.remark = existingRemark ? existingRemark + '；' + stockInfo : stockInfo;
+                updated++;
+            });
+
+            console.log('[品牌备货迁移] 匹配 ' + updated + ' 个商品，跳过 ' + skipped + ' 个');
+            return updated > 0;
+        }
+
         async function initData() {
             try {
                 // 先初始化 IndexedDB
@@ -2595,11 +2976,22 @@
                     products = JSON.parse(JSON.stringify(DEFAULT_PRODUCTS));
                 }
 
+                // 运行数据迁移（字段重命名/拆分/清理）
+                if (migrateFields(products)) {
+                    await saveData();
+                }
+
                 if (savedData.suppliers !== null && savedData.suppliers !== undefined) {
                     suppliers = savedData.suppliers;
                 } else {
                     suppliers = JSON.parse(JSON.stringify(DEFAULT_SUPPLIERS));
                 }
+
+                // 品牌备货信息 → 商品备注（一次性迁移）
+                if (migrateBrandStockRemarks(products, suppliers)) {
+                    await saveData();
+                }
+                localStorage.setItem('_brand_stock_remark_migrated', '1');
 
                 if (savedData.templates !== null && savedData.templates !== undefined) {
                     templates = savedData.templates;
@@ -2655,10 +3047,13 @@
                     // 清理已不存在的列（如旧版 status, costPrice, margin）
                     userColumnConfig.visibleColumns = userColumnConfig.visibleColumns.filter(id => COLUMN_DEFINITIONS[id]);
                     userColumnConfig.hiddenColumns = userColumnConfig.hiddenColumns.filter(id => COLUMN_DEFINITIONS[id]);
-                    // 确保新增的默认列可见
+                    // 确保新增的默认列出现在配置中
                     const allKnown = [...userColumnConfig.visibleColumns, ...userColumnConfig.hiddenColumns];
                     DEFAULT_COLUMN_CONFIG.visibleColumns.forEach(id => {
                         if (!allKnown.includes(id)) userColumnConfig.visibleColumns.push(id);
+                    });
+                    DEFAULT_COLUMN_CONFIG.hiddenColumns.forEach(id => {
+                        if (!allKnown.includes(id)) userColumnConfig.hiddenColumns.push(id);
                     });
                 }
 
@@ -2736,9 +3131,8 @@
         function getFilteredProducts() {
             const getCombo = (id) => getComboValues('filter' + id.charAt(0).toUpperCase() + id.slice(1));
             const filterMargin = getCombo('margin');
-            const filterExclusive = getCombo('exclusive');
+            const filterProductType = getCombo('productType');
             const filterBrandLevel = getCombo('brandLevel');
-            const filterLogistics = getCombo('logistics');
             const filterStockStatus = getCombo('stockStatus');
             const filterSupplier = getCombo('supplier');
             const filterShipFrom = getCombo('shipFrom');
@@ -2761,9 +3155,8 @@
                     if (filterMargin.includes('high') && margin >= 35) ok = true;
                     if (!ok) return false;
                 }
-                if (filterExclusive.length > 0 && !filterExclusive.includes(String(p.isExclusive))) return false;
+                if (filterProductType.length > 0 && !filterProductType.includes(p.productType || '普通')) return false;
                 if (filterBrandLevel.length > 0 && !filterBrandLevel.includes(p.brandLevel)) return false;
-                if (filterLogistics.length > 0 && !filterLogistics.includes(p.logisticsMode)) return false;
                 if (filterStockStatus.length > 0 && !filterStockStatus.includes(p.stockStatus)) return false;
                 if (filterSupplier.length > 0 && !filterSupplier.includes(p.supplierId)) return false;
                 if (filterShipFrom.length > 0 && !filterShipFrom.includes(p.shipFrom)) return false;
@@ -2833,7 +3226,8 @@
             '供应商ID': (p) => p.supplierId || '',
             '供应商SKU': (p) => p.sku || '',
             '商品名称': (p) => p.name || '',
-            '分类': (p) => p.category || '',
+            '大类': (p) => p.majorCategory || '',
+            '品类': (p) => p.category || '',
             '单位': (p) => p.unit || '',
             '产品条码': (p) => p.barcode || '',
             '外箱条码': (p) => p.boxBarcode || '',
@@ -2841,8 +3235,8 @@
             '内配': (p) => p.innerConfig || '',
             '产品尺寸': (p) => p.productSize || '',
             '整箱尺寸': (p) => p.boxSize || '',
-            '净含量': (p) => p.weight || '',
-            '产品毛重': (p) => p.grossWeight || '',
+            '单品规格': (p) => p.weight || '',
+            '单品重量': (p) => p.grossWeight || '',
             '整箱重量': (p) => p.boxWeight || '',
             '品牌': (p) => p.brand || '',
             '品牌级别': (p) => p.brandLevel || '',
@@ -2857,19 +3251,21 @@
             '渠道价': (p) => p.channelPrice || '',
             '团购价': (p) => p.groupPrice || '',
             '集采毛利率': (p) => calculateMargin(p.retailPrice, p.purchasePrice),
-            '一件代发价': (p) => p.normalExpressPrice || '',
-            '一件代发运费': (p) => p.dropshipFreight || '',
-            '一件代发毛利率': (p) => calculateMargin(p.retailPrice, p.normalExpressPrice),
-            '物流方式': (p) => p.logisticsMode || '',
+            '代发价': (p) => p.normalExpressPrice || '',
+            '代发运费': (p) => p.dropshipFreight || '',
+            '代发毛利率': (p) => calculateMargin(p.retailPrice, p.normalExpressPrice),
+            '京东顺丰代发价': (p) => p.jdsfExpressPrice || '',
+            '京东顺丰代发运费': (p) => p.jdsfExpressFreight || '',
+            '京东顺丰代发毛利率': (p) => calculateMargin(p.retailPrice, p.jdsfExpressPrice),
             '发货地': (p) => p.shipFrom || '',
             '运费包含': (p) => p.freightIncluded ? '是' : '否',
             '不包邮区域': (p) => p.noPostArea || '',
             '默认快递公司': (p) => p.defaultExpress || '',
             '库存类型': (p) => p.stockType || '',
             '备货状态': (p) => p.stockStatus || '',
-            '备货周期': (p) => p.leadTime || '',
             '最小起订量': (p) => p.moq || '',
-            '包销产品': (p) => p.isExclusive ? '是' : '否',
+            '产品类型': (p) => p.productType || '普通',
+            '支持代发': (p) => p.supportsDropship ? '是' : '否',
             '价格有效期': (p) => p.priceExpiry || '',
             '京东链接': (p) => p.jdLink || '',
             '京东价': (p) => p.jdPrice || '',
@@ -2880,8 +3276,10 @@
             '产品图片': (p) => '',
             '详情图': (p) => p.detailImages ? '(已导入)' : '',
             '备注': (p) => p.remark || '',
+            '状态': (p) => p.status || '',
             '录入来源': (p) => p.source || '',
-            '录入时间': (p) => p.createdAt || ''
+            '录入时间': (p) => p.createdAt || '',
+            '最后更新': (p) => p.updatedAt || ''
         };
 
         function getExportFieldValue(p, fieldName) {
@@ -3314,7 +3712,7 @@
         const CONDITION_FIELDS = [
             { field: 'supplierId', label: '供应商', type: 'text-eq' },
             { field: 'brand', label: '品牌', type: 'text-eq' },
-            { field: 'category', label: '分类', type: 'text-eq' },
+            { field: 'category', label: '品类', type: 'text-eq' },
             { field: 'name', label: '商品名称', type: 'text-contains' },
             { field: 'sku', label: 'SKU', type: 'text-contains' },
             { field: 'barcode', label: '产品条码', type: 'text-contains' },
@@ -3326,8 +3724,7 @@
             { field: 'origin', label: '产地', type: 'text-eq' },
             { field: 'stockType', label: '库存类型', type: 'text-eq' },
             { field: 'stockStatus', label: '备货状态', type: 'text-eq' },
-            { field: 'logisticsMode', label: '一件代发', type: 'text-eq' },
-            { field: 'isExclusive', label: '是否包销', type: 'text-eq' },
+            { field: 'productType', label: '产品类型', type: 'text-eq' },
             { field: 'isSugarFree', label: '无糖标识', type: 'text-eq' },
             { field: 'isOrganic', label: '有机标识', type: 'text-eq' },
             { field: 'freightIncluded', label: '运费包含', type: 'text-eq' },
@@ -3463,8 +3860,7 @@
                 'origin': 'origin',
                 'stockType': 'stockType',
                 'stockStatus': 'stockStatus',
-                'logisticsMode': 'logisticsMode',
-                'isExclusive': 'isExclusive',
+                'productType': 'productType',
                 'isSugarFree': 'isSugarFree',
                 'isOrganic': 'isOrganic',
                 'freightIncluded': 'freightIncluded',
@@ -3802,9 +4198,8 @@
             // 获取 combo box 筛选值（返回数组），搜索框仍用 text input
             const getCombo = (id) => getComboValues('filter' + id.charAt(0).toUpperCase() + id.slice(1));
             const filterMargin = getCombo('margin');
-            const filterExclusive = getCombo('exclusive');
+            const filterProductType = getCombo('productType');
             const filterBrandLevel = getCombo('brandLevel');
-            const filterLogistics = getCombo('logistics');
             const filterStockStatus = getCombo('stockStatus');
             const filterSupplier = getCombo('supplier');
             const filterShipFrom = getCombo('shipFrom');
@@ -3829,9 +4224,8 @@
                     if (filterMargin.includes('high') && margin >= 35) ok = true;
                     if (!ok) return false;
                 }
-                if (filterExclusive.length > 0 && !filterExclusive.includes(String(p.isExclusive))) return false;
+                if (filterProductType.length > 0 && !filterProductType.includes(p.productType || '普通')) return false;
                 if (filterBrandLevel.length > 0 && !filterBrandLevel.includes(p.brandLevel)) return false;
-                if (filterLogistics.length > 0 && !filterLogistics.includes(p.logisticsMode)) return false;
                 if (filterStockStatus.length > 0 && !filterStockStatus.includes(p.stockStatus)) return false;
                 if (filterSupplier.length > 0 && !filterSupplier.includes(p.supplierId)) return false;
                 if (filterShipFrom.length > 0 && !filterShipFrom.includes(p.shipFrom)) return false;
@@ -3962,7 +4356,8 @@
 
                 case 'field':
                 default:
-                    let content = p[def.field] != null && p[def.field] !== '' ? p[def.field] : '-';
+                    let raw = p[def.field] != null && p[def.field] !== '' ? p[def.field] : '-';
+                    let content = def.format ? def.format(raw) : raw;
                     if (def.subField && p[def.subField]) {
                         return `<td class="px-4 py-3">
                             <div class="text-xs">${content}</div>
@@ -4080,7 +4475,8 @@
                 isSugarFree: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
                 isOrganic: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
                 freightIncluded: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
-                isExclusive: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
+                productType: { type: 'select', options: ['普通', '包销', '定制'], labels: ['普通', '包销', '定制'] },
+                supportsDropship: { type: 'select', options: ['true', 'false'], labels: ['是', '否'] },
                 // datalist 字段（从现有产品数据提取唯一值）
                 supplierId: { type: 'datalist', options: [...new Set(products.map(p => p.supplierId).filter(Boolean))] },
                 brand: { type: 'datalist', options: [...new Set(products.map(p => p.brand).filter(Boolean))] },
@@ -4090,7 +4486,6 @@
                 brandLevel: { type: 'datalist', options: [...new Set(products.map(p => p.brandLevel).filter(Boolean))] },
                 stockType: { type: 'datalist', options: [...new Set(products.map(p => p.stockType).filter(Boolean))] },
                 stockStatus: { type: 'datalist', options: [...new Set(products.map(p => p.stockStatus).filter(Boolean))] },
-                logisticsMode: { type: 'datalist', options: [...new Set(products.map(p => p.logisticsMode).filter(Boolean))] },
                 unit: { type: 'datalist', options: [...new Set(products.map(p => p.unit).filter(Boolean))] },
                 defaultExpress: { type: 'datalist', options: [...new Set(products.map(p => p.defaultExpress).filter(Boolean))] },
                 // 数值字段
@@ -4101,7 +4496,6 @@
                 normalExpressPrice: { type: 'number' },
                 dropshipFreight: { type: 'number' },
                 moq: { type: 'number' },
-                leadTime: { type: 'number' },
                 boxSpec: { type: 'number' },
                 innerConfig: { type: 'number' },
                 weight: { type: 'number' },
@@ -4156,7 +4550,7 @@
 
             let value;
             if (clearChecked) {
-                const boolFields = ['isExclusive', 'isSugarFree', 'isOrganic', 'freightIncluded'];
+                const boolFields = ['isSugarFree', 'isOrganic', 'freightIncluded'];
                 value = boolFields.includes(field) ? false : '';
             } else {
                 value = valueInput.value;
@@ -4166,7 +4560,7 @@
                 }
 
                 // 布尔字段
-                const boolFields = ['isExclusive', 'isSugarFree', 'isOrganic', 'freightIncluded'];
+                const boolFields = ['isSugarFree', 'isOrganic', 'freightIncluded'];
                 if (boolFields.includes(field)) {
                     value = value === 'true';
                 }
@@ -4174,7 +4568,7 @@
                 // 数值字段
                 const numberFields = ['purchasePrice', 'retailPrice', 'channelPrice', 'groupPrice',
                     'normalExpressPrice', 'dropshipFreight',
-                    'moq', 'leadTime', 'boxSpec', 'innerConfig', 'weight', 'grossWeight', 'boxWeight'];
+                    'moq', 'boxSpec', 'innerConfig', 'weight', 'grossWeight', 'boxWeight'];
                 if (numberFields.includes(field)) {
                     value = value === '' ? null : parseFloat(value);
                     if (isNaN(value)) { alert('请输入有效数值'); return; }
@@ -4445,7 +4839,11 @@
                         <input type="text" id="edit-sku" value="${p.sku || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                     </div>
                     <div>
-                        <label class="block text-sm text-gray-600 mb-1">分类</label>
+                        <label class="block text-sm text-gray-600 mb-1">大类</label>
+                        <input type="text" id="edit-majorCategory" value="${p.majorCategory || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
+                    </div>
+                    <div>
+                        <label class="block text-sm text-gray-600 mb-1">品类</label>
                         <input type="text" id="edit-category" value="${p.category || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                     </div>
                     <div>
@@ -4499,12 +4897,20 @@
                             <input type="number" id="edit-groupPrice" value="${p.groupPrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">一件代发价</label>
+                            <label class="block text-sm text-gray-600 mb-1">代发价</label>
                             <input type="number" id="edit-normalExpressPrice" value="${p.normalExpressPrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">一件代发运费</label>
+                            <label class="block text-sm text-gray-600 mb-1">代发运费</label>
                             <input type="number" id="edit-dropshipFreight" value="${p.dropshipFreight || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">京东顺丰代发价</label>
+                            <input type="number" id="edit-jdsfExpressPrice" value="${p.jdsfExpressPrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">京东顺丰代发运费</label>
+                            <input type="number" id="edit-jdsfExpressFreight" value="${p.jdsfExpressFreight || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                         </div>
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">价格有效期</label>
@@ -4517,14 +4923,6 @@
                 <div class="border-t pt-4 mt-4">
                     <h4 class="font-medium text-gray-700 mb-3">供应链信息</h4>
                     <div class="grid grid-cols-2 gap-4">
-                        <div>
-                            <label class="block text-sm text-gray-600 mb-1">物流方式</label>
-                            <select id="edit-logisticsMode" class="w-full border rounded-lg px-3 py-2 text-sm">
-                                <option value="">请选择</option>
-                                <option value="集采" ${p.logisticsMode === '集采' ? 'selected' : ''}>集采</option>
-                                <option value="代发" ${p.logisticsMode === '代发' ? 'selected' : ''}>代发</option>
-                            </select>
-                        </div>
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">发货地</label>
                             <input type="text" id="edit-shipFrom" value="${p.shipFrom || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
@@ -4542,11 +4940,34 @@
                             <input type="text" id="edit-stockStatus" value="${p.stockStatus || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                         </div>
                         <div>
-                            <label class="block text-sm text-gray-600 mb-1">包销产品</label>
-                            <select id="edit-isExclusive" class="w-full border rounded-lg px-3 py-2 text-sm">
-                                <option value="false" ${!p.isExclusive ? 'selected' : ''}>否</option>
-                                <option value="true" ${p.isExclusive ? 'selected' : ''}>是</option>
+                            <label class="block text-sm text-gray-600 mb-1">产品类型</label>
+                            <select id="edit-productType" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="普通" ${p.productType === '普通' ? 'selected' : ''}>普通</option>
+                                <option value="包销" ${p.productType === '包销' ? 'selected' : ''}>包销</option>
+                                <option value="定制" ${p.productType === '定制' ? 'selected' : ''}>定制</option>
                             </select>
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">支持代发</label>
+                            <select id="edit-supportsDropship" class="w-full border rounded-lg px-3 py-2 text-sm">
+                                <option value="true" ${p.supportsDropship ? 'selected' : ''}>是</option>
+                                <option value="false" ${!p.supportsDropship ? 'selected' : ''}>否</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 电商参考 -->
+                <div class="border-t pt-4 mt-4">
+                    <h4 class="font-medium text-gray-700 mb-3">电商参考</h4>
+                    <div class="grid grid-cols-2 gap-4">
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">拼多多链接</label>
+                            <input type="text" id="edit-pddLink" value="${p.pddLink || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
+                        </div>
+                        <div>
+                            <label class="block text-sm text-gray-600 mb-1">拼多多价</label>
+                            <input type="number" id="edit-pddPrice" value="${p.pddPrice || ''}" class="w-full border rounded-lg px-3 py-2 text-sm">
                         </div>
                     </div>
                 </div>
@@ -4573,6 +4994,7 @@
             // 保存编辑内容
             p.name = document.getElementById('edit-name').value;
             p.sku = document.getElementById('edit-sku').value;
+            p.majorCategory = document.getElementById('edit-majorCategory').value;
             p.category = document.getElementById('edit-category').value;
             p.unit = document.getElementById('edit-unit').value;
             p.barcode = document.getElementById('edit-barcode').value;
@@ -4586,12 +5008,16 @@
             p.groupPrice = parseFloat(document.getElementById('edit-groupPrice').value) || 0;
             p.normalExpressPrice = parseFloat(document.getElementById('edit-normalExpressPrice').value) || 0;
             p.dropshipFreight = parseFloat(document.getElementById('edit-dropshipFreight').value) || 0;
+            p.jdsfExpressPrice = parseFloat(document.getElementById('edit-jdsfExpressPrice').value) || 0;
+            p.jdsfExpressFreight = parseFloat(document.getElementById('edit-jdsfExpressFreight').value) || 0;
             p.priceExpiry = document.getElementById('edit-priceExpiry').value;
-            p.logisticsMode = document.getElementById('edit-logisticsMode').value;
             p.shipFrom = document.getElementById('edit-shipFrom').value;
             p.stockType = document.getElementById('edit-stockType').value;
             p.stockStatus = document.getElementById('edit-stockStatus').value;
-            p.isExclusive = document.getElementById('edit-isExclusive').value === 'true';
+            p.productType = document.getElementById('edit-productType').value;
+            p.supportsDropship = document.getElementById('edit-supportsDropship').value === 'true';
+            p.pddLink = document.getElementById('edit-pddLink').value;
+            p.pddPrice = parseFloat(document.getElementById('edit-pddPrice').value) || 0;
             p.remark = document.getElementById('edit-remark').value;
             p.updatedAt = new Date().toISOString().split('T')[0];
 
@@ -5014,7 +5440,8 @@
                         <div class="grid grid-cols-3 gap-2">
                             <div><span class="text-gray-500">供应商：</span>${p.supplierId || '-'}</div>
                             <div><span class="text-gray-500">SKU：</span>${p.sku}</div>
-                            <div><span class="text-gray-500">分类：</span>${p.category || '-'}</div>
+                            <div><span class="text-gray-500">大类：</span>${p.majorCategory || '-'}</div>
+                            <div><span class="text-gray-500">品类：</span>${p.category || '-'}</div>
                             <div><span class="text-gray-500">单位：</span>${p.unit || '-'}</div>
                             <div><span class="text-gray-500">产品条码：</span>${p.barcode || '-'}</div>
                             <div><span class="text-gray-500">外箱条码：</span>${p.boxBarcode || '-'}</div>
@@ -5029,8 +5456,8 @@
                             <div><span class="text-gray-500">内配：</span>${p.innerConfig || '-'}</div>
                             <div><span class="text-gray-500">产品尺寸：</span>${p.productSize || '-'}</div>
                             <div><span class="text-gray-500">整箱尺寸：</span>${p.boxSize || '-'}</div>
-                            <div><span class="text-gray-500">净含量：</span>${p.weight || '-'}</div>
-                            <div><span class="text-gray-500">产品毛重：</span>${p.grossWeight || '-'} kg</div>
+                            <div><span class="text-gray-500">单品规格：</span>${p.weight || '-'}</div>
+                            <div><span class="text-gray-500">单品重量：</span>${p.grossWeight || '-'} kg</div>
                             <div><span class="text-gray-500">整箱重量：</span>${p.boxWeight || '-'} kg</div>
                         </div>
                     </div>
@@ -5059,9 +5486,12 @@
                             <div><span class="text-gray-500">渠道价：</span>¥${p.channelPrice || '-'}</div>
                             <div><span class="text-gray-500">团购价：</span>¥${p.groupPrice || '-'}</div>
                             <div><span class="text-gray-500">集采毛利率：</span><span class="font-medium ${getMarginColor(parseFloat(calculateMargin(p.retailPrice, p.purchasePrice)))}">${calculateMargin(p.retailPrice, p.purchasePrice) || '-'}</span></div>
-                            <div><span class="text-gray-500">一件代发价：</span>¥${p.normalExpressPrice || '-'}</div>
-                            <div><span class="text-gray-500">一件代发运费：</span>¥${p.dropshipFreight || '-'}</div>
-                            <div><span class="text-gray-500">一件代发毛利率：</span><span class="font-medium ${getMarginColor(parseFloat(calculateMargin(p.retailPrice, p.normalExpressPrice)))}">${calculateMargin(p.retailPrice, p.normalExpressPrice) || '-'}</span></div>
+                            <div><span class="text-gray-500">代发价：</span>¥${p.normalExpressPrice || '-'}</div>
+                            <div><span class="text-gray-500">代发运费：</span>¥${p.dropshipFreight || '-'}</div>
+                            <div><span class="text-gray-500">代发毛利率：</span><span class="font-medium ${getMarginColor(parseFloat(calculateMargin(p.retailPrice, p.normalExpressPrice)))}">${calculateMargin(p.retailPrice, p.normalExpressPrice) || '-'}</span></div>
+                            <div><span class="text-gray-500">京东顺丰代发价：</span>¥${p.jdsfExpressPrice || '-'}</div>
+                            <div><span class="text-gray-500">京东顺丰代发运费：</span>¥${p.jdsfExpressFreight || '-'}</div>
+                            <div><span class="text-gray-500">京东顺丰代发毛利率：</span><span class="font-medium ${getMarginColor(parseFloat(calculateMargin(p.retailPrice, p.jdsfExpressPrice)))}">${calculateMargin(p.retailPrice, p.jdsfExpressPrice) || '-'}</span></div>
                             <div><span class="text-gray-500">价格有效期：</span>${p.priceExpiry || '-'}</div>
                         </div>
                     </div>
@@ -5070,16 +5500,15 @@
                     <div class="bg-gray-50 rounded-lg p-3">
                         <h4 class="font-medium text-gray-700 mb-2">物流供应链</h4>
                         <div class="grid grid-cols-3 gap-2">
-                            <div><span class="text-gray-500">物流方式：</span>${p.logisticsMode || '-'}</div>
                             <div><span class="text-gray-500">发货地：</span>${p.shipFrom || '-'}</div>
                             <div><span class="text-gray-500">运费包含：</span>${p.freightIncluded ? '是' : '否'}</div>
                             <div><span class="text-gray-500">不包邮区域：</span>${p.noPostArea || '-'}</div>
                             <div><span class="text-gray-500">默认快递：</span>${p.defaultExpress || '-'}</div>
                             <div><span class="text-gray-500">库存类型：</span>${p.stockType || '-'}</div>
                             <div><span class="text-gray-500">备货状态：</span>${p.stockStatus || '-'}</div>
-                            <div><span class="text-gray-500">备货周期：</span>${p.leadTime || '-'}</div>
                             <div><span class="text-gray-500">最小起订量：</span>${p.moq || '-'}</div>
-                            <div><span class="text-gray-500">包销产品：</span>${p.isExclusive ? '是' : '否'}</div>
+                            <div><span class="text-gray-500">产品类型：</span>${p.productType || '普通'}</div>
+                            <div><span class="text-gray-500">支持代发：</span>${p.supportsDropship ? '是' : '否'}</div>
                         </div>
                     </div>
 
@@ -5091,6 +5520,9 @@
                             <div><span class="text-gray-500">淘宝价：</span>¥${p.tbPrice || '-'}</div>
                             <div class="col-span-2"><span class="text-gray-500">京东链接：</span>${p.jdLink || '-'}</div>
                             <div class="col-span-2"><span class="text-gray-500">淘宝链接：</span>${p.tbLink || '-'}</div>
+                            <div><span class="text-gray-500">拼多多价：</span>¥${p.pddPrice || '-'}</div>
+                            <div></div>
+                            <div class="col-span-2"><span class="text-gray-500">拼多多链接：</span>${p.pddLink || '-'}</div>
                         </div>
                     </div>
 
@@ -5112,10 +5544,6 @@
                         <div class="text-sm">${p.remark}</div>
                     </div>
                     ` : ''}
-                            <div><span class="text-gray-500">录入时间：</span>${p.createdAt || '-'}</div>
-                            <div><span class="text-gray-500">最后更新：</span>${p.updatedAt || '-'}</div>
-                        </div>
-                    </div>
                 </div>
             `;
             document.getElementById('modal-product').classList.add('active');
@@ -5297,7 +5725,7 @@
 
         async function parseStructuredTextToTable(rawText) {
             if (!isAIAvailable()) throw new Error('非表格格式文本需要 AI 进行结构化解析，请先配置 AI 接口');
-            const fieldList = SYSTEM_FIELDS.core.join(', ');
+            const fieldList = ALL_FIELDS.filter(f => f !== '(忽略)').join(', ');
             const prompt = `从以下文档文本中识别产品信息（表格数据），将每行产品解析为JSON。系统字段：${fieldList}。如果文本不包含产品数据，返回hasProductData:false。只返回JSON。\n文本内容：\n${rawText.substring(0, 6000)}`;
             const isOpenAIFormat = aiSettings.apiType === 'deepseek' || aiSettings.apiType === 'openai' || aiSettings.apiType === 'custom';
             const body = isOpenAIFormat ? {
@@ -6630,6 +7058,8 @@ self.onmessage = function(e) {
                     updated++;
                 } else {
                     const newProduct = { id: nextProductId++, ...rowData };
+                    const sheetType = inferProductTypeFromSheet(sheetName);
+                    if (sheetType) newProduct.productType = sheetType;
                     products.push(newProduct);
                     added++;
                 }
@@ -7702,6 +8132,11 @@ self.onmessage = function(e) {
                             if (rowBrand) existingProduct.brand = rowBrand;
                         }
 
+                        const sheetType = inferProductTypeFromSheet(sheetName);
+                        if (sheetType && (!existingProduct.productType || existingProduct.productType === '普通')) {
+                            existingProduct.productType = sheetType;
+                        }
+
                         existingProduct.updatedAt = new Date().toISOString().split('T')[0];
                         existingProduct.source = 'Excel更新';
                         updated++;
@@ -7717,7 +8152,8 @@ self.onmessage = function(e) {
                             sku: sku,
                             name: fieldToIndex['商品名称'] !== undefined ? row[fieldToIndex['商品名称']] : '',
                             brand: brandName || (brandCandidates && fieldToIndex['商品名称'] !== undefined ? (matchBrandForName(String(row[fieldToIndex['商品名称']] || ''), brandCandidates) || '') : ''),
-                            category: '食品礼盒',
+                            majorCategory: '食品',
+                            category: '礼盒',
                             unit: '盒',
                             source: 'Excel导入',
                             createdAt: new Date().toISOString().split('T')[0],
@@ -7725,7 +8161,7 @@ self.onmessage = function(e) {
                             freightIncluded: true,
                             isSugarFree: false,
                             isOrganic: false,
-                            isExclusive: false,
+                            productType: '普通', supportsDropship: false,
                             mainImage: '',
                             detailImages: '',
                             grossWeight: 0,
@@ -7757,6 +8193,10 @@ self.onmessage = function(e) {
                                 product.detailImages = rowImages[excelRow].slice(1).map(img => img.base64).join(',');
                             }
                         }
+
+                        // Sheet名推断产品类型（包销/定制优先级高于字段映射中的普通值）
+                        const sheetType = inferProductTypeFromSheet(sheetName);
+                        if (sheetType) product.productType = sheetType;
 
                         products.push(product);
                         added++;
@@ -9293,38 +9733,45 @@ self.onmessage = function(e) {
         function buildAIMappingPrompt(headers, sampleRows, existingTemplate) {
             const fieldDesc = `系统字段（按类别分组）：
 
-基础信息：供应商ID, 供应商SKU(货号/编号), 商品名称(品名), 分类(品类), 单位(个/箱/盒)
-条码包装：产品条码(条形码/EAN), 外箱条码, 箱规(每箱数量), 内配(盒内配置), 产品尺寸, 整箱尺寸, 净含量(重量), 产品毛重, 整箱重量
+基础信息：供应商ID, 供应商SKU(货号/编号), 商品名称(品名), 大类, 品类(分类), 单位(个/箱/盒)
+条码包装：产品条码(条形码/EAN), 外箱条码, 箱规(每箱数量), 内配(盒内配置), 产品尺寸, 整箱尺寸, 单品规格(规格/型号/净含量/克重), 单品重量(毛重), 整箱重量
 品牌属性：品牌, 品牌级别, 产地, 保质期, 配料表, 是否无糖, 是否有机, 税收编码
-价格信息：集采价(采购价/供货价/进价), 零售价(市场价/指导价), 渠道价, 团购价, 集采毛利率, 一件代发价, 一件代发运费, 一件代发毛利率
-物流供应：物流方式(发货方式), 发货地(仓库), 运费包含(是否包邮), 不包邮区域, 默认快递公司, 库存类型(现货/预订), 备货状态, 备货周期(交货期), 最小起订量, 包销产品, 价格有效期
+价格信息：集采价(采购价/供货价/进价), 零售价(市场价/指导价), 渠道价, 团购价, 集采毛利率, 代发价(一件代发价), 代发运费(一件代发运费), 代发毛利率, 京东顺丰代发价, 京东顺丰代发运费, 京东顺丰代发毛利率
+物流供应：发货地(仓库), 运费包含(是否包邮), 不包邮区域, 默认快递公司, 库存类型(现货/预订), 备货状态, 最小起订量, 产品类型(包销/定制/普通), 支持代发, 价格有效期
 电商参考：京东链接, 京东价, 淘宝链接, 淘宝价, 拼多多链接, 拼多多价
 媒体备注：产品图片, 详情图, 备注
 
 重要映射规则（优先遵守）：
 - "货号"/"SKU"/"商品编码"/"产品编号"/"编号" → 供应商SKU
 - "品名"/"商品名称"/"产品名称"/"名称" → 商品名称
+- "大类" → 大类
+- "分类"/"类别"/"品类" → 品类
 - "品牌" 开头但不含"级别"/"等级" → 品牌
 - "品牌级别"/"品牌等级" → 品牌级别
 - "条码"/"条形码"/"EAN"/"商品条码" → 产品条码
 - "外箱条码"/"箱码" → 外箱条码
-- "规格"/"型号" → 备注（无匹配归入备注）
+- "规格"/"型号"/"净含量"/"重量"/"克重"/"净重"/"克数" → 单品规格
 - "箱规"/"装箱数"/"箱入数"/"每箱数量" → 箱规
-- "净含量"/"重量"/"克重"/"净重" → 净含量
-- "毛重" → 产品毛重
+- "毛重"/"单品重量"/"产品毛重" → 单品重量
 - "整箱重量"/"箱重" → 整箱重量
 - "采购价"/"进货价"/"供货价"/"单价"/"价格" → 集采价
 - "零售价"/"市场价"/"建议零售价" → 零售价
 - "渠道价" → 渠道价
 - "团购价" → 团购价
 - "含税"/"是否含税" → 备注（含税标识字段已删除）
-- "一件代发价"/"代发价" → 一件代发价
-- "一件代发运费"/"代发运费" → 一件代发运费
+- "代发价"/"一件代发价" → 代发价
+- "代发运费"/"一件代发运费" → 代发运费
+- "京东/顺丰代发价"/"京东代发价"/"顺丰代发价" → 京东顺丰代发价
+- "京东/顺丰代发运费"/"京东代发运费"/"顺丰代发运费" → 京东顺丰代发运费
+- "包销"/"独家"/"定制"/"定制款" → 产品类型
 - "京东价" → 京东价
 - "淘宝价"/"天猫价" → 淘宝价
+- "拼多多价" → 拼多多价
+- "拼多多链接" → 拼多多链接
 - "尺寸" 前面有"整箱"/"外箱" → 整箱尺寸，否则 → 产品尺寸
 - "产品图片"/"图片"/"主图" → 产品图片
 - "详情图"/"详情图片" → 详情图
+- "支持代发"/"是否代发" → 支持代发
 - 无法确定的字段映射为 "(忽略)"
 - 如果示例数据显示URL/链接特征(http/https/base64)，优先考虑电商链接或图片字段
 - 如果示例数据是纯数字且较大(>100)，优先考虑条码；如果较小(<100)，优先考虑价格`;
@@ -9455,7 +9902,7 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
         // 批量 AI 映射：一次 API 调用处理所有 sheet
         async function callAIMappingBatch(sheetsData) {
             if (!isAIAvailable()) throw new Error('AI 未配置');
-            let prompt = `将以下所有工作表的表头映射到系统字段。每个工作表独立映射。只返回JSON，不要解释。\n系统字段：${SYSTEM_FIELDS.core.join(', ')}\n\n`;
+            let prompt = `将以下所有工作表的表头映射到系统字段。每个工作表独立映射。只返回JSON，不要解释。\n系统字段：${ALL_FIELDS.filter(f => f !== '(忽略)').join(', ')}\n\n`;
             sheetsData.forEach((sd, si) => {
                 prompt += `工作表"${sd.name}"的表头：\n`;
                 sd.headers.forEach((h, hi) => prompt += `  ${si}_${hi}. "${String(h || '').trim()}"\n`);
@@ -9520,6 +9967,14 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             return fieldName;
         }
 
+        // 从 sheet 名推断产品类型（导入时使用）
+        function inferProductTypeFromSheet(sheetName) {
+            const n = (sheetName || '').replace(/[（(][^)）]*[)）]/g, '').toLowerCase();
+            if (/包销/.test(n)) return '包销';
+            if (/定制/.test(n)) return '定制';
+            return null;
+        }
+
         function smartMatchField(fieldName, priceType) {
             const h = fieldName.toLowerCase().replace(/[_\s]/g, '');
 
@@ -9527,20 +9982,20 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             if (h.includes('供应商id') || h === 'supplierid') return '供应商ID';
             if (h.includes('货号') || h.includes('sku') || h.includes('编号') || h === 'id' || h.includes('商品编码') || h.includes('产品编号')) return '供应商SKU';
             if (h.includes('品名') || h.includes('商品名') || h.includes('产品名称') || h === '名称' || h === 'name') return '商品名称';
-            if (h.includes('分类') || h.includes('类别') || h.includes('品类')) return '分类';
+            if (h.includes('大类')) return '大类';
+            if (h.includes('分类') || h.includes('类别') || h.includes('品类')) return '品类';
             if (h.includes('单位')) return '单位';
 
-            // 规格包装
+            // 规格包装 (规格/型号/克重等 → 单品规格，不再进备注)
             if (h.includes('条码') || h.includes('ean') || h.includes('条形码') || h.includes('barcode') || h.includes('商品条码')) return '产品条码';
             if (h.includes('箱码') || h.includes('外箱码') || h.includes('外箱条码')) return '外箱条码';
-            if (h.includes('规格') || h === '型号') return '备注';
             if (h.includes('箱规') || h.includes('装箱数') || h.includes('箱入数') || h.includes('每箱') || h.includes('装箱规格')) return '箱规';
             if (h.includes('内配') || h.includes('包装配置') || h.includes('内包装')) return '内配';
             if (h.includes('整箱尺寸') || h.includes('外箱尺寸')) return '整箱尺寸';
             if (h.includes('产品尺寸') || h.includes('单品尺寸') || h.includes('礼盒尺寸') || h === '尺寸') return '产品尺寸';
             if (h.includes('整箱重量') || h.includes('箱重') || h.includes('外箱重量')) return '整箱重量';
-            if (h.includes('产品毛重') || h === '毛重' || h.includes('单品毛重')) return '产品毛重';
-            if (h.includes('净含量') || h === '重量' || h.includes('克重') || h.includes('净重')) return '净含量';
+            if (h.includes('规格') || h === '型号' || h.includes('克数') || h.includes('克重') || h.includes('净重') || h.includes('净含量') || h === '重量') return '单品规格';
+            if (h.includes('单品重量') || h.includes('产品毛重') || h === '毛重' || h.includes('单品毛重')) return '单品重量';
 
             // 产品属性
             if (h.includes('品牌级别') || h.includes('品牌等级')) return '品牌级别';
@@ -9553,35 +10008,34 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             if (h.includes('税收编码') || h.includes('税码') || h.includes('税率')) return '税收编码';
 
             // 价格体系（含运费的优先匹配，避免被不含运费的规则吞掉）
-            if (h.includes('一件代发运费') || h.includes('一份代发运费') || h.includes('代发运费')) return '一件代发运费';
-            if (h.includes('京东代发运费') || h.includes('顺丰代发运费') || h.includes('京东/顺丰代发运费')) return '备注';
-            if (h.includes('一件代发价') || h.includes('一份代发价')) return '一件代发价';
-            if (h.includes('一件代发毛利') || h.includes('代发毛利')) return '一件代发毛利率';
-            if (h.includes('京东/顺丰毛利') || h.includes('京东顺丰毛利')) return '备注';
-            if (h.includes('京东代发') || h.includes('顺丰代发')) return '备注';
+            if (h.includes('京东顺丰代发运费') || h.includes('京东/顺丰代发运费') || h.includes('京东代发运费') || h.includes('顺丰代发运费')) return '京东顺丰代发运费';
+            if (h.includes('京东顺丰代发价') || h.includes('京东/顺丰代发价') || h.includes('京东代发价') || h.includes('顺丰代发价')) return '京东顺丰代发价';
+            if (h.includes('京东顺丰毛利') || h.includes('京东/顺丰毛利')) return '京东顺丰代发毛利率';
+            if (h.includes('代发运费') || h.includes('一件代发运费') || h.includes('一份代发运费')) return '代发运费';
+            if (h.includes('代发价') || h.includes('一件代发价') || h.includes('一份代发价')) return '代发价';
+            if (h.includes('代发毛利') || h.includes('一件代发毛利')) return '代发毛利率';
             if (h.includes('集采毛利') || h.includes('采购毛利')) return '集采毛利率';
             if (h.includes('集采价') || h.includes('采购价') || h.includes('进货价') || h.includes('进价') || h.includes('出厂价')) return '集采价';
             if (h.includes('渠道价')) return '渠道价';
             if (h.includes('团购价')) return '团购价';
             if (h.includes('零售价') || h.includes('市场价') || h.includes('指导价') || h.includes('建议零售')) return '零售价';
-            if (h.includes('运费') && !h.includes('一件代发') && !h.includes('京东') && !h.includes('顺丰')) return '一件代发运费';
+            if (h.includes('运费') && !h.includes('代发') && !h.includes('京东') && !h.includes('顺丰')) return '代发运费';
             if (h === '含税' || h === '是否含税' || h === '含税价格') return '备注';
-            if (h.includes('一件代发') || h.includes('代发价')) return '一件代发价';
+            if (h.includes('一件代发') || h.includes('代发价')) return '代发价';
 
             // 通用价格匹配
             if (h.includes('单价') || h.includes('价格') || h.includes('供货价')) return priceType;
 
             // 物流供应链
-            if (h.includes('物流方式') || h.includes('发货方式')) return '物流方式';
             if (h.includes('发货地') || h.includes('发货仓') || h.includes('仓库')) return '发货地';
             if (h.includes('运费包含') || h.includes('包邮')) return '运费包含';
             if (h.includes('不包邮') || h.includes('偏远')) return '不包邮区域';
             if (h.includes('快递公司') || h.includes('物流公司')) return '默认快递公司';
             if (h.includes('库存类型') || h.includes('现货') || h.includes('预订')) return '库存类型';
             if (h.includes('备货状态') || h.includes('备货情况') || h.includes('库存状态')) return '备货状态';
-            if (h.includes('备货周期') || h.includes('备货期') || h.includes('交货期')) return '备货周期';
             if (h.includes('起订量') || h.includes('最小起订')) return '最小起订量';
-            if (h.includes('包销') || h.includes('独家')) return '包销产品';
+            if (h.includes('包销') || h.includes('独家') || h.includes('定制') || h.includes('产品类型') || h.includes('定制款')) return '产品类型';
+            if (h.includes('支持代发') || h.includes('是否代发')) return '支持代发';
             if (h.includes('价格有效期') || h.includes('有效期至') || h.includes('截止日期')) return '价格有效期';
 
             // 电商参考
@@ -9630,7 +10084,8 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             // 核心字段
             if (fieldName === '供应商SKU') product.sku = val;
             else if (fieldName === '商品名称') product.name = val;
-            else if (fieldName === '分类') product.category = val;
+            else if (fieldName === '大类') product.majorCategory = val;
+            else if (fieldName === '品类') product.category = val;
             else if (fieldName === '单位') product.unit = val;
 
             // 规格包装
@@ -9640,8 +10095,8 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             else if (fieldName === '内配') product.innerConfig = val;
             else if (fieldName === '产品尺寸') product.productSize = val;
             else if (fieldName === '整箱尺寸') product.boxSize = val;
-            else if (fieldName === '净含量') product.weight = parseFloat(val) || 0;
-            else if (fieldName === '产品毛重') product.grossWeight = parseFloat(val) || 0;
+            else if (fieldName === '单品规格') product.weight = val;
+            else if (fieldName === '单品重量') product.grossWeight = parseFloat(val) || 0;
             else if (fieldName === '整箱重量') product.boxWeight = parseFloat(val) || 0;
 
             // 产品属性
@@ -9659,20 +10114,21 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             else if (fieldName === '零售价') product.retailPrice = parseFloat(val) || 0;
             else if (fieldName === '渠道价') product.channelPrice = parseFloat(val) || 0;
             else if (fieldName === '团购价') product.groupPrice = parseFloat(val) || 0;
-            else if (fieldName === '一件代发价') product.normalExpressPrice = parseFloat(val) || 0;
-            else if (fieldName === '一件代发运费') product.dropshipFreight = parseFloat(val) || 0;
+            else if (fieldName === '代发价') product.normalExpressPrice = parseFloat(val) || 0;
+            else if (fieldName === '代发运费') product.dropshipFreight = parseFloat(val) || 0;
+            else if (fieldName === '京东顺丰代发价') product.jdsfExpressPrice = parseFloat(val) || 0;
+            else if (fieldName === '京东顺丰代发运费') product.jdsfExpressFreight = parseFloat(val) || 0;
 
             // 物流供应链
-            else if (fieldName === '物流方式') product.logisticsMode = val;
             else if (fieldName === '发货地') product.shipFrom = val;
             else if (fieldName === '运费包含') product.freightIncluded = val === '是' || val === '包含';
             else if (fieldName === '不包邮区域') product.noPostArea = val;
             else if (fieldName === '默认快递公司') product.defaultExpress = val;
             else if (fieldName === '库存类型') product.stockType = val;
             else if (fieldName === '备货状态') product.stockStatus = val;
-            else if (fieldName === '备货周期') product.leadTime = val;
             else if (fieldName === '最小起订量') product.moq = val;
-            else if (fieldName === '包销产品') product.isExclusive = val === '是' || val === 'true';
+            else if (fieldName === '产品类型') product.productType = val;
+            else if (fieldName === '支持代发') product.supportsDropship = val === '是' || val === 'true';
             else if (fieldName === '价格有效期') product.priceExpiry = val;
 
             // 图片媒体
@@ -10331,7 +10787,8 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                             supplierId: supplierId,
                             sku: '',
                             name: '',
-                            category: '食品礼盒',
+                            majorCategory: '食品',
+                            category: '礼盒',
                             unit: '盒',
                             source: 'Excel导入',
                             createdAt: new Date().toISOString().split('T')[0],
@@ -10339,7 +10796,7 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                             freightIncluded: true,
                             isSugarFree: false,
                             isOrganic: false,
-                            isExclusive: false,
+                            productType: '普通', supportsDropship: false,
                             mainImage: '',
                             detailImages: '',
                             grossWeight: 0,
@@ -10356,7 +10813,8 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                         supplierId: supplierId,
                         sku: '',
                         name: '',
-                        category: '食品礼盒',
+                        majorCategory: '食品',
+                        category: '礼盒',
                         unit: '盒',
                         source: 'Excel导入',
                         createdAt: new Date().toISOString().split('T')[0],
@@ -10364,7 +10822,7 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                         freightIncluded: true,
                         isSugarFree: false,
                         isOrganic: false,
-                        isExclusive: false,
+                        productType: '普通', supportsDropship: false,
                         mainImage: '',
                         detailImages: '',
                         grossWeight: 0,
@@ -10389,7 +10847,8 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                     }
                     else if (field === '供应商SKU') product.sku = value;
                     else if (field === '商品名称') product.name = value;
-                    else if (field === '分类') product.category = value;
+                    else if (field === '大类') product.majorCategory = value;
+                    else if (field === '品类') product.category = value;
                     else if (field === '单位') product.unit = value;
 
                     // 规格包装
@@ -10399,8 +10858,8 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                     else if (field === '内配') product.innerConfig = value;
                     else if (field === '产品尺寸') product.productSize = value;
                     else if (field === '整箱尺寸') product.boxSize = value;
-                    else if (field === '净含量') product.weight = parseFloat(value) || 0;
-                    else if (field === '产品毛重') product.grossWeight = parseFloat(value) || 0;
+                    else if (field === '单品规格') product.weight = value;
+                    else if (field === '单品重量') product.grossWeight = parseFloat(value) || 0;
                     else if (field === '整箱重量') product.boxWeight = parseFloat(value) || 0;
 
                     // 产品属性
@@ -10418,11 +10877,12 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                     else if (field === '零售价') product.retailPrice = parseFloat(value) || 0;
                     else if (field === '渠道价') product.channelPrice = parseFloat(value) || 0;
                     else if (field === '团购价') product.groupPrice = parseFloat(value) || 0;
-                    else if (field === '一件代发价') product.normalExpressPrice = parseFloat(value) || 0;
-                    else if (field === '一件代发运费') product.dropshipFreight = parseFloat(value) || 0;
+                    else if (field === '代发价') product.normalExpressPrice = parseFloat(value) || 0;
+                    else if (field === '代发运费') product.dropshipFreight = parseFloat(value) || 0;
+                    else if (field === '京东顺丰代发价') product.jdsfExpressPrice = parseFloat(value) || 0;
+                    else if (field === '京东顺丰代发运费') product.jdsfExpressFreight = parseFloat(value) || 0;
 
                     // 物流供应链
-                    else if (field === '物流方式') product.logisticsMode = value;
                     else if (field === '发货地') product.shipFrom = value;
                     else if (field === '运费包含') product.freightIncluded = value === '是' || value === '包含';
                     else if (field === '不包邮区域') product.noPostArea = value;
@@ -10437,9 +10897,9 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                     else if (field === '详情图') {
                         if (!String(value).startsWith('=_xlfn.DISPIMG(') && !String(value).startsWith('=DISPIMG(')) product.detailImages = value;
                     }
-                    else if (field === '备货周期') product.leadTime = value;
                     else if (field === '最小起订量') product.moq = value;
-                    else if (field === '包销产品') product.isExclusive = value === '是' || value === 'true';
+                    else if (field === '产品类型') product.productType = value;
+                    else if (field === '支持代发') product.supportsDropship = value === '是' || value === 'true';
                     else if (field === '价格有效期') product.priceExpiry = value;
 
                     // 电商参考
@@ -11195,14 +11655,10 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
         // ========== 系统设置 ==========
         function renderRequiredFieldCheckboxes() {
             const allFields = getAllProductFields();
-            const groups = { core: [], spec: [], price: [], other: [] };
-            const coreGroups = new Set(['core']);
-            const specGroups = new Set(['spec']);
-            const priceGroups = new Set(['price']);
+            const groups = { core: [], spec: [], product: [], price: [], delivery: [], supply: [], ecommerce: [], media: [], other: [] };
             for (const f of allFields) {
-                if (coreGroups.has(f.group)) groups.core.push(f.name);
-                else if (specGroups.has(f.group)) groups.spec.push(f.name);
-                else if (priceGroups.has(f.group)) groups.price.push(f.name);
+                const g = f.group || 'other';
+                if (groups[g]) groups[g].push(f.name);
                 else groups.other.push(f.name);
             }
 
@@ -11221,7 +11677,12 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
 
             renderContainer('required-core', groups.core);
             renderContainer('required-spec', groups.spec);
+            renderContainer('required-product', groups.product);
             renderContainer('required-price', groups.price);
+            renderContainer('required-delivery', groups.delivery);
+            renderContainer('required-supply', groups.supply);
+            renderContainer('required-ecommerce', groups.ecommerce);
+            renderContainer('required-media', groups.media);
             renderContainer('required-other', groups.other);
         }
 
@@ -11261,8 +11722,10 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                 'product': '产品属性',
                 'price': '价格体系',
                 'delivery': '物流供应链',
+                'supply': '供应链属性',
                 'ecommerce': '电商参考',
                 'media': '图片媒体',
+                'status': '状态信息',
                 'other': '其他'
             };
 
