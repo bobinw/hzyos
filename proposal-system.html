@@ -36,6 +36,7 @@
             <nav class="p-2 flex-1">
                 <a onclick="showPage('page-projects')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-projects">📋 项目列表</a>
                 <a onclick="showPage('page-customers')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-customers">👥 客户管理</a>
+                <a onclick="showPage('page-brands')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-brands">🏷️ 品牌调性</a>
                 <a onclick="showPage('page-templates')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-templates">📄 方案模板</a>
                 <a onclick="showPage('page-ai-settings')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-ai-settings">⚙️ AI设置</a>
             </nav>
@@ -82,6 +83,27 @@
                 <div class="bg-white rounded-lg shadow p-4">
                     <div id="customerList" class="space-y-3">
                         <div class="text-center text-gray-400 py-12">暂无客户</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 页面：品牌调性 -->
+            <div id="page-brands" class="page p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold">品牌调性库</h2>
+                    <div class="flex gap-2">
+                        <button onclick="refreshBrandList()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">🔄 刷新品牌列表</button>
+                        <button onclick="clearBrandTones()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50 text-red-600">🗑 清空调性</button>
+                        <button onclick="analyzeBrandTones()" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">🎯 AI分析调性</button>
+                    </div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4 mb-4">
+                    <div class="text-sm text-gray-500 mb-2">品牌调性用于AI选品牌时匹配客户需求，使用 Kimi 联网搜索分析，一次生成多次使用。</div>
+                    <div id="brand-stats" class="text-sm"></div>
+                </div>
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div id="brand-list" class="space-y-2">
+                        <div class="text-center text-gray-400 py-8">点击"刷新品牌列表"从商品库提取品牌</div>
                     </div>
                 </div>
             </div>
@@ -234,6 +256,17 @@
                     </div>
 
                     <div class="bg-white rounded-lg shadow p-6">
+                        <h3 class="font-medium mb-4">Kimi 联网 API（品牌调性分析）</h3>
+                        <p class="text-xs text-gray-500 mb-4">Kimi 支持联网搜索，用于分析品牌在小红书、抖音、电商等平台的形象定位。</p>
+                        <div class="space-y-4">
+                            <div>
+                                <label class="block text-sm text-gray-500 mb-1">Kimi API Key</label>
+                                <input type="password" id="kimi-api-key" class="w-full border rounded px-3 py-2 text-sm" placeholder="从 moonshot.cn 获取 API Key">
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="bg-white rounded-lg shadow p-6">
                         <h3 class="font-medium mb-4">连接测试</h3>
                         <div class="flex gap-2 items-center">
                             <button onclick="testAIConnection()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">🔌 测试连接</button>
@@ -292,7 +325,7 @@
 <script>
 // ========== IndexedDB 数据库（与商品库共享） ==========
 const DB_NAME = 'ProductLibraryDB';
-const DB_VERSION = 5;
+const DB_VERSION = 6;
 let db = null;
 
 // ========== 数据变量 ==========
@@ -314,6 +347,50 @@ let currentProjectId = null;
 let currentEditingTemplateId = null;
 let currentEditingTemplateType = 'ppt'; // 'ppt' | 'excel'
 
+// ========== 品牌调性库 ==========
+const BRAND_TONE_MAP = {
+    // 老字号/传统
+    "五芳斋": "老字号/传统", "稻香村": "老字号/传统", "广州酒家": "老字号/传统",
+    "杏花楼": "老字号/传统", "知味观": "老字号/传统", "沈大成": "老字号/传统",
+    "全聚德": "老字号/传统", "老庙黄金": "老字号/传统", "同仁堂": "老字号/传统",
+    "中粮": "老字号/传统", "礼尚联合定制": "老字号/传统",
+
+    // 新锐/年轻
+    "三只松鼠": "新锐/年轻", "良品铺子": "新锐/年轻", "百草味": "新锐/年轻",
+    "元气森林": "新锐/年轻", "钟薛高": "新锐/年轻", "王饱饱": "新锐/年轻",
+    "茶颜悦色": "新锐/年轻", "完美日记": "新锐/年轻", "花西子": "新锐/年轻",
+
+    // 高端/轻奢
+    "小罐茶": "高端/轻奢", "茶里": "高端/轻奢", "大益": "高端/轻奢",
+    "八马": "高端/轻奢", "竹叶青": "高端/轻奢",
+
+    // 大众/性价比
+    "海飞丝": "大众/性价比", "舒肤佳": "大众/性价比", "旺旺": "大众/性价比",
+    "康师傅": "大众/性价比", "统一": "大众/性价比", "奥利奥": "大众/性价比",
+    "洽洽": "大众/性价比", "达利园": "大众/性价比", "盼盼": "大众/性价比",
+
+    // 国际大牌
+    "德芙": "国际大牌", "费列罗": "国际大牌", "欧莱雅": "国际大牌",
+    "雀巢": "国际大牌", "可口可乐": "国际大牌", "百事": "国际大牌",
+    "士力架": "国际大牌", "玛氏": "国际大牌", "亿滋": "国际大牌",
+
+    // 国潮/文化
+    "故宫文创": "国潮/文化", "李宁": "国潮/文化", "回力": "国潮/文化"
+};
+
+function getBrandTone(brand) {
+    if (!brand) return "大众/性价比";
+    // 优先使用动态生成的调性，其次使用预设库
+    if (brandTones && brandTones[brand.trim()]) {
+        return brandTones[brand.trim()];
+    }
+    return BRAND_TONE_MAP[brand.trim()] || "大众/性价比";
+}
+
+// 动态品牌调性（从商品库提取并由AI分析）
+let brandTones = {};  // { "品牌名": "调性标签" }
+let brandList = [];   // 从商品库提取的品牌列表
+
 // ========== 数据库操作 ==========
 function initDB() {
     return new Promise((resolve, reject) => {
@@ -331,6 +408,7 @@ function initDB() {
             if (!database.objectStoreNames.contains('pptTemplates')) database.createObjectStore('pptTemplates', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('excelTemplates')) database.createObjectStore('excelTemplates', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('customers')) database.createObjectStore('customers', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('brandTones')) database.createObjectStore('brandTones', { keyPath: 'brand' });
             console.log('方案系统DB结构创建完成');
         };
     });
@@ -420,7 +498,7 @@ function showPage(pageId) {
     else { console.warn('Page not found:', pageId); return; }
     // 更新导航高亮
     document.querySelectorAll('nav a').forEach(a => a.classList.remove('bg-blue-50', 'text-blue-600'));
-    const navMap = { 'page-projects': 'nav-projects', 'page-customers': 'nav-customers', 'page-templates': 'nav-templates', 'page-ai-settings': 'nav-ai-settings' };
+    const navMap = { 'page-projects': 'nav-projects', 'page-customers': 'nav-customers', 'page-brands': 'nav-brands', 'page-templates': 'nav-templates', 'page-ai-settings': 'nav-ai-settings' };
     if (navMap[pageId]) {
         const nav = document.getElementById(navMap[pageId]);
         if (nav) nav.classList.add('bg-blue-50', 'text-blue-600');
@@ -428,6 +506,7 @@ function showPage(pageId) {
     // 自动渲染
     if (pageId === 'page-projects') renderProjectList();
     if (pageId === 'page-customers') renderCustomerList();
+    if (pageId === 'page-brands') renderBrandPage();
     if (pageId === 'page-templates') { switchTemplateTab(currentEditingTemplateType); }
     if (pageId === 'page-ai-settings') showAISettingsForm();
 }
@@ -504,6 +583,12 @@ async function init() {
     nextProposalId = (await loadSetting('nextProposalId')) || 1;
     nextTemplateId = (await loadSetting('nextTemplateId')) || 1;
     nextCustomerId = (await loadSetting('nextCustomerId')) || 1;
+    // 加载品牌调性
+    await loadBrandTones();
+    // 从商品库提取品牌列表
+    const brandSet = new Set();
+    products.forEach(p => { if (p.brand && p.brand.trim()) brandSet.add(p.brand.trim()); });
+    brandList = Array.from(brandSet).sort();
     // 迁移客户数据
     await migrateCustomers();
     renderProjectList();
@@ -562,6 +647,298 @@ async function migrateCustomers() {
 function getProjectCustomer(project) {
     if (!project.customerId) return null;
     return customers.find(c => c.id === project.customerId);
+}
+
+// ========== 品牌调性管理 ==========
+function renderBrandPage() {
+    const analyzedCount = Object.keys(brandTones).length;
+    const totalCount = brandList.length;
+
+    document.getElementById('brand-stats').innerHTML = `
+        <span class="text-gray-600">品牌总数: <strong>${totalCount}</strong></span>
+        <span class="mx-2">|</span>
+        <span class="text-green-600">已分析调性: <strong>${analyzedCount}</strong></span>
+        ${analyzedCount < totalCount ? '<span class="text-orange-500 ml-2">（点击"AI分析调性"补充）</span>' : '<span class="text-green-500 ml-2">✓ 已完成</span>'}
+    `;
+
+    if (brandList.length === 0) {
+        document.getElementById('brand-list').innerHTML = '<div class="text-center text-gray-400 py-8">点击"刷新品牌列表"从商品库提取品牌</div>';
+        return;
+    }
+
+    // 动态颜色分配
+    const colorPalette = [
+        'bg-amber-100 text-amber-700',
+        'bg-cyan-100 text-cyan-700',
+        'bg-violet-100 text-violet-700',
+        'bg-green-100 text-green-700',
+        'bg-blue-100 text-blue-700',
+        'bg-rose-100 text-rose-700',
+        'bg-orange-100 text-orange-700',
+        'bg-teal-100 text-teal-700',
+        'bg-pink-100 text-pink-700',
+        'bg-indigo-100 text-indigo-700'
+    ];
+    const colorMap = {};
+    let colorIndex = 0;
+
+    function getToneColor(tone) {
+        if (tone === '未分析') return 'bg-gray-100 text-gray-500';
+        if (!colorMap[tone]) {
+            colorMap[tone] = colorPalette[colorIndex % colorPalette.length];
+            colorIndex++;
+        }
+        return colorMap[tone];
+    }
+
+    // 表格形式展示
+    let html = `
+    <table class="w-full text-sm">
+        <thead class="bg-gray-50">
+            <tr>
+                <th class="px-3 py-2 text-left">品牌</th>
+                <th class="px-3 py-2 text-left">调性</th>
+                <th class="px-3 py-2 text-right">操作</th>
+            </tr>
+        </thead>
+        <tbody>
+        ${brandList.map(brand => {
+            const tone = brandTones[brand] || BRAND_TONE_MAP[brand] || '';
+            const toneDisplay = tone || '未分析';
+            return `
+            <tr class="border-t hover:bg-gray-50">
+                <td class="px-3 py-2 font-medium">${brand}</td>
+                <td class="px-3 py-2">
+                    <span class="tag ${getToneColor(toneDisplay)}">${toneDisplay}</span>
+                </td>
+                <td class="px-3 py-2 text-right">
+                    <button onclick="editBrandTone('${brand}')" class="text-blue-500 hover:text-blue-700 text-xs mr-2">修改</button>
+                    <button onclick="redoBrandTone('${brand}')" class="text-purple-500 hover:text-purple-700 text-xs mr-2">重做</button>
+                    <button onclick="deleteBrandTone('${brand}')" class="text-red-500 hover:text-red-700 text-xs">删除</button>
+                </td>
+            </tr>`;
+        }).join('')}
+        </tbody>
+    </table>`;
+    document.getElementById('brand-list').innerHTML = html;
+}
+
+async function editBrandTone(brand) {
+    const currentTone = brandTones[brand] || '';
+    const newTone = prompt(`修改品牌「${brand}」的调性:`, currentTone);
+    if (newTone !== null && newTone.trim()) {
+        await saveBrandTone(brand, newTone.trim());
+        renderBrandPage();
+    }
+}
+
+async function deleteBrandTone(brand) {
+    if (!confirm(`确定删除品牌「${brand}」的调性吗？`)) return;
+
+    delete brandTones[brand];
+    if (db) {
+        try {
+            const tx = db.transaction('brandTones', 'readwrite');
+            tx.objectStore('brandTones').delete(brand);
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = resolve;
+                tx.onerror = reject;
+            });
+        } catch (e) {
+            console.error('删除品牌调性失败:', e);
+        }
+    }
+    renderBrandPage();
+}
+
+async function redoBrandTone(brand) {
+    if (!aiSettings.kimiApiKey) {
+        alert('请先配置 Kimi API Key');
+        return;
+    }
+
+    // 显示进度
+    const row = document.querySelector(`tr:has(button[onclick*="'${brand}'"])`);
+    if (row) {
+        row.querySelector('td:nth-child(2)').innerHTML = '<span class="text-gray-400">分析中...</span>';
+    }
+
+    try {
+        const prompt = `请搜索品牌「${brand}」的信息：
+1. 电商平台（天猫、京东）：品牌定位、价格区间
+2. 社交媒体（小红书、抖音）：品牌形象、用户群体
+3. 官网：品牌故事
+
+用简洁的标签描述其调性（如：老字号、新锐品牌、高端轻奢、大众性价比、国际大牌、国潮文化等，也可自定义）。
+
+返回 JSON 格式：{"tone":"调性标签","reason":"简要依据"}`;
+
+        const response = await callKimiAPI(prompt);
+        const jsonMatch = response.match(/\{[\s\S]*"tone"[\s\S]*\}/);
+        if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]);
+            await saveBrandTone(brand, result.tone);
+            renderBrandPage();
+            alert(`品牌「${brand}」调性已更新为: ${result.tone}`);
+        } else {
+            throw new Error('返回格式错误');
+        }
+    } catch (e) {
+        alert('重做失败: ' + e.message);
+        renderBrandPage();
+    }
+}
+
+async function clearBrandTones() {
+    if (!confirm('确定要清空所有品牌调性数据吗？')) return;
+
+    brandTones = {};
+    if (db) {
+        try {
+            const tx = db.transaction('brandTones', 'readwrite');
+            tx.objectStore('brandTones').clear();
+            await new Promise((resolve, reject) => {
+                tx.oncomplete = resolve;
+                tx.onerror = reject;
+            });
+        } catch (e) {
+            console.error('清空品牌调性失败:', e);
+        }
+    }
+    renderBrandPage();
+    alert('品牌调性数据已清空');
+}
+
+async function refreshBrandList() {
+    if (products.length === 0) {
+        alert('商品库为空，请先在商品库导入商品');
+        return;
+    }
+
+    // 从商品库提取品牌
+    const brandSet = new Set();
+    products.forEach(p => {
+        if (p.brand && p.brand.trim()) {
+            brandSet.add(p.brand.trim());
+        }
+    });
+    brandList = Array.from(brandSet).sort();
+
+    // 加载已保存的调性
+    await loadBrandTones();
+
+    renderBrandPage();
+    console.log(`品牌列表已刷新: ${brandList.length} 个品牌`);
+}
+
+async function loadBrandTones() {
+    if (!db) return;
+    try {
+        const tx = db.transaction('brandTones', 'readonly');
+        const store = tx.objectStore('brandTones');
+        const all = await new Promise((resolve, reject) => {
+            const req = store.getAll();
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        brandTones = {};
+        all.forEach(item => {
+            brandTones[item.brand] = item.tone;
+        });
+    } catch (e) {
+        console.warn('加载品牌调性失败:', e);
+    }
+}
+
+async function saveBrandTone(brand, tone) {
+    if (!db) return;
+    try {
+        const tx = db.transaction('brandTones', 'readwrite');
+        const store = tx.objectStore('brandTones');
+        store.put({ brand, tone });
+        brandTones[brand] = tone;
+    } catch (e) {
+        console.error('保存品牌调性失败:', e);
+    }
+}
+
+async function analyzeBrandTones() {
+    if (!aiSettings.kimiApiKey) {
+        alert('请先在 AI 设置中配置 Kimi API Key（用于联网搜索品牌信息）');
+        return;
+    }
+    if (brandList.length === 0) {
+        alert('请先点击"刷新品牌列表"');
+        return;
+    }
+
+    // 找出未分析的品牌
+    const unanalyzed = brandList.filter(b => !brandTones[b]);
+    if (unanalyzed.length === 0) {
+        alert('所有品牌都已分析完成');
+        return;
+    }
+
+    const totalBrands = unanalyzed.length;
+    let analyzedCount = 0;
+
+    document.getElementById('brand-list').innerHTML = `
+        <div class="text-center py-8">
+            <div class="animate-spin text-4xl mb-4">🎯</div>
+            <div class="text-gray-500">正在联网搜索品牌信息并分析调性...</div>
+            <div class="text-sm text-gray-400 mt-2" id="brand-progress">0 / ${totalBrands}</div>
+        </div>`;
+
+    // 逐个分析品牌（每次分析 3-5 个）
+    const batchSize = 5;
+    for (let i = 0; i < unanalyzed.length; i += batchSize) {
+        const batch = unanalyzed.slice(i, i + batchSize);
+
+        const prompt = `请搜索以下品牌的信息，分析其品牌调性：
+
+${batch.map(b => `- ${b}`).join('\n')}
+
+请搜索每个品牌在以下平台的信息：
+1. 电商平台（天猫、京东）：品牌定位、价格区间、主打产品
+2. 社交媒体（小红书、抖音）：品牌形象、用户群体、口碑评价
+3. 官网或其他渠道：品牌故事、企业背景
+
+分析每个品牌的调性，用简洁的标签描述（如：老字号、新锐品牌、高端轻奢、大众性价比、国际大牌、国潮文化等，也可以自定义更贴切的标签）。
+
+返回 JSON 格式：
+{"brands":[{"name":"品牌名","tone":"调性标签","reason":"简要判断依据"}]}`;
+
+        try {
+            const response = await callKimiAPI(prompt);
+            const jsonMatch = response.match(/\{[\s\S]*"brands"[\s\S]*\}/);
+            if (jsonMatch) {
+                const result = JSON.parse(jsonMatch[0]);
+                for (const item of result.brands) {
+                    if (item.name && item.tone) {
+                        await saveBrandTone(item.name, item.tone);
+                        analyzedCount++;
+                    }
+                }
+            }
+
+            // 更新进度
+            const progressEl = document.getElementById('brand-progress');
+            if (progressEl) {
+                progressEl.textContent = `${Math.min(i + batchSize, totalBrands)} / ${totalBrands}`;
+            }
+
+        } catch (e) {
+            console.error(`分析品牌批次失败:`, e);
+        }
+
+        // 稍微延迟，避免 API 限流
+        if (i + batchSize < unanalyzed.length) {
+            await new Promise(r => setTimeout(r, 1000));
+        }
+    }
+
+    renderBrandPage();
+    alert(`品牌调性分析完成，共分析 ${analyzedCount} 个品牌`);
 }
 
 // ========== 项目列表 ==========
@@ -1311,54 +1688,74 @@ async function startProjectChat() {
 }
 
 // ========== AI 对话 ==========
-function startChatSession(project) {
+async function startChatSession(project) {
     showPage('page-chat');
     document.getElementById('chat-project-name').textContent = project.name;
     document.getElementById('chat-messages').innerHTML = '';
     document.getElementById('chat-summary').innerHTML = '<span class="text-gray-400">对话开始后逐步提取...</span>';
 
-    // 从客户数据获取信息
-    const customer = getProjectCustomer(project);
-    const companyType = customer?.companyType || '';
-    const companySize = customer?.companySize || '';
-    const region = customer?.region || '';
-    const industry = customer?.industry || '';
-    const customerCompany = customer?.customerCompany || '客户';
+    // 初始化对话历史
+    project.conversation = [];
+    currentProjectId = project.id;
 
-    // 构建初始上下文
-    const contextParts = [];
-    if (companyType && companySize && region) contextParts.push(`${companyType}，${companySize}，${region}`);
-    if (industry) contextParts.push(`${industry}行业`);
-    contextParts.push(`${project.peopleCount}人，人均预算${project.budgetPerPerson}元`);
-    if (project.initialScene) contextParts.push(`${project.initialScene}场景`);
-    if (project.urgency !== '正常') contextParts.push(`紧急程度：${project.urgency}`);
-    if (project.initialTags.length > 0) contextParts.push(`标签：${project.initialTags.join('、')}`);
+    // 检查是否有 API Key
+    if (!aiSettings.apiKey) {
+        addChatMessage('ai', '⚠️ 请先在 **AI 设置** 中配置 API Key，才能使用智能对话功能。\n\n配置路径：左侧导航 → ⚙️ AI设置 → 填写 API Key → 保存');
+        return;
+    }
 
-    const firstMessage = `你好！我是团购需求顾问。根据你提供的初步信息，我来帮你梳理一下：
+    // 显示加载状态
+    const loadingEl = document.createElement('div');
+    loadingEl.className = 'chat-bubble chat-ai';
+    loadingEl.innerHTML = '<span class="animate-pulse">🤖 正在启动对话...</span>';
+    document.getElementById('chat-messages').appendChild(loadingEl);
 
-你这是一个**${project.name}**项目，客户是${customerCompany}${companyType ? '（' + companyType + '）' : ''}${companySize ? '，规模' + companySize : ''}${region ? '，位于' + region : ''}。
+    try {
+        const customer = getProjectCustomer(project);
+        const systemPrompt = `你是团购需求顾问，帮助用户梳理福利采购需求。
 
-${project.peopleCount}人，人均预算${formatMoney(project.budgetPerPerson)}，${project.deadline ? '预计' + project.deadline + '前交付' : ''}。${project.initialScene ? '属于' + project.initialScene + '场景。' : ''}
+## 当前项目信息
+- 项目名称: ${project.name}
+- 客户: ${customer?.customerCompany || '未知'}
+- 企业类型: ${customer?.companyType || '未知'}
+- 企业规模: ${customer?.companySize || '未知'}
+- 所在地区: ${customer?.region || '未知'}
+- 人数: ${project.peopleCount}人
+- 人均预算: ${project.budgetPerPerson}元
+- 交付日期: ${project.deadline || '未定'}
+- 场景: ${project.initialScene || '员工福利'}
+- 紧急程度: ${project.urgency || '正常'}
 
-${project.urgency === '紧急' ? '这个项目时间很紧，我会优先考虑现货产品。' : ''}
-${project.urgency === '加急' ? '时间比较紧，我会倾向于备货周期短的产品。' : ''}
+## 你的任务
+1. 首先用1-2句话确认项目基本情况
+2. 然后开始自然地了解详细需求
+3. 重点收集：用户画像、品类偏好、品牌偏好、包装要求、物流要求、风格偏好
 
-我们先从用户画像开始：**这批福利的最终用户大概是什么年龄层？男女比例怎么样？**`;
+## 对话风格
+- 简洁友好，每次只问1-2个问题
+- 自然引导，不要机械地照清单问
+- 用中文回复，可使用**加粗**强调关键信息
 
-    addChatMessage('ai', firstMessage);
-    updateChatSummary(project);
+请开始你的第一句话，确认项目信息并开始提问。`;
+
+        const messages = [{ role: 'system', content: systemPrompt }];
+        const reply = await callAI(messages, { temperature: 0.7 });
+
+        loadingEl.remove();
+        addChatMessage('ai', reply);
+
+        // 保存第一条 AI 消息
+        project.conversation.push({ role: 'assistant', content: reply });
+        await saveAllData();
+
+    } catch (e) {
+        loadingEl.remove();
+        addChatMessage('ai', `❌ 启动失败: ${e.message}\n\n请检查 AI 设置。`);
+    }
 }
 
 function addChatMessage(role, content) {
-    // 保存到项目对话记录
-    const project = findProject(currentProjectId);
-    if (project) {
-        if (!project.conversation) project.conversation = [];
-        project.conversation.push({ role, content, time: new Date().toISOString() });
-        project.updatedAt = new Date().toISOString();
-        saveAllData().catch(() => {}); // 异步保存，不阻塞
-    }
-
+    // role: 'ai' 或 'user'，渲染到页面
     const div = document.createElement('div');
     div.className = `chat-bubble ${role === 'ai' ? 'chat-ai' : 'chat-user'}`;
     div.innerHTML = `<div class="text-xs ${role === 'ai' ? 'text-blue-500' : 'text-green-500'} mb-1">${role === 'ai' ? '🤖 AI顾问' : '👤 我'}</div><div class="text-sm">${content.replace(/\n/g, '<br>')}</div>`;
@@ -1366,36 +1763,90 @@ function addChatMessage(role, content) {
     div.scrollIntoView({ behavior: 'smooth' });
 }
 
-function sendChatMessage() {
+async function sendChatMessage() {
     const input = document.getElementById('chat-input');
     const msg = input.value.trim();
     if (!msg) return;
     addChatMessage('user', msg);
     input.value = '';
 
-    // 模拟 AI 回复
-    setTimeout(() => {
-        const aiReplies = [
-            '明白了。那这批福利的**使用场景**是怎样的？是统一配送到公司发放，还是员工自己在家兑换？',
-            '了解了。对于**品类偏好**，客户有没有明确的方向？比如食品礼盒、日用品、还是小家电？',
-            '好的。那在**品牌认知**方面，客户是比较认全国大牌，还是地方特产也接受？',
-            '清楚。对**包装**有什么期望吗？要精美的礼盒装，还是简约实用就行？',
-            '关于**物流配送**，需要支持一件代发吗？还是统一集采配送到公司就可以？',
-            '从客户角度来看，他们是希望"看起来值这个钱"（面子型），还是"实际成本划算"（里子型）？',
-            '之前这个客户做过类似福利吗？效果怎么样？有没有什么教训要吸取的？',
-            '好的，我基本了解情况了。需求已经比较清晰，**可以点击右上角的"生成需求文档"了**。还有需要补充的吗？'
+    const project = findProject(currentProjectId);
+    if (!project) return;
+
+    // 显示思考中状态
+    const thinkingEl = document.createElement('div');
+    thinkingEl.className = 'chat-bubble chat-ai';
+    thinkingEl.innerHTML = '<span class="animate-pulse">🤔 思考中...</span>';
+    document.getElementById('chat-messages').appendChild(thinkingEl);
+
+    try {
+        // 构建对话历史
+        const conversationHistory = (project.conversation || []).map(m => ({
+            role: m.role,
+            content: m.content
+        }));
+
+        // 添加当前用户消息
+        conversationHistory.push({ role: 'user', content: msg });
+
+        // 构建 system prompt
+        const customer = getProjectCustomer(project);
+        const systemPrompt = `你是团购需求顾问，帮助用户梳理福利采购需求。
+
+## 当前项目信息
+- 项目名称: ${project.name}
+- 客户: ${customer?.customerCompany || '未知'}
+- 人数: ${project.peopleCount}人
+- 人均预算: ${project.budgetPerPerson}元
+- 交付日期: ${project.deadline || '未定'}
+- 场景: ${project.initialScene || '员工福利'}
+
+## 你的任务
+1. 通过自然对话了解客户的详细需求
+2. 重点收集以下信息（但不要机械地问，要自然地引导）:
+   - 用户画像（年龄层、性别比例）
+   - 品类偏好（食品、日化、家电、家纺、文创等）
+   - 品牌偏好（大牌、地方特产、无偏好）
+   - 包装要求（精装礼盒、简约实用）
+   - 物流要求（集采配送、一件代发）
+   - 风格偏好（面子型/看起来值钱，里子型/实用划算）
+
+## 对话风格
+- 简洁友好，每次只问1-2个问题
+- 根据用户回答自然追问，不要机械地照着清单问
+- 如果信息已经足够，提示用户可以"生成需求文档"
+- 用中文回复，可以适当使用**加粗**强调关键信息
+
+## 商品库品类
+当前商品库支持的大类: 食品、美妆、运动
+子类包括: 礼盒、茶叶、洁面、洗发水、沐浴露、面霜、面膜等`;
+
+        const messages = [
+            { role: 'system', content: systemPrompt },
+            ...conversationHistory
         ];
 
-        // 简单轮询模拟
-        const chatMessages = document.querySelectorAll('#chat-messages .chat-user');
-        const msgCount = chatMessages.length;
-        const reply = aiReplies[Math.min(msgCount - 1, aiReplies.length - 1)];
+        const reply = await callAI(messages, { temperature: 0.7 });
+
+        // 移除思考中状态
+        thinkingEl.remove();
+
+        // 显示 AI 回复
         addChatMessage('ai', reply);
 
+        // 保存对话
+        project.conversation = project.conversation || [];
+        project.conversation.push({ role: 'user', content: msg });
+        project.conversation.push({ role: 'assistant', content: reply });
+        await saveAllData();
+
         // 更新摘要
-        const project = findProject(currentProjectId);
-        if (project) updateChatSummary(project);
-    }, 800 + Math.random() * 600);
+        updateChatSummary(project);
+
+    } catch (e) {
+        thinkingEl.remove();
+        addChatMessage('ai', `❌ AI 调用失败: ${e.message}\n\n请检查 AI 设置中的 API Key 是否正确配置。`);
+    }
 }
 
 function findProject(id) {
@@ -1403,14 +1854,16 @@ function findProject(id) {
 }
 
 function updateChatSummary(project) {
-    const chatMessages = document.querySelectorAll('#chat-messages .chat-user');
-    const userReplies = Array.from(chatMessages).map(el => el.textContent);
+    // 从对话历史中提取用户消息
+    const userReplies = (project.conversation || [])
+        .filter(m => m.role === 'user')
+        .map(m => m.content);
 
     // 简单关键词提取
     const ageKeywords = ['岁', '年龄', '中年', '青年', '老年', '年轻'];
     const genderKeywords = ['男', '女', '男女'];
     const styleKeywords = ['实用', '品质', '精致', '简约', '新潮', '文化', '国潮', '颜值'];
-    const categoryKeywords = ['食品', '日用品', '家电', '小家电', '家纺', '个护', '文创', '卡券'];
+    const categoryKeywords = ['食品', '日用品', '日化', '家电', '小家电', '家纺', '个护', '文创', '卡券', '美妆', '运动'];
     const packageKeywords = ['礼盒', '包装', '精装', '简装'];
 
     let summaryHTML = '';
@@ -1536,6 +1989,23 @@ function showRequirementConfirm(project) {
         <div class="bg-gray-50 rounded-lg p-4 text-sm whitespace-pre-wrap leading-relaxed" id="req-doc-${project.id}">${project.structuredRequirement}</div>
     </div>
 
+    <!-- AI选品牌 -->
+    <div class="bg-white rounded-lg shadow p-6 mb-6">
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="font-medium">AI 选品牌</h3>
+            <button onclick="aiSelectBrands(${project.id})" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">🎯 AI选品牌</button>
+        </div>
+        <div id="selected-brands-${project.id}" class="min-h-[60px]">
+            ${project.selectedBrands && project.selectedBrands.length > 0 ? `
+                <div class="text-sm text-gray-600 mb-2">已选中 ${project.selectedBrands.length} 个品牌：</div>
+                <div class="flex flex-wrap gap-2">
+                    ${project.selectedBrands.map(b => `<span class="tag bg-purple-100 text-purple-700">${b}</span>`).join('')}
+                </div>
+                <div class="text-xs text-gray-500 mt-2">${project.brandRationale || ''}</div>
+            ` : '<div class="text-gray-400 text-sm">点击"AI选品牌"，让AI根据需求推荐合适的品牌组合</div>'}
+        </div>
+    </div>
+
     <!-- 生成参数 -->
     <div class="bg-white rounded-lg shadow p-6 mb-6">
         <h3 class="font-medium mb-4">方案生成设置</h3>
@@ -1620,11 +2090,322 @@ function addConstraintRow(projectId) {
     container.appendChild(row);
 }
 
+// ========== AI选品牌 ==========
+async function aiSelectBrands(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+
+    if (!aiSettings.apiKey) {
+        alert('请先在 AI 设置中配置 API Key');
+        return;
+    }
+
+    if (brandList.length === 0) {
+        alert('品牌列表为空，请先去"品牌调性"页面刷新品牌列表');
+        return;
+    }
+
+    // 显示加载状态
+    document.getElementById(`selected-brands-${projectId}`).innerHTML = `
+        <div class="text-center py-4">
+            <div class="animate-spin text-2xl mb-2">🎯</div>
+            <div class="text-gray-500 text-sm">AI 正在分析需求并选择品牌...</div>
+        </div>`;
+
+    // 提取需求品类
+    const requiredCategories = extractCategoriesFromRequirement(project.structuredRequirement || '');
+
+    // 构建品牌列表（包含调性和品类信息）
+    const brandInfoList = brandList.map(brand => {
+        // 找到该品牌下的商品品类
+        const brandProducts = products.filter(p => p.brand === brand);
+        const categories = [...new Set(brandProducts.map(p => p.majorCategory).filter(Boolean))];
+        return {
+            name: brand,
+            tone: getBrandTone(brand),
+            categories: categories
+        };
+    });
+
+    const systemPrompt = `你是团购方案选品专家。根据客户需求选择最合适的品牌组合。
+
+## 选品牌原则（必须严格遵守）
+1. **必须覆盖所有需求品类** - 如果需求要求"食品+日化"，必须选择食品品牌和日化品牌
+2. 每个品类至少选择 2-3 个品牌
+3. 品牌调性要符合客户定位（如国企偏好老字号/一线品牌）
+4. 品牌之间要有差异化，覆盖不同价位
+
+## 返回格式（严格JSON）
+{"brands":["品牌1","品牌2"],"categoryCoverage":{"食品":["品牌A","品牌B"],"日化":["品牌C"]},"rationale":"选择理由"}`;
+
+    const userMessage = `## 客户需求
+${project.structuredRequirement || '员工福利采购'}
+
+## 需求品类（必须全部覆盖）
+${requiredCategories.length > 0 ? requiredCategories.join('、') : '从需求中提取'}
+
+## 预算限制
+人均预算: ${project.budgetPerPerson || 200}元
+
+## 可选品牌列表（含品类信息）
+${JSON.stringify(brandInfoList, null, 2)}
+
+请选择品牌，确保覆盖所有需求品类，返回JSON格式。`;
+
+    try {
+        const response = await callAI([
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userMessage }
+        ], { temperature: 0.7, maxTokens: 2048 });
+
+        const jsonMatch = response.match(/\{[\s\S]*"brands"[\s\S]*\}/);
+        if (!jsonMatch) {
+            throw new Error('AI 返回格式错误');
+        }
+
+        const result = JSON.parse(jsonMatch[0]);
+
+        // 保存选中的品牌
+        project.selectedBrands = result.brands;
+        project.brandRationale = result.rationale;
+        await saveAllData();
+
+        // 更新显示
+        document.getElementById(`selected-brands-${projectId}`).innerHTML = `
+            <div class="text-sm text-gray-600 mb-2">已选中 ${result.brands.length} 个品牌：</div>
+            <div class="flex flex-wrap gap-2">
+                ${result.brands.map(b => `<span class="tag bg-purple-100 text-purple-700">${b}</span>`).join('')}
+            </div>
+            <div class="text-xs text-gray-500 mt-2">${result.rationale || ''}</div>`;
+
+    } catch (e) {
+        console.error('AI 选品牌失败:', e);
+        document.getElementById(`selected-brands-${projectId}`).innerHTML = `
+            <div class="text-red-500 text-sm">AI 选品牌失败: ${e.message}</div>
+            <div class="text-gray-400 text-sm mt-1">请检查 API Key 或重试</div>`;
+    }
+}
+
 // ========== 方案生成 ==========
+
+// 构建商品摘要（精简数据给AI）
+function buildProductSummary(candidates) {
+    return candidates.map(p => ({
+        id: p.id,
+        name: p.name || '',
+        brand: p.brand || '',
+        majorCategory: p.majorCategory || '',
+        category: p.category || '',
+        purchasePrice: p.purchasePrice || 0,
+        retailPrice: p.retailPrice || 0,
+        productType: p.productType || '',
+        supportsDropship: p.supportsDropship || false,
+        leadTime: p.leadTime || ''
+    }));
+}
+
+// 从需求文档中提取品类关键词
+function extractCategoriesFromRequirement(requirement) {
+    const categoryMap = {
+        '食品': ['食品', '零食', '粽子', '月饼', '坚果', '茶叶', '糕点', '糖果', '干果', '礼盒食品', '吃的'],
+        '日化': ['日化', '日用', '洗护', '洗发', '沐浴', '洗衣', '清洁', '纸巾', '个护', '日用品'],
+        '美妆': ['美妆', '护肤', '面膜', '口红', '香水', '化妆'],
+        '家电': ['家电', '小家电', '电器', '厨电', '生活电器'],
+        '家纺': ['家纺', '床品', '毛巾', '被子', '枕头'],
+        '运动': ['运动', '健身', '户外'],
+        '文创': ['文创', '办公用品', '文具', '礼品']
+    };
+    const found = [];
+    for (const [cat, keywords] of Object.entries(categoryMap)) {
+        if (keywords.some(k => requirement.includes(k))) {
+            found.push(cat);
+        }
+    }
+    return found;
+}
+
+// AI 智能选品
+async function aiGenerateProposals(project, candidates, count) {
+    const budget = project.budgetPerPerson || 200;
+    const targetMargin = project.targetMargin || 20;
+    const requiredCategories = extractCategoriesFromRequirement(project.structuredRequirement || '');
+
+    // 从约束中提取毛利率要求
+    const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : targetMargin;
+    const marginFactor = 1 - effectiveMargin / 100;
+
+    const minBudget = Math.round(budget * 0.95);
+
+    // 构建商品摘要，包含预估供货价
+    const productSummary = candidates.map(p => {
+        let estimatedQuote = p.purchasePrice / marginFactor;
+        // 供货价不超过零售价
+        if (p.retailPrice > 0 && estimatedQuote > p.retailPrice) {
+            estimatedQuote = p.retailPrice;
+        }
+        return {
+            id: p.id,
+            name: p.name || '',
+            brand: p.brand || '',
+            majorCategory: p.majorCategory || '',
+            purchasePrice: p.purchasePrice || 0,
+            retailPrice: p.retailPrice || 0,
+            estimatedQuote: Math.round(estimatedQuote * 100) / 100,
+            supportsDropship: p.supportsDropship || false,
+            leadTime: p.leadTime || ''
+        };
+    });
+
+    // 构建约束描述
+    const constraintsText = (project.constraints || []).map(c => `- ${c.field} ${c.operator} ${c.value}`).join('\n');
+
+    const systemPrompt = `你是团购方案选品专家。根据客户需求从商品库中选择最合适的产品组合。
+
+## 选品原则（必须严格遵守，违反任一条则方案无效）
+1. **预算约束** - 方案预估供货价总和必须在 ${minBudget}元 ~ ${budget}元 之间（这是硬性要求！）
+2. **品类覆盖** - 必须覆盖所有需求品类，每个品类至少1个产品
+3. **毛利率** - 方案毛利率 ≥ ${effectiveMargin}%
+4. **供货价上限** - 每个产品供货价 ≤ 零售价
+
+## 重要提示
+- 仔细计算预估供货价总和，确保在 ${minBudget}-${budget} 元范围内
+- 如果单品太少无法满足预算，增加产品数量
+- 如果单品太贵超出预算，选择更便宜的产品组合
+
+## 返回格式（严格JSON）
+{"proposals":[{"name":"方案名称","theme":"主题","productIds":[1,2,3],"rationale":"选择理由（说明预估总价和如何满足约束）"}]}`;
+
+    const userMessage = `## 项目限定条件
+- 人均预算: ${budget}元
+- 预算范围: ${minBudget}元 ~ ${budget}元（必须在此范围内！）
+- 目标毛利率: ≥ ${effectiveMargin}%
+
+## 字段约束
+${constraintsText || '无'}
+
+## 客户需求
+${project.structuredRequirement || '员工福利采购'}
+
+## 候选商品 (共${productSummary.length}个)
+字段说明：purchasePrice=采购价, retailPrice=零售价, estimatedQuote=预估供货价
+${JSON.stringify(productSummary.slice(0, 150), null, 2)}
+
+## 选品要求
+1. **最重要**：预估供货价(estimatedQuote)总和必须在 ${minBudget}-${budget} 元之间
+2. 覆盖品类：${requiredCategories.join('、') || '从需求提取'}
+3. 供货价 ≤ 零售价
+
+## 差异化要求
+- 每个方案的产品组合要有明显差异
+- 不同方案应体现不同价位档次、不同品牌组合或不同品类侧重
+
+请生成 ${count} 个差异化方案，返回JSON。每个方案的rationale必须说明预估总价。`;
+
+    const messages = [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: userMessage }
+    ];
+
+    const response = await callAI(messages, { temperature: 0.7, maxTokens: 4096 });
+
+    // 解析 JSON
+    const jsonMatch = response.match(/\{[\s\S]*"proposals"[\s\S]*\}/);
+    if (!jsonMatch) {
+        throw new Error('AI 返回格式错误');
+    }
+    return JSON.parse(jsonMatch[0]);
+}
+
+// 从 AI 结果构建方案
+async function buildProposalsFromAI(project, aiResult, candidates) {
+    const productMap = new Map(candidates.map(p => [p.id, p]));
+    const budget = project.budgetPerPerson || 200;
+    // 从约束中提取毛利率
+    const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
+    const targetMargin = effectiveMargin / 100;
+    const marginFactor = 1 - targetMargin;
+    const minBudget = budget * 0.95;
+
+    proposals = proposals.filter(p => p.projectId !== project.id);
+
+    for (let i = 0; i < aiResult.proposals.length; i++) {
+        const ap = aiResult.proposals[i];
+        const selectedProducts = (ap.productIds || []).map(id => productMap.get(id)).filter(Boolean);
+
+        if (selectedProducts.length === 0) continue;
+
+        const proposalProducts = selectedProducts.map(p => {
+            let quotePrice = p.purchasePrice / marginFactor;
+            // 校验：报价不超过零售价
+            const retailPrice = p.retailPrice || 0;
+            if (retailPrice > 0 && quotePrice > retailPrice) {
+                console.warn(`报价超过零售价，已修正: ${p.name} (${quotePrice.toFixed(2)} → ${retailPrice})`);
+                quotePrice = retailPrice;
+            }
+            const actualMargin = ((quotePrice - p.purchasePrice) / quotePrice * 100).toFixed(1);
+            const supplierObj = suppliers.find(s => s.id === p.supplierId || s.name === p.supplierId);
+            const supplierName = supplierObj?.name || p.supplierName || p.supplierId || '-';
+            return {
+                productId: p.id, sku: p.sku, name: p.name,
+                supplierId: p.supplierId, supplier: supplierName,
+                brand: p.brand, brandLevel: p.brandLevel || '',
+                purchasePrice: p.purchasePrice,
+                retailPrice: retailPrice,
+                quotePrice: Math.round(quotePrice * 100) / 100,
+                margin: actualMargin + '%',
+                image: p.mainImage || '',
+                quantity: 1,
+                subtotal: Math.round(quotePrice * 100) / 100
+            };
+        });
+
+        const totalPerPerson = proposalProducts.reduce((s, p) => s + p.quotePrice, 0);
+        const totalCost = proposalProducts.reduce((s, p) => s + p.purchasePrice, 0);
+        const overallMargin = totalPerPerson > 0 ? ((totalPerPerson - totalCost) / totalPerPerson * 100).toFixed(1) : 0;
+        const budgetUtil = budget > 0 ? (totalPerPerson / budget * 100).toFixed(0) : 0;
+
+        // 校验预算利用率
+        if (totalPerPerson < minBudget) {
+            console.warn(`方案${i + 1}总价 ${totalPerPerson.toFixed(2)}元 低于预算95% (${minBudget.toFixed(2)}元)`);
+        }
+
+        proposals.push({
+            id: nextProposalId++,
+            projectId: project.id,
+            index: i + 1,
+            name: ap.name || `方案${i + 1}`,
+            tagline: ap.rationale?.substring(0, 30) || '智能推荐组合',
+            theme: ap.theme || '精选组合',
+            products: proposalProducts,
+            totalPerPerson: Math.round(totalPerPerson * 100) / 100,
+            totalPrice: Math.round(totalPerPerson * project.peopleCount * 100) / 100,
+            totalCost: Math.round(totalCost * 100) / 100,
+            overallMargin: parseFloat(overallMargin),
+            budgetUtilization: parseInt(budgetUtil),
+            maxLeadTime: Math.max(...selectedProducts.map(p => parseInt((p.leadTime || '0').replace(/\D/g, '')) || 0)),
+            canFulfill: true,
+            aiRationale: ap.rationale || '',
+            isManualEdited: false,
+            manualChanges: '',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
+        });
+    }
+    await saveAllData();
+}
+
 async function generateProposals(projectId) {
     const project = findProject(projectId);
     if (!project) return;
     if (products.length === 0) { alert('商品库为空，请先在商品库中导入商品数据'); return; }
+
+    // 检查是否已选品牌
+    if (!project.selectedBrands || project.selectedBrands.length === 0) {
+        alert('请先点击"AI选品牌"选择品牌');
+        return;
+    }
 
     // 收集约束
     const constraintRows = document.querySelectorAll(`#constraint-rows-${projectId} .flex`);
@@ -1646,99 +2427,180 @@ async function generateProposals(projectId) {
     document.getElementById(`proposal-grid-${projectId}`).innerHTML = `
         <div class="col-span-3 text-center py-8">
             <div class="animate-spin text-4xl mb-4">🤖</div>
-            <div class="text-gray-500">AI 正在分析商品库并生成方案...</div>
-            <div class="text-xs text-gray-400 mt-2">已筛选 ${products.length} 个商品，正在组合最优方案</div>
+            <div class="text-gray-500">AI 正在精选产品...</div>
+            <div class="text-xs text-gray-400 mt-2">从 ${project.selectedBrands.length} 个品牌中选品：${project.selectedBrands.slice(0, 5).join('、')}${project.selectedBrands.length > 5 ? '...' : ''}</div>
         </div>`;
+    console.log('生成方案 - 选中品牌:', project.selectedBrands);
 
-    // 模拟 AI 生成
-    setTimeout(async () => {
-        await mockGenerateProposals(project, count);
-        project.status = 'generated';
-        project.updatedAt = new Date().toISOString();
-        await saveAllData();
-        showRequirementConfirm(project);
-    }, 2000);
-}
-
-async function mockGenerateProposals(project, count) {
-    // 价格逻辑：报价 = 采购价 / (1 - 毛利率)
+    // 预筛选商品：确保覆盖所有需求品类
     const budget = project.budgetPerPerson || 200;
-    const targetMargin = (project.targetMargin || 20) / 100; // 默认20%毛利率
-    const marginFactor = 1 - targetMargin; // 用于计算报价的系数
+    // 从约束中提取毛利率
+    const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
+    const targetMargin = effectiveMargin / 100;
+    const maxPurchasePrice = budget * (1 - targetMargin);
+    const minPurchasePrice = budget * 0.02;
+    console.log('生成方案 - 目标毛利率:', effectiveMargin + '%', '最高采购价:', maxPurchasePrice);
 
-    // 预筛选商品：采购价上限 = 预算 × (1 - 毛利率)，这样报价才不超过预算
-    const maxPurchasePrice = budget * marginFactor;
-    const minPurchasePrice = budget * 0.1; // 单品采购价下限
+    // 提取需求品类
+    const requiredCategories = extractCategoriesFromRequirement(project.structuredRequirement || '');
 
-    let candidates = [...products];
-    candidates = candidates.filter(p => p.purchasePrice >= minPurchasePrice && p.purchasePrice <= maxPurchasePrice);
+    // 按品类分别筛选，确保每个品类都有候选
+    const candidatesByCategory = {};
 
-    if (candidates.length === 0) {
-        // 放宽条件：采购价不超过预算×(1-最低毛利率10%)
-        candidates = [...products].filter(p => p.purchasePrice <= budget * 0.9);
+    // 1. 先从选中品牌中筛选每个品类的商品
+    requiredCategories.forEach(cat => {
+        const categoryCandidates = products.filter(p =>
+            project.selectedBrands.includes(p.brand) &&
+            p.majorCategory === cat &&
+            p.purchasePrice >= minPurchasePrice &&
+            p.purchasePrice <= maxPurchasePrice
+        );
+        if (categoryCandidates.length > 0) {
+            candidatesByCategory[cat] = categoryCandidates;
+        }
+    });
+
+    // 2. 如果某些品类没有候选，从全库补充
+    requiredCategories.forEach(cat => {
+        if (!candidatesByCategory[cat] || candidatesByCategory[cat].length === 0) {
+            const additional = products.filter(p =>
+                p.majorCategory === cat &&
+                p.purchasePrice >= minPurchasePrice &&
+                p.purchasePrice <= maxPurchasePrice
+            );
+            if (additional.length > 0) {
+                candidatesByCategory[cat] = additional.slice(0, 50);
+            }
+        }
+    });
+
+    // 3. 合并所有品类的候选
+    let candidates = [];
+    for (const [cat, prods] of Object.entries(candidatesByCategory)) {
+        candidates.push(...prods);
+    }
+
+    // 4. 去重
+    const seen = new Set();
+    candidates = candidates.filter(p => {
+        if (seen.has(p.id)) return false;
+        seen.add(p.id);
+        return true;
+    });
+
+    // 5. 如果品类筛选结果太少，放宽条件
+    if (candidates.length < 20) {
+        const more = products.filter(p =>
+            project.selectedBrands.includes(p.brand) &&
+            p.purchasePrice <= budget * 0.9
+        );
+        candidates = [...candidates, ...more];
     }
 
     // 约束筛选
     project.constraints.forEach(c => {
-        if (c.field === '品牌级别' && c.operator === '必须') {
-            candidates = candidates.filter(p => p.brandLevel === c.value);
-        }
         if (c.field === '一件代发' && c.operator === '必须') {
-            candidates = candidates.filter(p => p.normalExpressPrice && p.normalExpressPrice > 0);
+            candidates = candidates.filter(p => p.supportsDropship || (p.normalExpressPrice && p.normalExpressPrice > 0));
         }
         if (c.field === '库存类型' && c.operator === '必须') {
             candidates = candidates.filter(p => p.stockType === c.value);
         }
     });
 
-    if (candidates.length < 3) candidates = [...products].slice(0, 20);
+    // 检查每个品类是否都有候选
+    const missingCategories = requiredCategories.filter(cat => {
+        const catCandidates = candidates.filter(p => p.majorCategory === cat);
+        return catCandidates.length === 0;
+    });
 
-    // 删除旧方案
+    if (missingCategories.length > 0) {
+        console.warn('以下品类缺少候选商品:', missingCategories);
+    }
+
+    if (candidates.length < 5) {
+        alert('符合条件的商品太少，请调整品牌选择或约束条件');
+        project.status = 'requirement_ready';
+        await saveAllData();
+        showRequirementConfirm(project);
+        return;
+    }
+
+    // 限制候选数量，按品类均匀采样
+    if (candidates.length > 150) {
+        const byCategory = {};
+        candidates.forEach(p => {
+            const cat = p.majorCategory || '其他';
+            if (!byCategory[cat]) byCategory[cat] = [];
+            byCategory[cat].push(p);
+        });
+        candidates = [];
+        const perCat = Math.ceil(150 / Object.keys(byCategory).length);
+        for (const ps of Object.values(byCategory)) {
+            candidates.push(...ps.slice(0, perCat));
+        }
+    }
+
+    try {
+        // 尝试 AI 选品
+        if (aiSettings.apiKey && aiSettings.enableProposal !== false) {
+            const aiResult = await aiGenerateProposals(project, candidates, count);
+            await buildProposalsFromAI(project, aiResult, candidates);
+        } else {
+            throw new Error('未配置 API Key，请先在 AI 设置中配置');
+        }
+    } catch (e) {
+        console.error('AI 选品失败:', e);
+        alert(`AI 选品失败: ${e.message}\n\n将使用随机选品作为降级方案`);
+        await mockGenerateProposals(project, candidates, count);
+    }
+
+    project.status = 'generated';
+    project.updatedAt = new Date().toISOString();
+    await saveAllData();
+    showRequirementConfirm(project);
+}
+
+// 随机选品（降级方案）
+async function mockGenerateProposals(project, candidates, count) {
+    const budget = project.budgetPerPerson || 200;
+    const targetMargin = (project.targetMargin || 20) / 100;
+    const marginFactor = 1 - targetMargin;
+
     proposals = proposals.filter(p => p.projectId !== project.id);
 
     const themes = ['品质生活', '实用主义', '国潮文化', '健康养生', '简约时尚', '混搭精选', '轻奢体验', '商务大气', '新潮有趣', '经典传承'];
-    const taglines = [
-        '品质之选，彰显企业关怀', '实用搭配，性价比首选', '国风雅韵，文化自信',
-        '健康生活，关爱员工', '简约不凡，细节之美', '精选组合，面面俱到',
-        '轻奢体验，尊享品质', '商务典范，气度不凡', '新潮好物，年轻活力'
-    ];
+    const taglines = ['品质之选', '实用搭配', '国风雅韵', '健康生活', '简约不凡', '精选组合', '轻奢体验', '商务典范', '新潮好物', '经典传承'];
 
     for (let i = 0; i < count; i++) {
-        // 选择产品，确保总报价在预算范围内
         const shuffled = [...candidates].sort(() => Math.random() - 0.5);
         const selected = [];
         let currentTotal = 0;
-        const maxQuoteTotal = budget * 1.05; // 允许稍微超5%
+        const maxQuoteTotal = budget * 1.05;
 
         for (const p of shuffled) {
-            if (selected.length >= 4) break; // 最多4个产品
-            // 报价 = 采购价 / (1 - 毛利率)，稍微浮动±5%
-            const estimatedQuote = p.purchasePrice / marginFactor * (0.95 + Math.random() * 0.1);
+            if (selected.length >= 4) break;
+            const estimatedQuote = p.purchasePrice / marginFactor;
             if (currentTotal + estimatedQuote <= maxQuoteTotal) {
                 selected.push(p);
                 currentTotal += estimatedQuote;
             }
         }
 
-        // 如果一个产品都没选上，强制选一个最便宜的
         if (selected.length === 0 && shuffled.length > 0) {
-            const sorted = [...shuffled].sort((a, b) => a.purchasePrice - b.purchasePrice);
-            selected.push(sorted[0]);
+            selected.push(shuffled[0]);
         }
 
         const proposalProducts = selected.map(p => {
-            const quantity = 1;
-            // 报价 = 采购价 / (1 - 毛利率)，稍微浮动±5%以产生差异化方案
-            const quotePrice = p.purchasePrice / marginFactor * (0.95 + Math.random() * 0.1);
+            const quotePrice = p.purchasePrice / marginFactor;
             const actualMargin = ((quotePrice - p.purchasePrice) / quotePrice * 100).toFixed(1);
-            // 获取供应商名称
-            const supplierObj = suppliers.find(s => s.id === p.supplierId);
-            const supplierName = supplierObj?.name || p.supplierName || '-';
+            const supplierObj = suppliers.find(s => s.id === p.supplierId || s.name === p.supplierId);
+            const supplierName = supplierObj?.name || p.supplierName || p.supplierId || '-';
             return {
                 productId: p.id, sku: p.sku, name: p.name, supplierId: p.supplierId, supplier: supplierName,
                 brand: p.brand, brandLevel: p.brandLevel || '',
                 purchasePrice: p.purchasePrice, quotePrice: Math.round(quotePrice * 100) / 100,
-                margin: actualMargin + '%', image: p.mainImage || '', quantity, subtotal: Math.round(quotePrice * 100) / 100
+                margin: actualMargin + '%', image: p.mainImage || '', quantity: 1, subtotal: Math.round(quotePrice * 100) / 100
             };
         });
 
@@ -1746,11 +2608,6 @@ async function mockGenerateProposals(project, count) {
         const totalCost = proposalProducts.reduce((s, p) => s + p.purchasePrice, 0);
         const overallMargin = totalPerPerson > 0 ? ((totalPerPerson - totalCost) / totalPerPerson * 100).toFixed(1) : 0;
         const budgetUtil = budget > 0 ? (totalPerPerson / budget * 100).toFixed(0) : 0;
-        const maxLeadTime = Math.max(...selected.map(p => {
-            const lt = (p.leadTime || '0天').replace('天', '');
-            return parseInt(lt) || 0;
-        }));
-        const canFulfill = !project.fulfillmentDays || maxLeadTime <= project.fulfillmentDays;
 
         proposals.push({
             id: nextProposalId++,
@@ -1765,11 +2622,13 @@ async function mockGenerateProposals(project, count) {
             totalCost: Math.round(totalCost * 100) / 100,
             overallMargin: parseFloat(overallMargin),
             budgetUtilization: parseInt(budgetUtil),
-            maxLeadTime,
-            canFulfill,
-            aiRationale: `基于${project.name}的需求，人均供货预算${budget}元，目标毛利率${(targetMargin * 100).toFixed(0)}%。本方案聚焦${themes[i % themes.length]}方向，选择了${proposalProducts.map(p => p.brand + p.name.replace(/礼盒|套装/g, '')).join(' + ')}的组合，供货总价${formatMoney(totalPerPerson)}/人，实际毛利率${overallMargin}%，预算利用率${budgetUtil}%。${canFulfill ? '在履约周期内可交付。' : '注意：部分产品备货周期较长。'}`,
-            isManualEdited: false, manualChanges: '',
-            createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+            maxLeadTime: 0,
+            canFulfill: true,
+            aiRationale: '随机组合方案（AI 选品失败时的降级方案）',
+            isManualEdited: false,
+            manualChanges: '',
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString()
         });
     }
     await saveAllData();
@@ -1787,11 +2646,12 @@ function renderProposalCards(projectId) {
 
     grid.innerHTML = proposalsForProject.map(pp => {
         const marginColor = pp.overallMargin >= (findProject(projectId)?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
+        const budgetWarning = pp.budgetUtilization < 95 ? '<span class="tag bg-red-100 text-red-600 ml-2">预算不足</span>' : '';
         return `
         <div class="proposal-card border rounded-lg p-4 hover:shadow-lg cursor-pointer bg-white" onclick="viewProposal(${pp.id})">
             <div class="flex justify-between items-start mb-2">
                 <span class="text-xs text-gray-400">#${pp.index}</span>
-                <span class="tag bg-purple-100 text-purple-700">${pp.theme}</span>
+                <div><span class="tag bg-purple-100 text-purple-700">${pp.theme}</span>${budgetWarning}</div>
             </div>
             <h4 class="font-medium text-sm mb-1">${pp.name}</h4>
             <p class="text-xs text-gray-500 mb-3">${pp.tagline}</p>
@@ -1806,7 +2666,7 @@ function renderProposalCards(projectId) {
             </div>
             <div class="border-t pt-2 space-y-1 text-xs">
                 <div class="flex justify-between"><span class="text-gray-400">人均价</span><span class="font-medium">${formatMoney(pp.totalPerPerson)}</span></div>
-                <div class="flex justify-between"><span class="text-gray-400">预算利用率</span><span>${pp.budgetUtilization}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">预算利用率</span><span class="${pp.budgetUtilization < 95 ? 'text-red-500' : ''}">${pp.budgetUtilization}%</span></div>
                 <div class="flex justify-between"><span class="text-gray-400">毛利率</span><span class="${marginColor} font-medium">${pp.overallMargin}%</span></div>
                 <div class="flex justify-between"><span class="text-gray-400">履约</span>
                     ${pp.canFulfill ? '<span class="text-green-600">✓ 可交付</span>' : '<span class="text-red-500">⚠ ' + pp.maxLeadTime + '天</span>'}
@@ -1843,7 +2703,7 @@ function viewProposal(proposalId) {
                 <h4 class="font-medium mb-2">产品明细</h4>
                 <table class="w-full text-sm border">
                     <thead class="bg-gray-50"><tr>
-                        <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-left">供应商</th><th class="px-3 py-2 text-right">集采成本</th><th class="px-3 py-2 text-right">供货价</th><th class="px-3 py-2 text-right">单品毛利率</th><th class="px-3 py-2 text-right">小计</th>
+                        <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-left">供应商</th><th class="px-3 py-2 text-right">集采成本</th><th class="px-3 py-2 text-right">零售价</th><th class="px-3 py-2 text-right">供货价</th><th class="px-3 py-2 text-right">毛利率</th><th class="px-3 py-2 text-right">小计</th>
                     </tr></thead>
                     <tbody>
                     ${pp.products.map(p => `
@@ -1855,6 +2715,7 @@ function viewProposal(proposalId) {
                             <td class="px-3 py-2">${p.brand || '-'}</td>
                             <td class="px-3 py-2">${p.supplier || '-'}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.purchasePrice)}</td>
+                            <td class="px-3 py-2 text-right">${formatMoney(p.retailPrice) || '-'}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.quotePrice)}</td>
                             <td class="px-3 py-2 text-right">${p.margin}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.subtotal)}</td>
@@ -1863,6 +2724,15 @@ function viewProposal(proposalId) {
                     </tbody>
                 </table>
             </div>
+
+            ${(() => {
+                const nonSelectedBrands = pp.products.filter(p => !project?.selectedBrands?.includes(p.brand)).map(p => p.brand);
+                const uniqueNonSelected = [...new Set(nonSelectedBrands)];
+                return uniqueNonSelected.length > 0 ? `
+                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
+                    <p class="text-sm text-yellow-700">⚠️ 以下品牌不在选中列表内（系统自动补充）：${uniqueNonSelected.join('、')}</p>
+                </div>` : '';
+            })()}
 
             <div class="bg-gray-50 rounded-lg p-4">
                 <h4 class="font-medium mb-2 text-sm">AI 推荐理由</h4>
@@ -1896,7 +2766,11 @@ function openProject(projectId) {
         // 恢复对话历史
         document.getElementById('chat-messages').innerHTML = '';
         if (project.conversation && project.conversation.length > 0) {
-            project.conversation.forEach(msg => addChatMessage(msg.role, msg.content));
+            project.conversation.forEach(msg => {
+                // 转换 role: 'assistant' -> 'ai', 'user' -> 'user'
+                const displayRole = msg.role === 'assistant' ? 'ai' : msg.role;
+                addChatMessage(displayRole, msg.content);
+            });
         }
         updateChatSummary(project);
     } else if (['requirement_ready', 'generating', 'generated', 'adjusted', 'confirmed'].includes(project.status)) {
@@ -2378,9 +3252,14 @@ function exportProposalPPT(proposalId) {
 
 // ========== AI 设置 ==========
 let aiSettings = {
+    // 主 API（用于对话和方案生成）
     apiType: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '',
     model: 'deepseek-chat', maxTokens: 4096, temperature: 0.7,
-    enableChat: true, enableProposal: true, enableBid: true
+    enableChat: true, enableProposal: true, enableBid: true,
+    // Kimi API（用于联网搜索品牌调性）
+    kimiApiKey: '',
+    kimiEndpoint: 'https://api.moonshot.cn/v1/chat/completions',
+    kimiModel: 'moonshot-v1-8k'
 };
 
 async function loadAISettings() {
@@ -2388,6 +3267,71 @@ async function loadAISettings() {
         const saved = await loadSetting('aiSettings');
         if (saved) aiSettings = { ...aiSettings, ...saved };
     } catch (e) { /* use defaults */ }
+}
+
+// 通用 AI 调用函数
+async function callAI(messages, options = {}) {
+    if (!aiSettings.apiKey) {
+        throw new Error('请先在 AI 设置中配置 API Key');
+    }
+
+    const isOpenAIFormat = aiSettings.apiType === 'openai' || aiSettings.apiType === 'deepseek' || aiSettings.apiType === 'custom';
+    const body = isOpenAIFormat ? {
+        model: options.model || aiSettings.model,
+        messages: messages,
+        max_tokens: options.maxTokens || aiSettings.maxTokens,
+        temperature: options.temperature ?? aiSettings.temperature
+    } : {
+        model: options.model || aiSettings.model,
+        max_tokens: options.maxTokens || aiSettings.maxTokens,
+        messages: messages
+    };
+
+    const headers = isOpenAIFormat
+        ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiSettings.apiKey}` }
+        : { 'Content-Type': 'application/json', 'x-api-key': aiSettings.apiKey, 'anthropic-version': '2023-06-01' };
+
+    const resp = await fetch(aiSettings.endpoint, {
+        method: 'POST',
+        headers,
+        body: JSON.stringify(body)
+    });
+
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`API 错误 (${resp.status}): ${errText.substring(0, 200)}`);
+    }
+
+    const data = await resp.json();
+    return isOpenAIFormat ? data.choices[0].message.content : data.content[0].text;
+}
+
+// Kimi API 调用（用于联网搜索品牌调性）
+async function callKimiAPI(prompt) {
+    if (!aiSettings.kimiApiKey) {
+        throw new Error('请先配置 Kimi API Key');
+    }
+
+    const resp = await fetch(aiSettings.kimiEndpoint, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${aiSettings.kimiApiKey}`
+        },
+        body: JSON.stringify({
+            model: aiSettings.kimiModel,
+            messages: [{ role: 'user', content: prompt }],
+            temperature: 0.3
+        })
+    });
+
+    if (!resp.ok) {
+        const errText = await resp.text();
+        throw new Error(`Kimi API 错误 (${resp.status}): ${errText.substring(0, 200)}`);
+    }
+
+    const data = await resp.json();
+    return data.choices[0].message.content;
 }
 
 function updateAISettingsForm() {
@@ -2437,6 +3381,9 @@ function showAISettingsForm() {
     document.getElementById('ai-enable-chat').checked = aiSettings.enableChat;
     document.getElementById('ai-enable-proposal').checked = aiSettings.enableProposal;
     document.getElementById('ai-enable-bid').checked = aiSettings.enableBid;
+    // Kimi API
+    const kimiKeyEl = document.getElementById('kimi-api-key');
+    if (kimiKeyEl) kimiKeyEl.value = aiSettings.kimiApiKey || '';
 }
 
 async function saveAISettings() {
@@ -2449,12 +3396,19 @@ async function saveAISettings() {
     aiSettings.enableChat = document.getElementById('ai-enable-chat')?.checked || false;
     aiSettings.enableProposal = document.getElementById('ai-enable-proposal')?.checked || false;
     aiSettings.enableBid = document.getElementById('ai-enable-bid')?.checked || false;
+    // Kimi API
+    aiSettings.kimiApiKey = document.getElementById('kimi-api-key')?.value?.trim() || '';
     await saveSetting('aiSettings', aiSettings);
     alert('AI 设置已保存');
 }
 
 function resetAISettings() {
-    aiSettings = { apiType: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '', model: 'deepseek-chat', maxTokens: 4096, temperature: 0.7, enableChat: true, enableProposal: true, enableBid: true };
+    aiSettings = {
+        apiType: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '',
+        model: 'deepseek-chat', maxTokens: 4096, temperature: 0.7,
+        enableChat: true, enableProposal: true, enableBid: true,
+        kimiApiKey: ''
+    };
     showAISettingsForm();
 }
 
