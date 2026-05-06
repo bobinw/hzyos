@@ -1330,6 +1330,46 @@
                     </div>
                 </div>
 
+                <!-- 自动备份 -->
+                <div class="bg-white rounded-lg shadow p-6 mt-6">
+                    <h3 class="font-medium mb-4">🔄 自动备份</h3>
+                    <p class="text-sm text-gray-500 mb-4">定期自动下载备份文件到本地，防止数据丢失</p>
+                    <div class="space-y-4">
+                        <div class="flex items-center justify-between">
+                            <div>
+                                <span class="text-sm font-medium">启用自动备份</span>
+                                <p class="text-xs text-gray-400">开启后会按设定频率自动下载备份文件</p>
+                            </div>
+                            <label class="relative inline-flex items-center cursor-pointer">
+                                <input type="checkbox" id="auto-backup-enabled" class="sr-only peer" onchange="toggleAutoBackup()">
+                                <div class="w-11 h-6 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                            </label>
+                        </div>
+                        <div class="flex items-center gap-4">
+                            <span class="text-sm text-gray-600">备份频率：</span>
+                            <select id="auto-backup-interval" class="border rounded-lg px-3 py-2 text-sm" onchange="saveAutoBackupSettings()">
+                                <option value="1">每天</option>
+                                <option value="3">每3天</option>
+                                <option value="7">每周</option>
+                                <option value="30">每月</option>
+                            </select>
+                        </div>
+                        <div id="auto-backup-status" class="p-3 bg-gray-50 rounded-lg text-sm">
+                            <div class="flex justify-between">
+                                <span class="text-gray-500">上次备份：</span>
+                                <span id="last-backup-time" class="text-gray-700">从未备份</span>
+                            </div>
+                            <div class="flex justify-between mt-1">
+                                <span class="text-gray-500">下次备份：</span>
+                                <span id="next-backup-time" class="text-gray-700">-</span>
+                            </div>
+                        </div>
+                        <button onclick="backupNow()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">
+                            📦 立即备份
+                        </button>
+                    </div>
+                </div>
+
                 <!-- 存储空间使用情况 -->
                 <div class="bg-white rounded-lg shadow p-6 mt-6">
                     <div class="flex justify-between items-center mb-4">
@@ -1376,7 +1416,7 @@
     <script>
         // ========== IndexedDB 数据库 ==========
         const DB_NAME = 'ProductLibraryDB';
-        const DB_VERSION = 4;
+        const DB_VERSION = 5;
         let db = null;
 
         // 初始化 IndexedDB
@@ -2435,6 +2475,133 @@
             }
         }
 
+        // ========== 自动备份功能 ==========
+        let autoBackupSettings = {
+            enabled: false,
+            intervalDays: 1,
+            lastBackupTime: null
+        };
+
+        // 加载自动备份设置
+        async function loadAutoBackupSettings() {
+            const saved = await loadSettingFromDB('autoBackupSettings');
+            if (saved) {
+                autoBackupSettings = { ...autoBackupSettings, ...saved };
+            }
+            updateAutoBackupUI();
+        }
+
+        // 保存自动备份设置
+        async function saveAutoBackupSettings() {
+            const enabled = document.getElementById('auto-backup-enabled')?.checked || false;
+            const interval = parseInt(document.getElementById('auto-backup-interval')?.value || '1');
+            autoBackupSettings.enabled = enabled;
+            autoBackupSettings.intervalDays = interval;
+            await saveSettingToDB('autoBackupSettings', autoBackupSettings);
+            updateAutoBackupUI();
+            console.log('自动备份设置已保存:', autoBackupSettings);
+        }
+
+        // 切换自动备份
+        async function toggleAutoBackup() {
+            await saveAutoBackupSettings();
+        }
+
+        // 更新自动备份UI
+        function updateAutoBackupUI() {
+            const checkbox = document.getElementById('auto-backup-enabled');
+            const select = document.getElementById('auto-backup-interval');
+            const lastTimeEl = document.getElementById('last-backup-time');
+            const nextTimeEl = document.getElementById('next-backup-time');
+
+            if (checkbox) checkbox.checked = autoBackupSettings.enabled;
+            if (select) select.value = String(autoBackupSettings.intervalDays);
+
+            if (lastTimeEl) {
+                lastTimeEl.textContent = autoBackupSettings.lastBackupTime
+                    ? new Date(autoBackupSettings.lastBackupTime).toLocaleString()
+                    : '从未备份';
+            }
+
+            if (nextTimeEl && autoBackupSettings.enabled && autoBackupSettings.lastBackupTime) {
+                const nextTime = new Date(autoBackupSettings.lastBackupTime);
+                nextTime.setDate(nextTime.getDate() + autoBackupSettings.intervalDays);
+                nextTimeEl.textContent = nextTime.toLocaleDateString();
+            } else if (nextTimeEl) {
+                nextTimeEl.textContent = autoBackupSettings.enabled ? '今天' : '-';
+            }
+        }
+
+        // 检查是否需要自动备份
+        function checkAutoBackup() {
+            if (!autoBackupSettings.enabled) return;
+
+            const now = new Date();
+            const lastBackup = autoBackupSettings.lastBackupTime
+                ? new Date(autoBackupSettings.lastBackupTime)
+                : null;
+
+            if (!lastBackup) {
+                // 从未备份，立即备份
+                console.log('首次自动备份');
+                backupNow();
+                return;
+            }
+
+            const daysSinceLastBackup = Math.floor((now - lastBackup) / (1000 * 60 * 60 * 24));
+            if (daysSinceLastBackup >= autoBackupSettings.intervalDays) {
+                console.log(`已过 ${daysSinceLastBackup} 天，执行自动备份`);
+                backupNow();
+            }
+        }
+
+        // 立即备份
+        async function backupNow() {
+            try {
+                const data = {
+                    products: products,
+                    suppliers: suppliers,
+                    templates: templates,
+                    globalTemplate: globalTemplate,
+                    nextProductId: nextProductId,
+                    requiredFields: requiredFields,
+                    requiredGroups: requiredGroups,
+                    customProductFields: customProductFields,
+                    customSupplierFields: customSupplierFields,
+                    importRecords: importRecords,
+                    userFilterConfig: userFilterConfig,
+                    userColumnConfig: userColumnConfig,
+                    backupTime: new Date().toISOString(),
+                    version: '2.0'
+                };
+
+                const json = JSON.stringify(data, null, 2);
+                const blob = new Blob([json], { type: 'application/json' });
+                const url = URL.createObjectURL(blob);
+
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').substring(0, 19);
+                const filename = `product-library-backup-${timestamp}.json`;
+
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = filename;
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(url);
+
+                // 更新备份时间
+                autoBackupSettings.lastBackupTime = new Date().toISOString();
+                await saveSettingToDB('autoBackupSettings', autoBackupSettings);
+                updateAutoBackupUI();
+
+                console.log('备份完成:', filename);
+            } catch (e) {
+                console.error('备份失败:', e);
+                alert('备份失败: ' + e.message);
+            }
+        }
+
         // ========== 筛选条件和表格列配置 ==========
         const FILTER_DEFINITIONS = {
             margin: {
@@ -2731,7 +2898,7 @@
 
                 // 4. 推断是否支持代发
                 if (p.supportsDropship === undefined) {
-                    p.supportsDropship = (p.normalExpressPrice > 0);
+                    p.supportsDropship = (p.normalExpressPrice > 0 || p.dropshipFreight > 0 || p.jdsfExpressPrice > 0 || p.jdsfExpressFreight > 0);
                     migrated = true;
                 }
 
@@ -2962,6 +3129,20 @@
             return updated > 0;
         }
 
+        function migrateDropshipInference(products) {
+            if (localStorage.getItem('_dropship_inference_v2') === '1') return false;
+            let updated = 0;
+            for (const p of products) {
+                const inferred = (p.normalExpressPrice > 0 || p.dropshipFreight > 0 || p.jdsfExpressPrice > 0 || p.jdsfExpressFreight > 0);
+                if (inferred && !p.supportsDropship) {
+                    p.supportsDropship = true;
+                    updated++;
+                }
+            }
+            console.log('[代发推断v2] 更新 ' + updated + ' 个商品的支持代发状态');
+            return updated > 0;
+        }
+
         async function initData() {
             try {
                 // 先初始化 IndexedDB
@@ -2993,6 +3174,12 @@
                     await saveData();
                 }
                 localStorage.setItem('_brand_stock_remark_migrated', '1');
+
+                // 代发推断v2：有代发价/运费则自动标记支持代发
+                if (migrateDropshipInference(products)) {
+                    await saveData();
+                }
+                localStorage.setItem('_dropship_inference_v2', '1');
 
                 if (savedData.templates !== null && savedData.templates !== undefined) {
                     templates = savedData.templates;
@@ -3108,6 +3295,12 @@
 
         // 启动初始化
         initData();
+
+        // 加载自动备份设置并检查是否需要备份
+        setTimeout(async () => {
+            await loadAutoBackupSettings();
+            checkAutoBackup();
+        }, 2000); // 等待数据加载完成后检查
 
         // ========== 导出功能 ==========
 
@@ -5393,7 +5586,8 @@
             p.stockType = document.getElementById('edit-stockType').value;
             p.stockStatus = document.getElementById('edit-stockStatus').value;
             p.productType = document.getElementById('edit-productType').value;
-            p.supportsDropship = document.getElementById('edit-supportsDropship').value === 'true';
+            p.supportsDropship = document.getElementById('edit-supportsDropship').value === 'true'
+                || p.normalExpressPrice > 0 || p.dropshipFreight > 0 || p.jdsfExpressPrice > 0 || p.jdsfExpressFreight > 0;
             p.pddLink = document.getElementById('edit-pddLink').value;
             p.pddPrice = parseFloat(document.getElementById('edit-pddPrice').value) || 0;
             p.remark = document.getElementById('edit-remark').value;
@@ -7887,25 +8081,26 @@ self.onmessage = function(e) {
                             </div>
                         </div>
 
-                        <!-- 品牌识别 -->
-                        <div id="brandDetectionSection">
-                            <div class="flex justify-between items-center mb-2">
-                                <label class="text-sm font-medium">品牌识别</label>
-                                <div class="flex gap-1">
-                                    <button onclick="detectBrandFromSheetName('${sheetName}')" class="text-xs text-blue-600 hover:underline">从sheet名</button>
-                                    <span class="text-gray-300">|</span>
-                                    <button onclick="detectBrandFromProductNames('${sheetName}')" class="text-xs text-blue-600 hover:underline">从商品名</button>
-                                    <span class="text-gray-300">|</span>
-                                    <button onclick="autoDetectBrand('${sheetName}')" class="text-xs text-blue-600 hover:underline font-medium">系统决定</button>
+                        <!-- 品牌设置 -->
+                        <div id="brandSettingsSection">
+                            <label class="text-sm font-medium mb-2 block">品牌设置</label>
+                            <div class="bg-gray-50 rounded-lg p-3">
+                                <div class="space-y-2">
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" name="brandMode" value="fixed" checked class="text-blue-600">
+                                        <span class="text-sm">使用固定品牌：</span>
+                                        <input type="text" id="fixedBrandName" class="flex-1 border rounded px-2 py-1 text-sm" placeholder="输入品牌名称">
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" name="brandMode" value="product" class="text-blue-600">
+                                        <span class="text-sm">从商品名称逐行识别</span>
+                                    </label>
+                                    <label class="flex items-center gap-2 cursor-pointer">
+                                        <input type="radio" name="brandMode" value="none" class="text-blue-600">
+                                        <span class="text-sm">不设置品牌</span>
+                                    </label>
                                 </div>
-                            </div>
-                            <div class="bg-gray-50 rounded-lg p-3 text-sm">
-                                <div class="flex items-center gap-2">
-                                    <span class="text-gray-500">识别结果：</span>
-                                    <input type="text" id="detectedBrandName" class="flex-1 border rounded px-2 py-1 text-sm" placeholder="输入或确认品牌名称">
-                                    <button onclick="applyBrandToMapping('${sheetName}')" class="px-3 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700">应用到品牌字段</button>
-                                </div>
-                                <div id="brandHint" class="text-xs text-gray-400 mt-1">点击上方按钮自动识别品牌，可手动修改后确认</div>
+                                <div id="brandDetectionHint" class="text-xs text-gray-400 mt-2"></div>
                             </div>
                         </div>
 
@@ -7955,6 +8150,34 @@ self.onmessage = function(e) {
                     } else {
                         statusTd.innerHTML = '<span class="text-gray-400">-</span>';
                     }
+                });
+            }
+
+            // 自动检测品牌并显示提示
+            const brandHint = document.getElementById('brandDetectionHint');
+            const fixedBrandInput = document.getElementById('fixedBrandName');
+            if (brandHint && dataRows && dataRows.length > 0) {
+                const candidates = extractBrandFromProductNames(headers, dataRows);
+                if (candidates && candidates.length > 0) {
+                    brandHint.innerHTML = `<span class="text-blue-600">💡 检测到可能的品牌：${candidates.slice(0, 3).join('、')}${candidates.length > 3 ? ' 等' : ''}</span>`;
+                    // 自动填充第一个候选品牌
+                    if (fixedBrandInput && !fixedBrandInput.value) {
+                        fixedBrandInput.value = candidates[0];
+                    }
+                } else {
+                    brandHint.innerHTML = '<span class="text-gray-400">未检测到明显品牌，可手动输入</span>';
+                }
+            }
+
+            // 品牌输入框联动：输入时自动选择"固定品牌"模式
+            if (fixedBrandInput) {
+                fixedBrandInput.addEventListener('input', function() {
+                    if (this.value.trim()) {
+                        document.querySelector('input[name="brandMode"][value="fixed"]').checked = true;
+                    }
+                });
+                fixedBrandInput.addEventListener('focus', function() {
+                    document.querySelector('input[name="brandMode"][value="fixed"]').checked = true;
                 });
             }
 
@@ -8329,9 +8552,11 @@ self.onmessage = function(e) {
                 return;
             }
 
-            // 获取品牌名（如果有设置）
-            const brandName = window.pendingBrandName || '';
-            window.pendingBrandName = null; // 使用后清空
+            // 获取品牌设置
+            const brandModeEl = document.querySelector('input[name="brandMode"]:checked');
+            const brandMode = brandModeEl ? brandModeEl.value : 'none';
+            const fixedBrandName = document.getElementById('fixedBrandName')?.value.trim() || '';
+            const brandName = brandMode === 'fixed' ? fixedBrandName : '';
 
             // 移除选择弹窗
             document.getElementById('modal-sheet-import').remove();
@@ -8443,9 +8668,9 @@ self.onmessage = function(e) {
                 // 无效的SKU值（表示没有值）
                 const invalidSkuValues = ['/', '-', '无', 'NA', 'N/A', 'NULL', 'null', ''];
 
-                // Build brand candidates for per-row matching (only when no fixed brandName)
+                // Build brand candidates for per-row matching (only when mode is 'product')
                 let brandCandidates = null;
-                if (!brandName && fieldToIndex['商品名称'] !== undefined) {
+                if (brandMode === 'product' && fieldToIndex['商品名称'] !== undefined) {
                     const nameIdx = fieldToIndex['商品名称'];
                     const fakeRows = rows.map(r => [String(r[nameIdx] || '').trim()]).filter(r => r[0].length >= 2);
                     if (fakeRows.length >= 2) {
@@ -8493,13 +8718,14 @@ self.onmessage = function(e) {
                             }
                         }
 
-                        // 品牌设置优先级：固定品牌名 > 字段映射 > 逐行商品名匹配
-                        if (brandName) {
+                        // 品牌设置：根据品牌模式处理
+                        if (brandMode === 'fixed' && brandName) {
                             existingProduct.brand = brandName;
-                        } else if (!existingProduct.brand && brandCandidates) {
+                        } else if (brandMode === 'product' && brandCandidates) {
                             const rowBrand = matchBrandForName(existingProduct.name || '', brandCandidates);
                             if (rowBrand) existingProduct.brand = rowBrand;
                         }
+                        // brandMode === 'none' 时不设置品牌
 
                         const sheetType = inferProductTypeFromSheet(sheetName);
                         if (sheetType && (!existingProduct.productType || existingProduct.productType === '普通')) {
@@ -8520,7 +8746,7 @@ self.onmessage = function(e) {
                             supplierId: supplierId,
                             sku: sku,
                             name: fieldToIndex['商品名称'] !== undefined ? row[fieldToIndex['商品名称']] : '',
-                            brand: brandName || (brandCandidates && fieldToIndex['商品名称'] !== undefined ? (matchBrandForName(String(row[fieldToIndex['商品名称']] || ''), brandCandidates) || '') : ''),
+                            brand: '',
                             majorCategory: '食品',
                             category: '礼盒',
                             unit: '盒',
@@ -8547,12 +8773,16 @@ self.onmessage = function(e) {
                             }
                         });
 
-                        // 如果Excel中有品牌值，则覆盖识别的品牌名
+                        // 品牌设置：Excel字段映射 > 品牌模式
                         if (fieldToIndex['品牌'] !== undefined && row[fieldToIndex['品牌']]) {
                             product.brand = row[fieldToIndex['品牌']];
-                        } else if (brandName) {
+                        } else if (brandMode === 'fixed' && brandName) {
                             product.brand = brandName;
+                        } else if (brandMode === 'product' && brandCandidates && fieldToIndex['商品名称'] !== undefined) {
+                            const rowBrand = matchBrandForName(String(row[fieldToIndex['商品名称']] || ''), brandCandidates);
+                            if (rowBrand) product.brand = rowBrand;
                         }
+                        // brandMode === 'none' 时不设置品牌
 
                         // 添加图片
                         const excelRow = rowIndexToExcelRow[rowIndex];
@@ -10483,10 +10713,18 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             else if (fieldName === '零售价') product.retailPrice = parseFloat(val) || 0;
             else if (fieldName === '渠道价') product.channelPrice = parseFloat(val) || 0;
             else if (fieldName === '团购价') product.groupPrice = parseFloat(val) || 0;
-            else if (fieldName === '代发价') product.normalExpressPrice = parseFloat(val) || 0;
-            else if (fieldName === '代发运费') product.dropshipFreight = parseFloat(val) || 0;
-            else if (fieldName === '京东顺丰代发价') product.jdsfExpressPrice = parseFloat(val) || 0;
-            else if (fieldName === '京东顺丰代发运费') product.jdsfExpressFreight = parseFloat(val) || 0;
+            else if (fieldName === '代发价') { product.normalExpressPrice = parseFloat(val) || 0; if (product.normalExpressPrice > 0) product.supportsDropship = true; }
+            else if (fieldName === '代发运费') { product.dropshipFreight = parseFloat(val) || 0; if (product.dropshipFreight > 0) product.supportsDropship = true; }
+            else if (fieldName === '京东顺丰代发价') {
+                const num = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
+                product.jdsfExpressPrice = num;
+                if (num > 0) product.supportsDropship = true;
+            }
+            else if (fieldName === '京东顺丰代发运费') {
+                const num = parseFloat(String(val).replace(/[^\d.]/g, '')) || 0;
+                product.jdsfExpressFreight = num;
+                if (num > 0) product.supportsDropship = true;
+            }
 
             // 物流供应链
             else if (fieldName === '发货地') product.shipFrom = val;
@@ -11246,10 +11484,18 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
                     else if (field === '零售价') product.retailPrice = parseFloat(value) || 0;
                     else if (field === '渠道价') product.channelPrice = parseFloat(value) || 0;
                     else if (field === '团购价') product.groupPrice = parseFloat(value) || 0;
-                    else if (field === '代发价') product.normalExpressPrice = parseFloat(value) || 0;
-                    else if (field === '代发运费') product.dropshipFreight = parseFloat(value) || 0;
-                    else if (field === '京东顺丰代发价') product.jdsfExpressPrice = parseFloat(value) || 0;
-                    else if (field === '京东顺丰代发运费') product.jdsfExpressFreight = parseFloat(value) || 0;
+                    else if (field === '代发价') { product.normalExpressPrice = parseFloat(value) || 0; if (product.normalExpressPrice > 0) product.supportsDropship = true; }
+                    else if (field === '代发运费') { product.dropshipFreight = parseFloat(value) || 0; if (product.dropshipFreight > 0) product.supportsDropship = true; }
+                    else if (field === '京东顺丰代发价') {
+                        const num = parseFloat(String(value).replace(/[^\d.]/g, '')) || 0;
+                        product.jdsfExpressPrice = num;
+                        if (num > 0) product.supportsDropship = true;
+                    }
+                    else if (field === '京东顺丰代发运费') {
+                        const num = parseFloat(String(value).replace(/[^\d.]/g, '')) || 0;
+                        product.jdsfExpressFreight = num;
+                        if (num > 0) product.supportsDropship = true;
+                    }
 
                     // 物流供应链
                     else if (field === '发货地') product.shipFrom = value;

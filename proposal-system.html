@@ -35,6 +35,7 @@
             </div>
             <nav class="p-2 flex-1">
                 <a onclick="showPage('page-projects')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-projects">📋 项目列表</a>
+                <a onclick="showPage('page-customers')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-customers">👥 客户管理</a>
                 <a onclick="showPage('page-templates')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-templates">📄 方案模板</a>
                 <a onclick="showPage('page-ai-settings')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-ai-settings">⚙️ AI设置</a>
             </nav>
@@ -61,6 +62,26 @@
                 <div class="bg-white rounded-lg shadow p-4">
                     <div id="projectList" class="space-y-3">
                         <div class="text-center text-gray-400 py-12">暂无项目，点击"新建项目"开始</div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 页面：客户管理 -->
+            <div id="page-customers" class="page p-6">
+                <div class="flex justify-between items-center mb-6">
+                    <h2 class="text-xl font-bold">客户管理</h2>
+                    <button onclick="showNewCustomerModal()" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ 新建客户</button>
+                </div>
+                <!-- 搜索栏 -->
+                <div class="mb-4">
+                    <input type="text" id="customer-search" class="border rounded-lg px-4 py-2 text-sm w-64" placeholder="搜索客户名称/联系人..." oninput="filterCustomerList()">
+                </div>
+                <!-- 统计卡片 -->
+                <div class="grid grid-cols-4 gap-4 mb-6" id="customer-stats"></div>
+                <!-- 客户列表 -->
+                <div class="bg-white rounded-lg shadow p-4">
+                    <div id="customerList" class="space-y-3">
+                        <div class="text-center text-gray-400 py-12">暂无客户</div>
                     </div>
                 </div>
             </div>
@@ -252,10 +273,26 @@
         <div class="modal-content w-xl max-h-[85vh] overflow-y-auto" id="modal-template-editor-content"></div>
     </div>
 
+    <!-- 模态框：新建/编辑客户 -->
+    <div id="modal-customer" class="modal">
+        <div class="modal-content w-xl max-h-[85vh] overflow-y-auto">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold" id="modal-customer-title">新建客户</h3>
+                <button onclick="closeModal('modal-customer')" class="text-gray-400 hover:text-gray-600">✕</button>
+            </div>
+            <div id="modal-customer-form"></div>
+        </div>
+    </div>
+
+    <!-- 模态框：客户详情 -->
+    <div id="modal-customer-detail" class="modal">
+        <div class="modal-content w-xl max-h-[85vh] overflow-y-auto" id="modal-customer-detail-content"></div>
+    </div>
+
 <script>
 // ========== IndexedDB 数据库（与商品库共享） ==========
 const DB_NAME = 'ProductLibraryDB';
-const DB_VERSION = 4;
+const DB_VERSION = 5;
 let db = null;
 
 // ========== 数据变量 ==========
@@ -266,9 +303,11 @@ let projects = [];
 let proposals = [];
 let pptTemplates = [];      // 方案PPT模板
 let excelTemplates = [];   // 方案Excel模板
+let customers = [];           // 客户列表
 let nextProjectId = 1;
 let nextProposalId = 1;
 let nextTemplateId = 1;
+let nextCustomerId = 1;
 
 // 当前编辑状态
 let currentProjectId = null;
@@ -291,6 +330,7 @@ function initDB() {
             if (!database.objectStoreNames.contains('proposals')) database.createObjectStore('proposals', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('pptTemplates')) database.createObjectStore('pptTemplates', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('excelTemplates')) database.createObjectStore('excelTemplates', { keyPath: 'id' });
+            if (!database.objectStoreNames.contains('customers')) database.createObjectStore('customers', { keyPath: 'id' });
             console.log('方案系统DB结构创建完成');
         };
     });
@@ -358,9 +398,11 @@ async function saveAllData() {
             saveToDB('proposals', proposals),
             saveToDB('pptTemplates', pptTemplates),
             saveToDB('excelTemplates', excelTemplates),
+            saveToDB('customers', customers),
             saveSetting('nextProjectId', nextProjectId),
             saveSetting('nextProposalId', nextProposalId),
-            saveSetting('nextTemplateId', nextTemplateId)
+            saveSetting('nextTemplateId', nextTemplateId),
+            saveSetting('nextCustomerId', nextCustomerId)
         ]);
         console.log('方案数据保存成功');
         return true;
@@ -378,13 +420,14 @@ function showPage(pageId) {
     else { console.warn('Page not found:', pageId); return; }
     // 更新导航高亮
     document.querySelectorAll('nav a').forEach(a => a.classList.remove('bg-blue-50', 'text-blue-600'));
-    const navMap = { 'page-projects': 'nav-projects', 'page-templates': 'nav-templates', 'page-ai-settings': 'nav-ai-settings' };
+    const navMap = { 'page-projects': 'nav-projects', 'page-customers': 'nav-customers', 'page-templates': 'nav-templates', 'page-ai-settings': 'nav-ai-settings' };
     if (navMap[pageId]) {
         const nav = document.getElementById(navMap[pageId]);
         if (nav) nav.classList.add('bg-blue-50', 'text-blue-600');
     }
     // 自动渲染
     if (pageId === 'page-projects') renderProjectList();
+    if (pageId === 'page-customers') renderCustomerList();
     if (pageId === 'page-templates') { switchTemplateTab(currentEditingTemplateType); }
     if (pageId === 'page-ai-settings') showAISettingsForm();
 }
@@ -456,10 +499,69 @@ async function init() {
     if (pptTemplates.length === 0) pptTemplates = getDefaultPptTemplates();
     excelTemplates = await loadFromDB('excelTemplates') || [];
     if (excelTemplates.length === 0) excelTemplates = getDefaultExcelTemplates();
+    customers = await loadFromDB('customers') || [];
     nextProjectId = (await loadSetting('nextProjectId')) || 1;
     nextProposalId = (await loadSetting('nextProposalId')) || 1;
     nextTemplateId = (await loadSetting('nextTemplateId')) || 1;
+    nextCustomerId = (await loadSetting('nextCustomerId')) || 1;
+    // 迁移客户数据
+    await migrateCustomers();
     renderProjectList();
+}
+
+// ========== 客户数据迁移 ==========
+async function migrateCustomers() {
+    const migrated = await loadSetting('customerMigrated');
+    if (migrated) return;
+
+    console.log('开始迁移客户数据...');
+    const customerMap = new Map();
+
+    projects.forEach(p => {
+        if (!p.customerCompany) return;
+        const key = p.customerCompany.toLowerCase().trim();
+        if (!customerMap.has(key)) {
+            customerMap.set(key, {
+                id: nextCustomerId++,
+                customerCompany: p.customerCompany,
+                customerContact: p.customerContact || '',
+                companyType: p.companyType || '',
+                companySize: p.companySize || '',
+                region: p.region || '',
+                industry: p.industry || '',
+                purchaseMode: p.purchaseMode || '',
+                invoiceType: p.invoiceType || [],
+                paymentTerms: p.paymentTerms || '',
+                notes: '',
+                createdAt: p.createdAt || new Date().toISOString(),
+                updatedAt: new Date().toISOString()
+            });
+        }
+        p.customerId = customerMap.get(key).id;
+        // 移除项目中的客户字段
+        delete p.customerCompany;
+        delete p.customerContact;
+        delete p.companyType;
+        delete p.companySize;
+        delete p.region;
+        delete p.industry;
+        delete p.purchaseMode;
+        delete p.invoiceType;
+        delete p.paymentTerms;
+    });
+
+    customers = Array.from(customerMap.values());
+    if (customers.length > 0) {
+        await saveAllData();
+        await saveSetting('customerMigrated', true);
+        console.log(`迁移完成：创建了 ${customers.length} 个客户记录`);
+    }
+}
+
+// ========== 客户辅助函数 ==========
+function getProjectCustomer(project) {
+    if (!project.customerId) return null;
+    return customers.find(c => c.id === project.customerId);
 }
 
 // ========== 项目列表 ==========
@@ -490,6 +592,8 @@ function renderProjectList() {
 
     document.getElementById('projectList').innerHTML = projects.sort((a, b) => b.id - a.id).map(p => {
         const proposalCount = proposals.filter(pp => pp.projectId === p.id).length;
+        const customer = getProjectCustomer(p);
+        const customerName = customer ? customer.customerCompany : (p.customerCompany || '-');
         return `
         <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer" onclick="openProject(${p.id})">
             <div class="flex justify-between items-start">
@@ -500,7 +604,7 @@ function renderProjectList() {
                         ${p.proposalUsage ? `<span class="tag ${p.proposalUsage === '内部快速决策' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'}">${p.proposalUsage}</span>` : ''}
                     </div>
                     <div class="flex gap-4 text-sm text-gray-500">
-                        <span>🏢 ${p.customerCompany || '-'}</span>
+                        <span>🏢 ${customerName}</span>
                         <span>👥 ${p.peopleCount || 0}人</span>
                         <span>💰 人均${formatMoney(p.budgetPerPerson)}</span>
                         <span>📅 交付: ${p.deadline || '-'}</span>
@@ -517,41 +621,418 @@ function renderProjectList() {
     `}).join('');
 }
 
+// ========== 客户管理 ==========
+function getCustomerStats() {
+    const total = customers.length;
+    const activeCount = new Set(projects.filter(p => p.customerId).map(p => p.customerId)).size;
+    const totalProjects = projects.length;
+    return { total, activeCount, totalProjects };
+}
+
+function renderCustomerList() {
+    const stats = getCustomerStats();
+    document.getElementById('customer-stats').innerHTML = `
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-blue-600">${stats.total}</div><div class="text-sm text-gray-500">客户总数</div></div>
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-green-600">${stats.activeCount}</div><div class="text-sm text-gray-500">有项目的客户</div></div>
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-purple-600">${stats.totalProjects}</div><div class="text-sm text-gray-500">项目总数</div></div>
+        <div class="bg-white rounded-lg shadow p-4"><div class="text-2xl font-bold text-orange-600">${customers.length > 0 ? Math.round(stats.totalProjects / stats.activeCount) : 0}</div><div class="text-sm text-gray-500">户均项目</div></div>
+    `;
+
+    if (customers.length === 0) {
+        document.getElementById('customerList').innerHTML = '<div class="text-center text-gray-400 py-12">暂无客户，点击"新建客户"开始</div>';
+        return;
+    }
+
+    const searchTerm = document.getElementById('customer-search')?.value?.toLowerCase() || '';
+    const filteredCustomers = customers.filter(c =>
+        !searchTerm ||
+        c.customerCompany?.toLowerCase().includes(searchTerm) ||
+        c.customerContact?.toLowerCase().includes(searchTerm)
+    );
+
+    document.getElementById('customerList').innerHTML = filteredCustomers.sort((a, b) => b.id - a.id).map(c => {
+        const customerProjects = projects.filter(p => p.customerId === c.id);
+        const projectCount = customerProjects.length;
+        return `
+        <div class="border rounded-lg p-4 hover:bg-gray-50 cursor-pointer" onclick="viewCustomerDetail(${c.id})">
+            <div class="flex justify-between items-start">
+                <div class="flex-1">
+                    <div class="flex items-center gap-3 mb-2">
+                        <h3 class="font-medium">${c.customerCompany}</h3>
+                        ${c.companyType ? `<span class="tag bg-blue-100 text-blue-600">${c.companyType}</span>` : ''}
+                        ${c.companySize ? `<span class="tag bg-gray-100 text-gray-600">${c.companySize}</span>` : ''}
+                    </div>
+                    <div class="flex gap-4 text-sm text-gray-500">
+                        ${c.customerContact ? `<span>👤 ${c.customerContact}</span>` : ''}
+                        ${c.region ? `<span>📍 ${c.region}</span>` : ''}
+                        ${c.industry ? `<span>🏭 ${c.industry}</span>` : ''}
+                        <span>📋 ${projectCount}个项目</span>
+                    </div>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="event.stopPropagation(); editCustomer(${c.id})" class="text-blue-500 hover:text-blue-700 text-sm">编辑</button>
+                    <button onclick="event.stopPropagation(); deleteCustomer(${c.id})" class="text-red-500 hover:text-red-700 text-sm">删除</button>
+                </div>
+            </div>
+        </div>
+    `}).join('') || '<div class="text-center text-gray-400 py-8">未找到匹配的客户</div>';
+}
+
+function filterCustomerList() {
+    renderCustomerList();
+}
+
+function showNewCustomerModal(fromProjectForm = false) {
+    const formHTML = `
+    <form onsubmit="event.preventDefault(); saveCustomer(${fromProjectForm});" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">客户公司名称 <span class="text-red-500">*</span></label>
+                <input type="text" id="customer-company" class="w-full border rounded px-3 py-2 text-sm" required>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">联系人</label>
+                <input type="text" id="customer-contact" class="w-full border rounded px-3 py-2 text-sm">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">企业性质</label>
+                <select id="customer-companyType" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">请选择</option>
+                    <option>国企</option><option>央企</option><option>外企</option><option>民企</option>
+                    <option>上市公司</option><option>事业单位</option><option>政府机关</option><option>其他</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">公司规模</label>
+                <select id="customer-companySize" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">请选择</option>
+                    <option>50人以下</option><option>50-200人</option><option>200-500人</option>
+                    <option>500-2000人</option><option>2000人以上</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">所在地区</label>
+                <input type="text" id="customer-region" class="w-full border rounded px-3 py-2 text-sm" placeholder="省份+城市">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">所属行业</label>
+                <select id="customer-industry" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">请选择</option>
+                    <option>互联网/科技</option><option>制造业</option><option>金融</option>
+                    <option>医疗</option><option>教育</option><option>地产</option><option>零售</option><option>其他</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">采购模式</label>
+                <select id="customer-purchaseMode" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">未定</option>
+                    <option>集采统一配送</option><option>员工自选兑换</option><option>混合模式</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">付款方式</label>
+                <select id="customer-paymentTerms" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">未定</option>
+                    <option>预付</option><option>货到付款</option><option>月结</option>
+                </select>
+            </div>
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">发票要求</label>
+                <div class="flex gap-4">
+                    <label class="text-sm"><input type="checkbox" id="customer-invoice-special"> 增值税专票</label>
+                    <label class="text-sm"><input type="checkbox" id="customer-invoice-normal"> 普票</label>
+                    <label class="text-sm"><input type="checkbox" id="customer-invoice-tax" checked> 含税</label>
+                </div>
+            </div>
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">备注</label>
+                <textarea id="customer-notes" class="w-full border rounded px-3 py-2 text-sm" rows="2"></textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-4 border-t">
+            <button type="button" onclick="closeModal('modal-customer')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+        </div>
+    </form>`;
+    document.getElementById('modal-customer-title').textContent = '新建客户';
+    document.getElementById('modal-customer-form').innerHTML = formHTML;
+    openModal('modal-customer');
+}
+
+function editCustomer(customerId) {
+    const customer = customers.find(c => c.id === customerId);
+    if (!customer) return;
+
+    const formHTML = `
+    <form onsubmit="event.preventDefault(); saveCustomer(false, ${customerId});" class="space-y-4">
+        <div class="grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">客户公司名称 <span class="text-red-500">*</span></label>
+                <input type="text" id="customer-company" class="w-full border rounded px-3 py-2 text-sm" value="${customer.customerCompany || ''}" required>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">联系人</label>
+                <input type="text" id="customer-contact" class="w-full border rounded px-3 py-2 text-sm" value="${customer.customerContact || ''}">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">企业性质</label>
+                <select id="customer-companyType" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">请选择</option>
+                    <option ${customer.companyType === '国企' ? 'selected' : ''}>国企</option>
+                    <option ${customer.companyType === '央企' ? 'selected' : ''}>央企</option>
+                    <option ${customer.companyType === '外企' ? 'selected' : ''}>外企</option>
+                    <option ${customer.companyType === '民企' ? 'selected' : ''}>民企</option>
+                    <option ${customer.companyType === '上市公司' ? 'selected' : ''}>上市公司</option>
+                    <option ${customer.companyType === '事业单位' ? 'selected' : ''}>事业单位</option>
+                    <option ${customer.companyType === '政府机关' ? 'selected' : ''}>政府机关</option>
+                    <option ${customer.companyType === '其他' ? 'selected' : ''}>其他</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">公司规模</label>
+                <select id="customer-companySize" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">请选择</option>
+                    <option ${customer.companySize === '50人以下' ? 'selected' : ''}>50人以下</option>
+                    <option ${customer.companySize === '50-200人' ? 'selected' : ''}>50-200人</option>
+                    <option ${customer.companySize === '200-500人' ? 'selected' : ''}>200-500人</option>
+                    <option ${customer.companySize === '500-2000人' ? 'selected' : ''}>500-2000人</option>
+                    <option ${customer.companySize === '2000人以上' ? 'selected' : ''}>2000人以上</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">所在地区</label>
+                <input type="text" id="customer-region" class="w-full border rounded px-3 py-2 text-sm" value="${customer.region || ''}">
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">所属行业</label>
+                <select id="customer-industry" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">请选择</option>
+                    <option ${customer.industry === '互联网/科技' ? 'selected' : ''}>互联网/科技</option>
+                    <option ${customer.industry === '制造业' ? 'selected' : ''}>制造业</option>
+                    <option ${customer.industry === '金融' ? 'selected' : ''}>金融</option>
+                    <option ${customer.industry === '医疗' ? 'selected' : ''}>医疗</option>
+                    <option ${customer.industry === '教育' ? 'selected' : ''}>教育</option>
+                    <option ${customer.industry === '地产' ? 'selected' : ''}>地产</option>
+                    <option ${customer.industry === '零售' ? 'selected' : ''}>零售</option>
+                    <option ${customer.industry === '其他' ? 'selected' : ''}>其他</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">采购模式</label>
+                <select id="customer-purchaseMode" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">未定</option>
+                    <option ${customer.purchaseMode === '集采统一配送' ? 'selected' : ''}>集采统一配送</option>
+                    <option ${customer.purchaseMode === '员工自选兑换' ? 'selected' : ''}>员工自选兑换</option>
+                    <option ${customer.purchaseMode === '混合模式' ? 'selected' : ''}>混合模式</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-xs text-gray-500 mb-1">付款方式</label>
+                <select id="customer-paymentTerms" class="w-full border rounded px-3 py-2 text-sm">
+                    <option value="">未定</option>
+                    <option ${customer.paymentTerms === '预付' ? 'selected' : ''}>预付</option>
+                    <option ${customer.paymentTerms === '货到付款' ? 'selected' : ''}>货到付款</option>
+                    <option ${customer.paymentTerms === '月结' ? 'selected' : ''}>月结</option>
+                </select>
+            </div>
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">发票要求</label>
+                <div class="flex gap-4">
+                    <label class="text-sm"><input type="checkbox" id="customer-invoice-special" ${(customer.invoiceType || []).includes('专票') ? 'checked' : ''}> 增值税专票</label>
+                    <label class="text-sm"><input type="checkbox" id="customer-invoice-normal" ${(customer.invoiceType || []).includes('普票') ? 'checked' : ''}> 普票</label>
+                    <label class="text-sm"><input type="checkbox" id="customer-invoice-tax" ${(customer.invoiceType || []).includes('含税') ? 'checked' : ''}> 含税</label>
+                </div>
+            </div>
+            <div class="col-span-2">
+                <label class="block text-xs text-gray-500 mb-1">备注</label>
+                <textarea id="customer-notes" class="w-full border rounded px-3 py-2 text-sm" rows="2">${customer.notes || ''}</textarea>
+            </div>
+        </div>
+        <div class="flex justify-end gap-2 pt-4 border-t">
+            <button type="button" onclick="closeModal('modal-customer')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+        </div>
+    </form>`;
+    document.getElementById('modal-customer-title').textContent = '编辑客户';
+    document.getElementById('modal-customer-form').innerHTML = formHTML;
+    openModal('modal-customer');
+}
+
+async function saveCustomer(fromProjectForm, editId = null) {
+    const getVal = id => document.getElementById(id)?.value?.trim() || '';
+    const invoiceTypes = [];
+    if (document.getElementById('customer-invoice-special')?.checked) invoiceTypes.push('专票');
+    if (document.getElementById('customer-invoice-normal')?.checked) invoiceTypes.push('普票');
+    if (document.getElementById('customer-invoice-tax')?.checked) invoiceTypes.push('含税');
+
+    const customerData = {
+        customerCompany: getVal('customer-company'),
+        customerContact: getVal('customer-contact'),
+        companyType: getVal('customer-companyType'),
+        companySize: getVal('customer-companySize'),
+        region: getVal('customer-region'),
+        industry: getVal('customer-industry'),
+        purchaseMode: getVal('customer-purchaseMode'),
+        paymentTerms: getVal('customer-paymentTerms'),
+        invoiceType: invoiceTypes,
+        notes: getVal('customer-notes'),
+        updatedAt: new Date().toISOString()
+    };
+
+    if (!customerData.customerCompany) {
+        alert('请输入客户公司名称');
+        return;
+    }
+
+    if (editId) {
+        const idx = customers.findIndex(c => c.id === editId);
+        if (idx >= 0) {
+            customers[idx] = { ...customers[idx], ...customerData };
+        }
+    } else {
+        customerData.id = nextCustomerId++;
+        customerData.createdAt = new Date().toISOString();
+        customers.push(customerData);
+    }
+
+    await saveAllData();
+    closeModal('modal-customer');
+
+    if (fromProjectForm) {
+        // 刷新项目表单的客户选择器
+        showNewProjectModal();
+        // 选中新创建的客户
+        setTimeout(() => {
+            const select = document.getElementById('np-customerId');
+            if (select && editId === null) {
+                select.value = nextCustomerId - 1; // 刚创建的客户ID
+                fillCustomerPreview();
+            }
+        }, 100);
+    } else {
+        renderCustomerList();
+    }
+}
+
+async function deleteCustomer(customerId) {
+    const customerProjects = projects.filter(p => p.customerId === customerId);
+    if (customerProjects.length > 0) {
+        alert(`该客户有 ${customerProjects.length} 个关联项目，无法删除`);
+        return;
+    }
+    if (!confirm('确定要删除这个客户吗？')) return;
+
+    customers = customers.filter(c => c.id !== customerId);
+    await saveAllData();
+    renderCustomerList();
+}
+
+function viewCustomerDetail(customerId) {
+    const customer = customers.find(c => c.id === customerId);
+    if (!customer) return;
+
+    const customerProjects = projects.filter(p => p.customerId === customerId);
+    const statusLabels = { drafting: '草稿', chatting: '对话中', requirement_ready: '需求已确认', generating: '生成中', generated: '方案已生成', adjusted: '已调整', confirmed: '已确认' };
+
+    const html = `
+    <div class="p-4">
+        <div class="flex justify-between items-start mb-4">
+            <h3 class="text-lg font-bold">${customer.customerCompany}</h3>
+            <button onclick="closeModal('modal-customer-detail')" class="text-gray-400 hover:text-gray-600">✕</button>
+        </div>
+        <div class="grid grid-cols-2 gap-3 text-sm mb-6">
+            <div><span class="text-gray-400">联系人：</span>${customer.customerContact || '-'}</div>
+            <div><span class="text-gray-400">企业性质：</span>${customer.companyType || '-'}</div>
+            <div><span class="text-gray-400">公司规模：</span>${customer.companySize || '-'}</div>
+            <div><span class="text-gray-400">所在地区：</span>${customer.region || '-'}</div>
+            <div><span class="text-gray-400">所属行业：</span>${customer.industry || '-'}</div>
+            <div><span class="text-gray-400">采购模式：</span>${customer.purchaseMode || '-'}</div>
+            <div><span class="text-gray-400">付款方式：</span>${customer.paymentTerms || '-'}</div>
+            <div><span class="text-gray-400">发票要求：</span>${(customer.invoiceType || []).join('、') || '-'}</div>
+            ${customer.notes ? `<div class="col-span-2"><span class="text-gray-400">备注：</span>${customer.notes}</div>` : ''}
+        </div>
+        <div class="border-t pt-4">
+            <h4 class="font-medium mb-3">关联项目 (${customerProjects.length})</h4>
+            ${customerProjects.length === 0 ? '<div class="text-gray-400 text-sm">暂无关联项目</div>' :
+            `<div class="space-y-2 max-h-60 overflow-y-auto">
+                ${customerProjects.map(p => `
+                    <div class="border rounded p-3 hover:bg-gray-50 cursor-pointer" onclick="closeModal('modal-customer-detail'); openProject(${p.id})">
+                        <div class="flex justify-between items-center">
+                            <span class="font-medium">${p.name}</span>
+                            <span class="tag bg-gray-100 text-gray-600 text-xs">${statusLabels[p.status] || p.status}</span>
+                        </div>
+                        <div class="text-xs text-gray-500 mt-1">${p.peopleCount}人 · 人均${formatMoney(p.budgetPerPerson)} · 交付: ${p.deadline || '-'}</div>
+                    </div>
+                `).join('')}
+            </div>`}
+        </div>
+        <div class="flex justify-end gap-2 mt-4 pt-4 border-t">
+            <button onclick="closeModal('modal-customer-detail'); editCustomer(${customerId})" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">编辑客户</button>
+            <button onclick="closeModal('modal-customer-detail'); showNewProjectModalWithCustomer(${customerId})" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">+ 新建项目</button>
+        </div>
+    </div>`;
+    document.getElementById('modal-customer-detail-content').innerHTML = html;
+    openModal('modal-customer-detail');
+}
+
+function showNewProjectModalWithCustomer(customerId) {
+    showNewProjectModal();
+    setTimeout(() => {
+        const select = document.getElementById('np-customerId');
+        if (select) {
+            select.value = customerId;
+            fillCustomerPreview();
+        }
+    }, 100);
+}
+
+function fillCustomerPreview() {
+    const customerId = document.getElementById('np-customerId')?.value;
+    const preview = document.getElementById('customer-preview');
+    if (!customerId) {
+        preview?.classList.add('hidden');
+        return;
+    }
+    const customer = customers.find(c => c.id === parseInt(customerId));
+    if (customer && preview) {
+        document.getElementById('preview-companyType').textContent = customer.companyType || '-';
+        document.getElementById('preview-companySize').textContent = customer.companySize || '-';
+        document.getElementById('preview-region').textContent = customer.region || '-';
+        document.getElementById('preview-industry').textContent = customer.industry || '-';
+        document.getElementById('preview-purchaseMode').textContent = customer.purchaseMode || '-';
+        document.getElementById('preview-paymentTerms').textContent = customer.paymentTerms || '-';
+        preview.classList.remove('hidden');
+    }
+}
+
 // ========== 新建项目表单 ==========
 function showNewProjectModal() {
+    const customerOptions = customers.map(c => `<option value="${c.id}">${c.customerCompany}${c.customerContact ? ' - ' + c.customerContact : ''}</option>`).join('');
     const formHTML = `
     <form onsubmit="event.preventDefault(); startProjectChat();" class="space-y-4">
-        <!-- 客户画像 -->
+        <!-- 客户选择 -->
         <div>
-            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">客户画像</h4>
+            <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">客户信息</h4>
             <div class="grid grid-cols-2 gap-3">
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">企业性质 <span class="text-red-500">*</span></label>
-                    <select id="np-companyType" class="w-full border rounded px-3 py-2 text-sm" required>
-                        <option value="">请选择</option>
-                        <option>国企</option><option>央企</option><option>外企</option><option>民企</option>
-                        <option>上市公司</option><option>事业单位</option><option>政府机关</option><option>其他</option>
-                    </select>
+                <div class="col-span-2">
+                    <label class="block text-xs text-gray-500 mb-1">选择客户 <span class="text-red-500">*</span></label>
+                    <div class="flex gap-2">
+                        <select id="np-customerId" class="flex-1 border rounded px-3 py-2 text-sm" required onchange="fillCustomerPreview()">
+                            <option value="">请选择客户</option>
+                            ${customerOptions}
+                        </select>
+                        <button type="button" onclick="showNewCustomerModal(true)" class="px-3 py-2 border rounded text-sm hover:bg-gray-50 whitespace-nowrap">+ 新建客户</button>
+                    </div>
                 </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">公司规模 <span class="text-red-500">*</span></label>
-                    <select id="np-companySize" class="w-full border rounded px-3 py-2 text-sm" required>
-                        <option value="">请选择</option>
-                        <option>50人以下</option><option>50-200人</option><option>200-500人</option>
-                        <option>500-2000人</option><option>2000人以上</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">所在地区 <span class="text-red-500">*</span></label>
-                    <input type="text" id="np-region" class="w-full border rounded px-3 py-2 text-sm" placeholder="省份+城市" required>
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">所属行业</label>
-                    <select id="np-industry" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="">请选择</option>
-                        <option>互联网/科技</option><option>制造业</option><option>金融</option>
-                        <option>医疗</option><option>教育</option><option>地产</option><option>零售</option><option>其他</option>
-                    </select>
+                <div id="customer-preview" class="col-span-2 hidden bg-gray-50 rounded p-3 text-sm">
+                    <div class="grid grid-cols-3 gap-2 text-gray-600">
+                        <div><span class="text-gray-400">企业性质：</span><span id="preview-companyType">-</span></div>
+                        <div><span class="text-gray-400">公司规模：</span><span id="preview-companySize">-</span></div>
+                        <div><span class="text-gray-400">所在地区：</span><span id="preview-region">-</span></div>
+                        <div><span class="text-gray-400">所属行业：</span><span id="preview-industry">-</span></div>
+                        <div><span class="text-gray-400">采购模式：</span><span id="preview-purchaseMode">-</span></div>
+                        <div><span class="text-gray-400">付款方式：</span><span id="preview-paymentTerms">-</span></div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -563,14 +1044,6 @@ function showNewProjectModal() {
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">项目名称 <span class="text-red-500">*</span></label>
                     <input type="text" id="np-name" class="w-full border rounded px-3 py-2 text-sm" placeholder="如"XX公司2026春节福利"" required>
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">客户公司</label>
-                    <input type="text" id="np-customerCompany" class="w-full border rounded px-3 py-2 text-sm">
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">客户联系人</label>
-                    <input type="text" id="np-customerContact" class="w-full border rounded px-3 py-2 text-sm">
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">预计人数 <span class="text-red-500">*</span></label>
@@ -776,17 +1249,10 @@ function collectProjectForm() {
     return {
         id: nextProjectId,
         name: getVal('np-name'),
-        customerCompany: getVal('np-customerCompany'),
-        customerContact: getVal('np-customerContact'),
-        companyType: getVal('np-companyType'),
-        companySize: getVal('np-companySize'),
-        region: getVal('np-region'),
-        industry: getVal('np-industry'),
-        purchaseMode: getVal('np-purchaseMode'),
+        customerId: parseInt(getVal('np-customerId')) || null,
         employeeTiers: getVal('np-employeeTiers'),
         deliveryMode: getVal('np-deliveryMode'),
         invoiceType: invoiceTypes,
-        paymentTerms: getVal('np-paymentTerms'),
         needCustomization: getVal('np-needCustomization'),
         needSample: getVal('np-needSample'),
         previousWelfare: getVal('np-previousWelfare'),
@@ -831,7 +1297,7 @@ async function saveProjectDraft() {
 
 async function startProjectChat() {
     const project = collectProjectForm();
-    if (!project.name || !project.companyType || !project.companySize || !project.region || !project.peopleCount || !project.budgetPerPerson || !project.deadline) {
+    if (!project.name || !project.customerId || !project.peopleCount || !project.budgetPerPerson || !project.deadline) {
         alert('请填写所有必填字段（标*的）');
         return;
     }
@@ -851,10 +1317,18 @@ function startChatSession(project) {
     document.getElementById('chat-messages').innerHTML = '';
     document.getElementById('chat-summary').innerHTML = '<span class="text-gray-400">对话开始后逐步提取...</span>';
 
+    // 从客户数据获取信息
+    const customer = getProjectCustomer(project);
+    const companyType = customer?.companyType || '';
+    const companySize = customer?.companySize || '';
+    const region = customer?.region || '';
+    const industry = customer?.industry || '';
+    const customerCompany = customer?.customerCompany || '客户';
+
     // 构建初始上下文
     const contextParts = [];
-    contextParts.push(`${project.companyType}，${project.companySize}，${project.region}`);
-    if (project.industry) contextParts.push(`${project.industry}行业`);
+    if (companyType && companySize && region) contextParts.push(`${companyType}，${companySize}，${region}`);
+    if (industry) contextParts.push(`${industry}行业`);
     contextParts.push(`${project.peopleCount}人，人均预算${project.budgetPerPerson}元`);
     if (project.initialScene) contextParts.push(`${project.initialScene}场景`);
     if (project.urgency !== '正常') contextParts.push(`紧急程度：${project.urgency}`);
@@ -862,7 +1336,7 @@ function startChatSession(project) {
 
     const firstMessage = `你好！我是团购需求顾问。根据你提供的初步信息，我来帮你梳理一下：
 
-你这是一个**${project.name}**项目，客户是${project.companyType}企业，规模${project.companySize}，位于${project.region}。
+你这是一个**${project.name}**项目，客户是${customerCompany}${companyType ? '（' + companyType + '）' : ''}${companySize ? '，规模' + companySize : ''}${region ? '，位于' + region : ''}。
 
 ${project.peopleCount}人，人均预算${formatMoney(project.budgetPerPerson)}，${project.deadline ? '预计' + project.deadline + '前交付' : ''}。${project.initialScene ? '属于' + project.initialScene + '场景。' : ''}
 
@@ -1002,13 +1476,20 @@ async function finishChat() {
 
 function generateStructuredRequirement(project, chatText) {
     const sceneText = project.initialScene || '员工福利';
-    const companyDesc = `${project.companyType}企业，${project.companySize}，位于${project.region}${project.industry ? '，' + project.industry + '行业' : ''}`;
+    const customer = getProjectCustomer(project);
+    const companyType = customer?.companyType || '';
+    const companySize = customer?.companySize || '';
+    const region = customer?.region || '';
+    const industry = customer?.industry || '';
+    const purchaseMode = customer?.purchaseMode || '';
+    const customerCompany = customer?.customerCompany || '';
+    const companyDesc = `${companyType}企业，${companySize}，位于${region}${industry ? '，' + industry + '行业' : ''}`;
 
     return `【需求概述】
-${project.name}，${project.peopleCount}人，人均预算${formatMoney(project.budgetPerPerson)}，${project.deadline ? '预计' + project.deadline + '前交付' : ''}。${project.purchaseMode ? '采购模式：' + project.purchaseMode + '。' : ''}
+${project.name}，${project.peopleCount}人，人均预算${formatMoney(project.budgetPerPerson)}，${project.deadline ? '预计' + project.deadline + '前交付' : ''}。${purchaseMode ? '采购模式：' + purchaseMode + '。' : ''}
 
 【客户画像】
-${companyDesc}
+${customerCompany ? '客户：' + customerCompany + '。' : ''}${companyDesc}
 ${project.decisionMaker ? '决策人：' + project.decisionMaker + '。' : ''}
 
 【场景定位】
@@ -1180,15 +1661,22 @@ async function generateProposals(projectId) {
 }
 
 async function mockGenerateProposals(project, count) {
-    // 预筛选商品
+    // 价格逻辑：报价 = 采购价 / (1 - 毛利率)
+    const budget = project.budgetPerPerson || 200;
+    const targetMargin = (project.targetMargin || 20) / 100; // 默认20%毛利率
+    const marginFactor = 1 - targetMargin; // 用于计算报价的系数
+
+    // 预筛选商品：采购价上限 = 预算 × (1 - 毛利率)，这样报价才不超过预算
+    const maxPurchasePrice = budget * marginFactor;
+    const minPurchasePrice = budget * 0.1; // 单品采购价下限
+
     let candidates = [...products];
-    // 价格区间
-    if (project.budgetPerPerson) {
-        const lo = project.budgetPerPerson * 0.5;
-        const hi = project.budgetPerPerson * 1.3;
-        candidates = candidates.filter(p => p.purchasePrice >= lo && p.purchasePrice <= hi);
+    candidates = candidates.filter(p => p.purchasePrice >= minPurchasePrice && p.purchasePrice <= maxPurchasePrice);
+
+    if (candidates.length === 0) {
+        // 放宽条件：采购价不超过预算×(1-最低毛利率10%)
+        candidates = [...products].filter(p => p.purchasePrice <= budget * 0.9);
     }
-    if (candidates.length === 0) candidates = [...products]; // fallback
 
     // 约束筛选
     project.constraints.forEach(c => {
@@ -1200,13 +1688,6 @@ async function mockGenerateProposals(project, count) {
         }
         if (c.field === '库存类型' && c.operator === '必须') {
             candidates = candidates.filter(p => p.stockType === c.value);
-        }
-        if (c.field === '毛利率' && c.operator === '≥') {
-            const minMargin = parseFloat(c.value) || 0;
-            candidates = candidates.filter(p => {
-                if (!p.retailPrice || !p.purchasePrice) return false;
-                return ((p.retailPrice - p.purchasePrice) / p.retailPrice * 100) >= minMargin;
-            });
         }
     });
 
@@ -1223,27 +1704,48 @@ async function mockGenerateProposals(project, count) {
     ];
 
     for (let i = 0; i < count; i++) {
-        // 随机选 2-4 个产品
-        const productCount = 2 + Math.floor(Math.random() * 3);
+        // 选择产品，确保总报价在预算范围内
         const shuffled = [...candidates].sort(() => Math.random() - 0.5);
-        const selected = shuffled.slice(0, productCount);
+        const selected = [];
+        let currentTotal = 0;
+        const maxQuoteTotal = budget * 1.05; // 允许稍微超5%
+
+        for (const p of shuffled) {
+            if (selected.length >= 4) break; // 最多4个产品
+            // 报价 = 采购价 / (1 - 毛利率)，稍微浮动±5%
+            const estimatedQuote = p.purchasePrice / marginFactor * (0.95 + Math.random() * 0.1);
+            if (currentTotal + estimatedQuote <= maxQuoteTotal) {
+                selected.push(p);
+                currentTotal += estimatedQuote;
+            }
+        }
+
+        // 如果一个产品都没选上，强制选一个最便宜的
+        if (selected.length === 0 && shuffled.length > 0) {
+            const sorted = [...shuffled].sort((a, b) => a.purchasePrice - b.purchasePrice);
+            selected.push(sorted[0]);
+        }
 
         const proposalProducts = selected.map(p => {
             const quantity = 1;
-            const quotePrice = p.purchasePrice * (1 + (0.2 + Math.random() * 0.3)); // 加价 20-50%
-            const margin = ((quotePrice - p.purchasePrice) / quotePrice * 100).toFixed(1);
+            // 报价 = 采购价 / (1 - 毛利率)，稍微浮动±5%以产生差异化方案
+            const quotePrice = p.purchasePrice / marginFactor * (0.95 + Math.random() * 0.1);
+            const actualMargin = ((quotePrice - p.purchasePrice) / quotePrice * 100).toFixed(1);
+            // 获取供应商名称
+            const supplierObj = suppliers.find(s => s.id === p.supplierId);
+            const supplierName = supplierObj?.name || p.supplierName || '-';
             return {
-                productId: p.id, sku: p.sku, name: p.name, supplier: p.supplierId,
+                productId: p.id, sku: p.sku, name: p.name, supplierId: p.supplierId, supplier: supplierName,
                 brand: p.brand, brandLevel: p.brandLevel || '',
                 purchasePrice: p.purchasePrice, quotePrice: Math.round(quotePrice * 100) / 100,
-                margin: margin + '%', image: p.mainImage || '', quantity, subtotal: Math.round(quotePrice * 100) / 100
+                margin: actualMargin + '%', image: p.mainImage || '', quantity, subtotal: Math.round(quotePrice * 100) / 100
             };
         });
 
         const totalPerPerson = proposalProducts.reduce((s, p) => s + p.quotePrice, 0);
         const totalCost = proposalProducts.reduce((s, p) => s + p.purchasePrice, 0);
         const overallMargin = totalPerPerson > 0 ? ((totalPerPerson - totalCost) / totalPerPerson * 100).toFixed(1) : 0;
-        const budgetUtil = project.budgetPerPerson > 0 ? (totalPerPerson / project.budgetPerPerson * 100).toFixed(0) : 0;
+        const budgetUtil = budget > 0 ? (totalPerPerson / budget * 100).toFixed(0) : 0;
         const maxLeadTime = Math.max(...selected.map(p => {
             const lt = (p.leadTime || '0天').replace('天', '');
             return parseInt(lt) || 0;
@@ -1265,7 +1767,7 @@ async function mockGenerateProposals(project, count) {
             budgetUtilization: parseInt(budgetUtil),
             maxLeadTime,
             canFulfill,
-            aiRationale: `基于${project.name}的需求，${project.companyType}企业${project.companySize}，人均预算${project.budgetPerPerson}元。本方案聚焦${themes[i % themes.length]}方向，选择了${proposalProducts.map(p => p.brand + p.name.replace(/礼盒|套装/g, '')).join(' + ')}的组合，总价${formatMoney(totalPerPerson)}/人，预算利用率${budgetUtil}%。${canFulfill ? '在履约周期内可交付。' : '注意：部分产品备货周期较长。'}`,
+            aiRationale: `基于${project.name}的需求，人均供货预算${budget}元，目标毛利率${(targetMargin * 100).toFixed(0)}%。本方案聚焦${themes[i % themes.length]}方向，选择了${proposalProducts.map(p => p.brand + p.name.replace(/礼盒|套装/g, '')).join(' + ')}的组合，供货总价${formatMoney(totalPerPerson)}/人，实际毛利率${overallMargin}%，预算利用率${budgetUtil}%。${canFulfill ? '在履约周期内可交付。' : '注意：部分产品备货周期较长。'}`,
             isManualEdited: false, manualChanges: '',
             createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
         });
@@ -1298,7 +1800,8 @@ function renderProposalCards(projectId) {
                 <div class="flex items-center gap-2 text-xs">
                     ${p.image ? `<img src="${p.image}" class="w-8 h-8 rounded object-cover" onerror="this.style.display='none'">` : '<div class="w-8 h-8 rounded bg-gray-100 flex items-center justify-center text-gray-400 text-xs">图</div>'}
                     <span class="flex-1 truncate">${p.brand ? p.brand + ' ' : ''}${p.name}</span>
-                    <span class="text-gray-400">${formatMoney(p.quotePrice)}</span>
+                    <span class="text-gray-400">成本${formatMoney(p.purchasePrice)}</span>
+                    <span class="text-blue-600 font-medium">${formatMoney(p.quotePrice)}</span>
                 </div>`).join('')}
             </div>
             <div class="border-t pt-2 space-y-1 text-xs">
@@ -1340,7 +1843,7 @@ function viewProposal(proposalId) {
                 <h4 class="font-medium mb-2">产品明细</h4>
                 <table class="w-full text-sm border">
                     <thead class="bg-gray-50"><tr>
-                        <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-right">集采成本</th><th class="px-3 py-2 text-right">客户报价</th><th class="px-3 py-2 text-right">单品毛利率</th><th class="px-3 py-2 text-right">小计</th>
+                        <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-left">供应商</th><th class="px-3 py-2 text-right">集采成本</th><th class="px-3 py-2 text-right">供货价</th><th class="px-3 py-2 text-right">单品毛利率</th><th class="px-3 py-2 text-right">小计</th>
                     </tr></thead>
                     <tbody>
                     ${pp.products.map(p => `
@@ -1350,6 +1853,7 @@ function viewProposal(proposalId) {
                                 <span>${p.name}</span>
                             </td>
                             <td class="px-3 py-2">${p.brand || '-'}</td>
+                            <td class="px-3 py-2">${p.supplier || '-'}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.purchasePrice)}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.quotePrice)}</td>
                             <td class="px-3 py-2 text-right">${p.margin}</td>
@@ -1754,14 +2258,14 @@ function exportProposalExcel(proposalId) {
         ['方案名称', pp.name],
         ['主题', pp.theme],
         ['一句话卖点', pp.tagline],
-        ['人均报价', pp.totalPerPerson],
-        ['总报价', pp.totalPrice],
-        ['总成本', pp.totalCost],
+        ['人均供货价', pp.totalPerPerson],
+        ['总供货价', pp.totalPrice],
+        ['总采购成本', pp.totalCost],
         ['方案毛利率', pp.overallMargin + '%'],
         ['预算利用率', pp.budgetUtilization + '%'],
         ['履约状态', pp.canFulfill ? '可交付' : '需' + pp.maxLeadTime + '天'],
         ['', ''],
-        ['产品名称', '品牌', '品牌级别', '供应商', '集采成本', '客户报价', '单品毛利率', '小计']
+        ['产品名称', '品牌', '品牌级别', '供应商', '集采成本', '供货价', '单品毛利率', '小计']
     ];
 
     pp.products.forEach(p => {
@@ -1771,10 +2275,11 @@ function exportProposalExcel(proposalId) {
     rows.push(['', '']);
     rows.push(['AI推荐理由', pp.aiRationale]);
     if (project) {
+        const customer = getProjectCustomer(project);
         rows.push(['', '']);
         rows.push(['项目名称', project.name]);
-        rows.push(['客户公司', project.customerCompany]);
-        rows.push(['企业性质', project.companyType]);
+        rows.push(['客户公司', customer?.customerCompany || '-']);
+        rows.push(['企业性质', customer?.companyType || '-']);
         rows.push(['人数', project.peopleCount]);
         rows.push(['人均预算', project.budgetPerPerson]);
     }
@@ -1802,12 +2307,13 @@ function exportProposalPPT(proposalId) {
     pres.layout = 'A4';
 
     // 封面
+    const customer = project ? getProjectCustomer(project) : null;
     const slide1 = pres.addSlide();
     slide1.background = { color: '1a56db' };
     slide1.addText(pp.name, { x: 1, y: 2, w: 10, h: 1.5, fontSize: 32, color: 'FFFFFF', bold: true, align: 'center' });
     slide1.addText(pp.tagline, { x: 1, y: 3.5, w: 10, h: 0.8, fontSize: 16, color: 'BFDBFE', align: 'center' });
-    if (project) {
-        slide1.addText(project.customerCompany || '', { x: 1, y: 5, w: 10, h: 0.5, fontSize: 12, color: 'FFFFFF', align: 'center' });
+    if (customer) {
+        slide1.addText(customer.customerCompany || '', { x: 1, y: 5, w: 10, h: 0.5, fontSize: 12, color: 'FFFFFF', align: 'center' });
     }
     slide1.addText(new Date().toISOString().split('T')[0], { x: 1, y: 5.8, w: 10, h: 0.5, fontSize: 10, color: '93C5FD', align: 'center' });
 
@@ -1825,14 +2331,14 @@ function exportProposalPPT(proposalId) {
     slide3.addText(`主题：${pp.theme}    |    人均：${formatMoney(pp.totalPerPerson)}    |    毛利率：${pp.overallMargin}%    |    预算利用率：${pp.budgetUtilization}%`, { x: 1, y: 2.0, w: 11, h: 0.4, fontSize: 11, color: '666666' });
 
     // 产品表格
-    const tableHeader = [['产品', '品牌', '规格/级别', '集采成本', '客户报价', '毛利率', '小计']];
+    const tableHeader = [['产品', '品牌', '供应商', '集采成本', '供货价', '毛利率', '小计']];
     const tableRows = pp.products.map(p => [
-        p.name, p.brand, p.brandLevel, formatMoney(p.purchasePrice), formatMoney(p.quotePrice), p.margin, formatMoney(p.subtotal)
+        p.name, p.brand || '-', p.supplier || '-', formatMoney(p.purchasePrice), formatMoney(p.quotePrice), p.margin, formatMoney(p.subtotal)
     ]);
     slide3.addTable(tableHeader.concat(tableRows), {
         x: 1, y: 2.6, w: 11,
         fontSize: 10, border: { type: 'solid', color: 'CCCCCC' },
-        colW: [3, 1.5, 1.5, 1.3, 1.3, 1, 1],
+        colW: [2.8, 1.2, 1.5, 1.3, 1.3, 1, 1],
         rowH: [0.4],
         autoPage: false
     });
@@ -1864,7 +2370,7 @@ function exportProposalPPT(proposalId) {
     const lastSlide = pres.addSlide();
     lastSlide.background = { color: '1a56db' };
     lastSlide.addText('感谢阅览', { x: 1, y: 2.5, w: 10, h: 1, fontSize: 28, color: 'FFFFFF', bold: true, align: 'center' });
-    lastSlide.addText(project?.customerCompany || '', { x: 1, y: 4, w: 10, h: 0.6, fontSize: 14, color: 'BFDBFE', align: 'center' });
+    lastSlide.addText(customer?.customerCompany || '', { x: 1, y: 4, w: 10, h: 0.6, fontSize: 14, color: 'BFDBFE', align: 'center' });
     lastSlide.addText('如需进一步沟通，请联系我们', { x: 1, y: 4.8, w: 10, h: 0.5, fontSize: 11, color: '93C5FD', align: 'center' });
 
     pres.writeFile({ fileName: `${pp.name}.pptx` });
