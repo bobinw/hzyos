@@ -1863,7 +1863,9 @@ function updateChatSummary(project) {
     const ageKeywords = ['岁', '年龄', '中年', '青年', '老年', '年轻'];
     const genderKeywords = ['男', '女', '男女'];
     const styleKeywords = ['实用', '品质', '精致', '简约', '新潮', '文化', '国潮', '颜值'];
-    const categoryKeywords = ['食品', '日用品', '日化', '家电', '小家电', '家纺', '个护', '文创', '卡券', '美妆', '运动'];
+    const categoryKeywords = ['食品', '日用品', '日化', '家电', '小家电', '家纺', '个护', '文创', '卡券', '美妆', '运动',
+        '食品饮料', '生鲜特产', '健康养护', '日化个护',
+        '家居家电', '运动户外', '企业定制', '卡券文娱'];
     const packageKeywords = ['礼盒', '包装', '精装', '简装'];
 
     let summaryHTML = '';
@@ -1918,13 +1920,68 @@ async function finishChat() {
     project.status = 'requirement_ready';
     project.updatedAt = new Date().toISOString();
 
-    // 更新项目
     const idx = projects.findIndex(p => p.id === project.id);
     if (idx >= 0) projects[idx] = project;
     await saveAllData();
 
-    // 跳转到需求确认页
-    showRequirementConfirm(project);
+    // 在聊天页显示需求文档卡片
+    renderRequirementCard(project);
+    document.getElementById('chat-status').textContent = '需求已生成';
+    document.getElementById('chat-status').className = 'text-xs px-2 py-1 bg-green-100 text-green-600 rounded';
+}
+
+function renderRequirementCard(project) {
+    const existing = document.getElementById('requirement-card');
+    if (existing) existing.remove();
+
+    const card = document.createElement('div');
+    card.id = 'requirement-card';
+    card.className = 'border-t bg-blue-50 p-4 flex-shrink-0';
+    card.innerHTML = `
+        <div class="flex justify-between items-start mb-3">
+            <h4 class="font-medium text-sm">📋 需求文档</h4>
+            <div class="flex gap-2">
+                <button onclick="editRequirementInline(${project.id})" class="text-xs text-blue-600 hover:underline">✏️ 编辑</button>
+                <button onclick="continueChatUpdateReq(${project.id})" class="text-xs text-green-600 hover:underline">💬 补充对话更新</button>
+            </div>
+        </div>
+        <div class="bg-white rounded-lg p-3 text-xs whitespace-pre-wrap leading-relaxed max-h-32 overflow-y-auto" id="req-card-text">${project.structuredRequirement}</div>
+        <div class="flex justify-end mt-3">
+            <button onclick="goToSelectionStep(${project.id})" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">确认需求，进入选品 →</button>
+        </div>`;
+    const chatMessages = document.getElementById('chat-messages');
+    chatMessages.parentElement.insertBefore(card, chatMessages.parentElement.querySelector('.border-t.p-4'));
+}
+
+function editRequirementInline(projectId) {
+    const project = findProject(projectId);
+    const newText = prompt('编辑需求文档：', project.structuredRequirement);
+    if (newText !== null && newText.trim()) {
+        project.structuredRequirement = newText.trim();
+        project.updatedAt = new Date().toISOString();
+        document.getElementById('req-card-text').textContent = newText.trim();
+        saveAllData();
+    }
+}
+
+async function continueChatUpdateReq(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+    document.getElementById('chat-status').textContent = '对话中';
+    document.getElementById('chat-status').className = 'text-xs px-2 py-1 bg-blue-100 text-blue-600 rounded';
+    const card = document.getElementById('requirement-card');
+    if (card) card.remove();
+    // 继续对话，完成后再次生成需求文档
+    addChatMessage('ai', '好的，请补充你的需求，我会更新需求文档。');
+}
+
+async function goToSelectionStep(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+    project.status = 'selecting';
+    project.updatedAt = new Date().toISOString();
+    await saveAllData();
+    showSelectionPage(project);
 }
 
 function generateStructuredRequirement(project, chatText) {
@@ -1965,93 +2022,110 @@ ${chatText.substring(0, 300) || '（对话中收集）'}${chatText.length > 300 
 ${project.taboos ? '禁忌/规避：' + project.taboos : '无特殊禁忌'}`;
 }
 
-// ========== 需求确认页 ==========
-function showRequirementConfirm(project) {
+// ========== 选品页面（Step 2+3+4） ==========
+function showSelectionPage(project) {
     showPage('page-proposal-detail');
     const proposalsForProject = proposals.filter(p => p.projectId === project.id);
 
+    project.selectionParams = project.selectionParams || {
+        selectedBrands: project.selectedBrands || [],
+        categories: extractCategoriesFromRequirement(project.structuredRequirement || ''),
+        targetMargin: project.targetMargin || 20,
+        budget: project.budgetPerPerson || 200,
+        proposalCount: project.proposalCount || 6,
+        categoryCount: 0,
+        minProducts: 0,
+        maxProducts: 0
+    };
+    const sp = project.selectionParams;
+    const allCats = sp.categories?.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
+    sp.categories = allCats;
+    // 品类数默认=全部，产品数默认=品类数×1.5（至少品类数+1）
+    if (!sp.categoryCount || sp.categoryCount <= 0) sp.categoryCount = allCats.length;
+    if (!sp.minProducts || sp.minProducts <= 0) sp.minProducts = allCats.length;
+    if (!sp.maxProducts || sp.maxProducts <= 0) sp.maxProducts = Math.min(allCats.length + 1, allCats.length * 2);
+
     let html = `
     <div class="flex items-center gap-4 mb-6">
-        <button onclick="renderProjectList(); showPage('page-projects')" class="text-gray-500 hover:text-gray-700">
+        <button onclick="backToRequirement(${project.id})" class="text-gray-500 hover:text-gray-700">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
         </button>
         <h2 class="text-xl font-bold">${project.name}</h2>
-        ${project.proposalUsage ? `<span class="tag ${project.proposalUsage === '内部快速决策' ? 'bg-orange-100 text-orange-600' : 'bg-purple-100 text-purple-600'}">${project.proposalUsage}</span>` : ''}
-        <span class="tag bg-blue-100 text-blue-600">需求已确认</span>
+        <span class="tag bg-green-100 text-green-600">选品中</span>
     </div>
 
-    <!-- 需求文档 -->
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="font-medium">结构化需求文档</h3>
-            <button onclick="editRequirement(${project.id})" class="text-blue-600 text-sm hover:underline">✏️ 编辑</button>
-        </div>
-        <div class="bg-gray-50 rounded-lg p-4 text-sm whitespace-pre-wrap leading-relaxed" id="req-doc-${project.id}">${project.structuredRequirement}</div>
-    </div>
-
-    <!-- AI选品牌 -->
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <div class="flex justify-between items-center mb-4">
-            <h3 class="font-medium">AI 选品牌</h3>
-            <button onclick="aiSelectBrands(${project.id})" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">🎯 AI选品牌</button>
-        </div>
-        <div id="selected-brands-${project.id}" class="min-h-[60px]">
-            ${project.selectedBrands && project.selectedBrands.length > 0 ? `
-                <div class="text-sm text-gray-600 mb-2">已选中 ${project.selectedBrands.length} 个品牌：</div>
-                <div class="flex flex-wrap gap-2">
-                    ${project.selectedBrands.map(b => `<span class="tag bg-purple-100 text-purple-700">${b}</span>`).join('')}
+    <div class="grid grid-cols-3 gap-6">
+        <div class="col-span-1 space-y-4">
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-medium mb-3">🤖 AI 选品建议</h3>
+                <div id="ai-suggestion-${project.id}">
+                    ${project.aiSuggestion ? `
+                        <div class="text-xs text-gray-600 bg-blue-50 rounded p-3 max-h-60 overflow-y-auto">${project.aiSuggestion.rationale || ''}</div>
+                    ` : '<div class="text-xs text-gray-400">点击下方按钮获取 AI 选品建议</div>'}
                 </div>
-                <div class="text-xs text-gray-500 mt-2">${project.brandRationale || ''}</div>
-            ` : '<div class="text-gray-400 text-sm">点击"AI选品牌"，让AI根据需求推荐合适的品牌组合</div>'}
-        </div>
-    </div>
-
-    <!-- 生成参数 -->
-    <div class="bg-white rounded-lg shadow p-6 mb-6">
-        <h3 class="font-medium mb-4">方案生成设置</h3>
-        <div class="flex flex-wrap gap-4 items-end">
-            <div>
-                <label class="block text-xs text-gray-500 mb-1">生成方案数量</label>
-                <input type="number" id="gen-proposalCount" class="border rounded px-3 py-2 text-sm w-24" value="${project.proposalCount || 6}" min="1" max="20">
+                <button onclick="getAISelectionSuggestion(${project.id})" class="mt-3 w-full px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">🎯 获取 AI 选品建议</button>
             </div>
-            <button onclick="generateProposals(${project.id})" class="px-6 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">🤖 生成方案</button>
-        </div>
-        <div id="gen-constraints" class="mt-4">
-            <div class="text-xs text-gray-500 mb-2">字段约束（可选）</div>
-            <div id="constraint-rows-${project.id}">
-                ${(project.constraints || []).map((c, i) => `
-                <div class="flex gap-2 mb-2 items-center">
-                    <select class="border rounded px-2 py-1 text-xs" onchange="this.parentElement.querySelector('.c-val').dataset.field=this.value">
-                        <option value="">选择字段</option>
-                        <option value="毛利率" ${c.field==='毛利率'?'selected':''}>毛利率</option>
-                        <option value="品牌级别" ${c.field==='品牌级别'?'selected':''}>品牌级别</option>
-                        <option value="一件代发" ${c.field==='一件代发'?'selected':''}>一件代发</option>
-                        <option value="供应商合作度" ${c.field==='供应商合作度'?'selected':''}>供应商合作度</option>
-                        <option value="库存类型" ${c.field==='库存类型'?'selected':''}>库存类型</option>
-                        <option value="备货周期" ${c.field==='备货周期'?'selected':''}>备货周期</option>
-                        <option value="产品条码" ${c.field==='产品条码'?'selected':''}>产品条码</option>
-                        <option value="发货地" ${c.field==='发货地'?'selected':''}>发货地</option>
-                        <option value="含税" ${c.field==='含税'?'selected':''}>含税</option>
-                    </select>
-                    <select class="border rounded px-2 py-1 text-xs">
-                        <option value="≥" ${c.operator==='≥'?'selected':''}>≥</option>
-                        <option value="≤" ${c.operator==='≤'?'selected':''}>≤</option>
-                        <option value="必须" ${c.operator==='必须'?'selected':''}>必须</option>
-                        <option value="排除" ${c.operator==='排除'?'selected':''}>排除</option>
-                    </select>
-                    <input type="text" class="c-val border rounded px-2 py-1 text-xs w-32" value="${c.value||''}" placeholder="值">
-                    <button onclick="this.parentElement.remove()" class="text-red-500 text-xs">×</button>
-                </div>`).join('')}
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-medium mb-3">⚙️ 选品参数 <span class="text-xs text-gray-400">(可编辑)</span></h3>
+                <div class="space-y-3 text-sm">
+                    <div>
+                        <label class="text-xs text-gray-500">选中品牌 ${sp.selectedBrands.length > 0 ? '(' + sp.selectedBrands.length + '个)' : ''}</label>
+                        <div class="flex flex-wrap gap-1 mt-1" id="param-brands-${project.id}">
+                            ${sp.selectedBrands.map(b => `<span class="tag bg-purple-50 text-purple-700 text-xs cursor-pointer" onclick="removeSelectionBrand(${project.id},'${b.replace(/'/g,"\\'")}')" title="点击删除">${b} ×</span>`).join('')}
+                        </div>
+                        <div class="flex gap-1 mt-1">
+                            <select id="add-brand-select-${project.id}" class="border rounded px-2 py-1 text-xs flex-1">
+                                <option value="">添加品牌...</option>
+                                ${brandList.filter(b => !sp.selectedBrands.includes(b)).map(b => `<option value="${b.replace(/"/g,'&quot;')}">${b}</option>`).join('')}
+                            </select>
+                            <button onclick="addSelectionBrand(${project.id})" class="px-2 py-1 bg-blue-500 text-white rounded text-xs">+</button>
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-1">
+                            <label class="text-xs text-gray-500">毛利率 ≥</label>
+                            <input type="number" id="param-margin-${project.id}" value="${sp.targetMargin}" min="0" max="100" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'targetMargin',parseInt(this.value))">
+                        </div>
+                        <div class="flex-1">
+                            <label class="text-xs text-gray-500">人均预算</label>
+                            <input type="number" id="param-budget-${project.id}" value="${sp.budget}" min="10" step="10" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'budget',parseInt(this.value))">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500">方案数量</label>
+                        <input type="number" id="param-count-${project.id}" value="${sp.proposalCount}" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'proposalCount',parseInt(this.value))">
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-1">
+                            <label class="text-xs text-gray-500">覆盖品类数</label>
+                            <input type="number" id="param-catcount-${project.id}" value="${sp.categoryCount}" min="1" max="${allCats.length}" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'categoryCount',parseInt(this.value))">
+                        </div>
+                    </div>
+                    <div class="flex gap-3">
+                        <div class="flex-1">
+                            <label class="text-xs text-gray-500">最少产品数</label>
+                            <input type="number" id="param-minprod-${project.id}" value="${sp.minProducts}" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'minProducts',parseInt(this.value))">
+                        </div>
+                        <div class="flex-1">
+                            <label class="text-xs text-gray-500">最多产品数</label>
+                            <input type="number" id="param-maxprod-${project.id}" value="${sp.maxProducts}" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'maxProducts',parseInt(this.value))">
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500">需求品类 (${allCats.length}个)</label>
+                        <div class="text-xs text-gray-600">${allCats.join('、') || '未识别'}</div>
+                    </div>
+                </div>
+                <button onclick="generateProposalsFromParams(${project.id})" class="mt-4 w-full px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">🤖 生成方案</button>
             </div>
-            <button onclick="addConstraintRow(${project.id})" class="text-blue-600 text-xs hover:underline mt-1">+ 添加约束</button>
         </div>
-    </div>
-
-    <!-- 方案列表 -->
-    <div class="bg-white rounded-lg shadow p-6">
-        <h3 class="font-medium mb-4">方案列表 <span class="text-sm text-gray-400">(${proposalsForProject.length} 个)</span></h3>
-        <div class="grid grid-cols-3 gap-4" id="proposal-grid-${project.id}">
-            ${proposalsForProject.length === 0 ? '<div class="col-span-3 text-center text-gray-400 py-8">点击"生成方案"开始</div>' : ''}
+        <div class="col-span-2">
+            <div class="bg-white rounded-lg shadow p-4">
+                <h3 class="font-medium mb-4">📊 方案列表 <span class="text-sm text-gray-400">(${proposalsForProject.length} 个)</span></h3>
+                <div class="grid grid-cols-2 gap-3" id="proposal-grid-${project.id}">
+                    ${proposalsForProject.length === 0 ? '<div class="col-span-2 text-center text-gray-400 py-8">设置参数后点击"生成方案"</div>' : ''}
+                </div>
+            </div>
         </div>
     </div>`;
 
@@ -2059,35 +2133,121 @@ function showRequirementConfirm(project) {
     if (proposalsForProject.length > 0) renderProposalCards(project.id);
 }
 
-async function editRequirement(projectId) {
+function updateSelectionParam(projectId, key, value) {
     const project = findProject(projectId);
-    if (!project) return;
-    const newReq = prompt('编辑需求文档：', project.structuredRequirement);
-    if (newReq !== null) {
-        project.structuredRequirement = newReq;
-        project.updatedAt = new Date().toISOString();
-        await saveAllData();
-        showRequirementConfirm(project);
-    }
+    if (!project || !project.selectionParams) return;
+    project.selectionParams[key] = value;
+    saveAllData();
 }
 
-function addConstraintRow(projectId) {
-    const container = document.getElementById(`constraint-rows-${projectId}`);
-    const row = document.createElement('div');
-    row.className = 'flex gap-2 mb-2 items-center';
-    row.innerHTML = `
-        <select class="border rounded px-2 py-1 text-xs">
-            <option value="">选择字段</option>
-            <option>毛利率</option><option>品牌级别</option><option>一件代发</option>
-            <option>供应商合作度</option><option>库存类型</option><option>备货周期</option>
-            <option>产品条码</option><option>发货地</option><option>含税</option>
-        </select>
-        <select class="border rounded px-2 py-1 text-xs">
-            <option>≥</option><option>≤</option><option>必须</option><option>排除</option>
-        </select>
-        <input type="text" class="border rounded px-2 py-1 text-xs w-32" placeholder="值">
-        <button onclick="this.parentElement.remove()" class="text-red-500 text-xs">×</button>`;
-    container.appendChild(row);
+function removeSelectionBrand(projectId, brandName) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    project.selectionParams.selectedBrands = project.selectionParams.selectedBrands.filter(b => b !== brandName);
+    saveAllData();
+    showSelectionPage(project);
+}
+
+function addSelectionBrand(projectId) {
+    const project = findProject(projectId);
+    const select = document.getElementById(`add-brand-select-${projectId}`);
+    const brand = select.value;
+    if (!brand || project.selectionParams.selectedBrands.includes(brand)) return;
+    project.selectionParams.selectedBrands.push(brand);
+    saveAllData();
+    showSelectionPage(project);
+}
+
+async function getAISelectionSuggestion(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+    if (!aiSettings.apiKey) { alert('请先配置 AI API Key'); return; }
+    const el = document.getElementById(`ai-suggestion-${projectId}`);
+    el.innerHTML = '<div class="animate-pulse text-xs text-gray-400">AI 分析中...</div>';
+    const categories = extractCategoriesFromRequirement(project.structuredRequirement || '');
+    const brandInfoList = brandList.map(brand => {
+        const ps = products.filter(p => p.brand === brand);
+        return { name: brand, cats: [...new Set(ps.map(p => p.majorCategory).filter(Boolean))], count: ps.length };
+    });
+    try {
+        const response = await callAI([
+            { role: 'system', content: `你是团购选品顾问。根据客户需求推荐品牌和产品选择方向。返回JSON: {"brands":["品牌1"],"categoryAdvice":{"食品":{"priceRange":"X-Y元","note":"说明"}},"rationale":"理由"}` },
+            { role: 'user', content: `## 需求\n${project.structuredRequirement}\n\n## 品牌\n${JSON.stringify(brandInfoList.slice(0, 60))}\n\n请给选品建议。` }
+        ], { temperature: 0.7, maxTokens: 2048 });
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        if (result) {
+            project.aiSuggestion = result;
+            if (result.brands) project.selectionParams.selectedBrands = result.brands;
+            await saveAllData();
+            showSelectionPage(project);
+        }
+    } catch (e) { el.innerHTML = `<div class="text-red-500 text-xs">错误: ${e.message}</div>`; }
+}
+
+async function backToRequirement(projectId) {
+    const project = findProject(projectId);
+    project.status = 'requirement_ready';
+    await saveAllData();
+    currentProjectId = projectId;
+    showPage('page-chat');
+    document.getElementById('chat-project-name').textContent = project.name;
+    document.getElementById('chat-messages').innerHTML = '';
+    if (project.conversation) project.conversation.forEach(msg => {
+        addChatMessage(msg.role === 'assistant' ? 'ai' : 'user', msg.content);
+    });
+    renderRequirementCard(project);
+    document.getElementById('chat-status').textContent = '需求已生成';
+    document.getElementById('chat-status').className = 'text-xs px-2 py-1 bg-green-100 text-green-600 rounded';
+}
+
+async function generateProposalsFromParams(projectId) {
+    const project = findProject(projectId);
+    if (!project || products.length === 0) return;
+    const sp = project.selectionParams;
+    if (!sp.selectedBrands || sp.selectedBrands.length === 0) { alert('请先选择品牌'); return; }
+    project.selectedBrands = sp.selectedBrands;
+    project.targetMargin = sp.targetMargin;
+    project.budgetPerPerson = sp.budget;
+    project.constraints = [{ field: '毛利率', operator: '≥', value: '' + sp.targetMargin }];
+    const count = sp.proposalCount || 6, budget = sp.budget || 200;
+    const categoryCount = sp.categoryCount || 0;
+    const minProducts = sp.minProducts || 0;
+    const maxProducts = sp.maxProducts || 0;
+    const allCats = sp.categories.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
+
+    // 预估供货价系数，与 adjustToBudget 用同一口径
+    const estMargin = 1 - (sp.targetMargin || 20) / 100;
+    const maxPP = budget * 1.1; // maxBudget：方案总价上限
+    const estQuote = (p) => p.purchasePrice / estMargin;
+
+    // 按选中品牌的候选商品数排序品类（选中品牌优先，总数次之），排除无候选的品类
+    const catCandidateCounts = allCats.map(cat => {
+        const selCnt = products.filter(p => sp.selectedBrands.includes(p.brand) && categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).length;
+        const allCnt = products.filter(p => categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).length;
+        return { cat, selCnt, allCnt };
+    }).filter(cc => cc.selCnt + cc.allCnt > 0)
+      .sort((a, b) => (b.selCnt - a.selCnt) || (b.allCnt - a.allCnt));
+    const effectiveCatCount = Math.min(categoryCount > 0 ? categoryCount : catCandidateCounts.length, catCandidateCounts.length);
+    const selectedCats = effectiveCatCount < catCandidateCounts.length
+        ? catCandidateCounts.slice(0, effectiveCatCount).map(c => c.cat)
+        : catCandidateCounts.map(c => c.cat);
+    // 候选过滤：用预估供货价（与 adjustToBudget 同口径）
+    const seen = new Set(); let candidates = [];
+    selectedCats.forEach(cat => {
+        products.filter(p => sp.selectedBrands.includes(p.brand) && categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => !sp.selectedBrands.includes(p.brand) && categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+    });
+    if (candidates.length < 3) { alert('符合条件的商品太少'); return; }
+
+    project.status = 'generating';
+    await saveAllData();
+    document.getElementById(`proposal-grid-${projectId}`).innerHTML = '<div class="col-span-2 text-center py-8"><div class="animate-spin text-3xl mb-2">🤖</div><div class="text-gray-500 text-sm">算法生成方案中...</div></div>';
+    await algorithmSelectProducts(project, candidates, count, selectedCats, minProducts, maxProducts);
+    project.status = 'generated';
+    project.updatedAt = new Date().toISOString();
+    await saveAllData();
+    showSelectionPage(project);
 }
 
 // ========== AI选品牌 ==========
@@ -2204,19 +2364,29 @@ function buildProductSummary(candidates) {
     }));
 }
 
-// 从需求文档中提取品类关键词
+// ========== 品类映射（V8: 18大品类体系 — 同步自商品库版本） ==========
+const CATEGORY_MAP = {
+    '食品饮料': ['大米', '米', '面', '粉', '粮油', '食用油', '面条', '面粉', '杂粮', '五谷', '粗粮', '小米', '糯米', '黑米', '糙米', '高粱', '荞麦', '藜麦', '绿豆', '红豆', '黄豆', '黑豆', '芸豆', '豌豆', '鹰嘴豆', '玉米', '紫薯', '红薯', '山药', '南瓜', '芝麻', '香油', '麻油', '菜籽油', '花生油', '橄榄油', '核桃油', '亚麻籽油', '山茶油', '调味', '调味品', '蚝油', '生抽', '老抽', '料酒', '陈醋', '香醋', '白醋', '味精', '鸡精', '淀粉', '酵母', '火锅底料', '蘸料', '辣酱', '豆瓣酱', '芝麻酱', '花生酱', '番茄酱', '沙拉酱', '果酱', '调料', '酱料', '零食', '小吃', '饼干', '糖果', '巧克力', '肉脯', '膨化', '薯片', '薯条', '锅巴', '爆米花', '肉干', '肉松', '牛肉干', '猪肉脯', '鸭脖', '鸭翅', '鸭舌', '凤爪', '鸡爪', '卤味', '卤', '解馋', '零嘴', '饮料', '咖啡', '可可', '奶茶', '果汁', '椰子水', '椰汁', '杏仁露', '核桃露', '豆奶', '豆浆', '酸梅汤', '凉茶', '汽水', '可乐', '气泡', '苏打', '矿泉水', '纯净水', '功能饮料', '运动饮料', '茶饮', '果茶', '花茶饮', '柠檬茶', '电解质', 'NFC', '冷萃', '挂耳', '咖啡液', '冻干粉', '即饮', '饮用', '椰乳', '厚椰乳', '生椰', '植物饮', '沙棘汁', '西梅汁', '杨梅汁', '气泡水', '冲泡', '速食', '即食', '代餐', '燕麦', '麦片', '藕粉', '芝麻糊', '螺蛳粉', '酸辣粉', '方便面', '方便粉', '拌面', '拉面', '挂面', '米线', '米粉', '罐头', '坚果', '夏威夷果', '巴旦木', '开心果', '碧根果', '腰果', '核桃', '松子', '榛子', '瓜子', '花生', '板栗', '杏仁', '炒货', '每日坚果', '混合坚果', '糕点', '曲奇', '蛋黄酥', '月饼', '蛋糕', '蛋黄派', '凤梨酥', '榴莲酥', '蝴蝶酥', '桃酥', '麻薯', '沙琪玛', '威化', '华夫', '蛋卷', '面包', '吐司', '蛋挞', '马卡龙', '酥饼', '烘焙', '焙烤', '麻花', '绿豆糕', '桂花糕', '云片糕', '米糕', '千层酥', '牛舌饼', '老婆饼', '老公饼', '粽子', '粽礼', '粽香', '月韵', '月宴', '年糕', '汤圆', '青团', '饺子', '馄饨', '包子', '馒头', '烧卖', '春卷', '八宝饭', '糍粑', '蜜饯', '果脯', '果干', '葡萄干', '话梅', '杨梅', '山楂', '梅子', '乌梅', '青梅', '芒果干', '草莓干', '蓝莓干', '蔓越莓', '柠檬干', '椰子干', '香蕉干', '桂圆干', '陈皮', '金桔', '牛奶', '纯奶', '高钙奶', '有机奶', '儿童奶', '酸奶', '羊奶', '驼奶', '鲜牛奶', '鲜奶', '巴氏', '乳制品', '奶粉', '乳粉', '奶昔', '奶酥', '奶片', '奶条', '奶贝', '奶酪', '芝士', '黄油', '奶油', '炼乳', '乳酪', '干酪', '乳', '奶'],
+    '生鲜特产': ['水果', '苹果', '橙', '车厘子', '榴莲', '蛋类', '咸蛋', '皮蛋', '鸡蛋', '鸭蛋', '鹌鹑', '松花蛋', '咸鸭蛋', '蛋黄', '蛋制品', '鲜果', '生鲜', '牛排', '鸡翅', '虾仁', '鱼丸', '冻品', '冷冻', '速冻', '冰鲜', '冷鲜', '虾滑', '鱼片', '肉卷', '肥牛', '羊肉卷', '火锅食材', '半成品菜', '料理包', '冻肉', '特产', '腊味', '腊肉', '腊肠', '香肠', '红肠', '火腿肠', '火腿', '培根', '午餐肉', '肉制品', '畜禽', '熟食', '腌腊', '风干', '牛肉', '猪肉', '羊肉', '鸡肉', '鸭肉', '鹅肉', '鸽子', '卤蛋', '烧鸡', '烤鸭', '酱鸭', '酱肉', '熏肉', '熏肠', '肉枣', '潮汕', '牛肉丸', '海产', '海鲜', '海味', '海珍', '干贝', '虾皮', '虾米', '海米', '蚝干', '蛤蜊', '蛏干', '鲍鱼', '海参', '鱿鱼', '墨鱼', '章鱼', '紫菜', '海带', '海苔', '裙带菜', '龙须菜', '鱼干', '鱼片', '鱼松', '鱼丸', '虾丸', '鱼糜', '水产', '地方特色', '家乡味', '地道', '正宗', '特产食品', '非遗食品', '地理标志', '老字号', '中华老字号'],
+    '健康养护': ['滋补', '养生', '保健', '燕窝', '燕盏', '燕条', '干燕窝', '即炖', '鲜炖', '燕角', '燕碎', '茶叶', '茗茶', '茶礼', '茶韵', '龙井', '普洱', '铁观音', '大红袍', '毛尖', '碧螺春', '银针', '金骏眉', '正山小种', '白茶', '绿茶', '红茶', '乌龙', '花茶', '菊花', '茉莉', '荞麦茶', '大麦茶', '苦荞', '肉桂', '水仙', '岩茶', '单丛', '黄茶', '黑茶', '生普', '熟普', '茶砖', '沱茶', '虫草', '阿胶', '鹿茸', '灵芝', '石斛', '黄芪', '当归', '党参', '人参', '西洋参', '高丽参', '红参', '太子参', '丹参', '三七', '天麻', '枸杞', '桂圆', '花胶', '鱼胶', '雪蛤', '海马', '金线莲', '藏红花', '罗汉果', '胖大海', '金银花', '玫瑰花', '决明子', '山楂干', '新会', '桑葚', '黄精', '玉竹', '麦冬', '百合', '莲子', '芡实', '葛根', '茯苓', '山药片', '药食', '膏方', '枇杷膏', '秋梨膏', '柠檬膏', '姜枣膏', '四物汤', '八珍', '阿胶糕', '固元膏', '按摩仪', '护眼', '干货', '菌菇', '松茸', '竹荪', '猴头菇', '虫草花', '牛肝菌', '鸡枞', '羊肚菌', '茶树菇', '姬松茸', '花菇', '冬菇', '香菇', '木耳', '银耳', '榛蘑', '红菇', '干菜', '黄花菜', '笋干', '笋尖', '腐竹', '豆皮', '烤麸', '面筋', '贡菜', '梅干菜', '蕨菜', '脱水蔬菜', '百合干', '红枣', '黑枣', '椰枣', '阿胶枣', '蜜枣', '龙眼', '荔枝'],
+    '日化个护': ['清洁', '纸巾', '湿巾', '消毒', '洗衣', '洗衣液', '洗衣凝珠', '洗洁精', '洁厕', '去油污', '油污净', '抹布', '拖把', '垃圾桶', '收纳', '纸品', '抽纸', '卷纸', '手帕纸', '棉柔巾', '厨房纸', '柔顺剂', '漂白', '管道疏通', '洁净', '除菌', '抑菌', '杀菌', '家居清洁', '衣物清洁', '洗碗', '百洁布', '钢丝球', '垃圾袋', '保鲜袋', '保鲜膜', '一次性手套', '一次性餐具', '衣架', '粘钩', '挂钩', '洗发', '护发', '发膜', '沐浴', '洗护', '牙膏', '牙刷', '漱口水', '牙线', '毛巾', '浴巾', '方巾', '干发帽', '护手霜', '身体乳', '香皂', '肥皂', '洗手液', '皂', '口腔护理', '搓澡', '浴球', '浴帽', '牙粉', '口喷', '水牙线', '冲牙器', '美妆', '护肤', '面膜', '口红', '唇膏', '唇彩', '唇釉', '唇蜜', '粉底', 'BB霜', 'CC霜', '气垫', '散粉', '蜜粉', '遮瑕', '隔离', '妆前', '定妆', '腮红', '修容', '高光', '精华', '面霜', '乳液', '爽肤水', '化妆水', '眼霜', '眼影', '眼线', '眉笔', '眉粉', '睫毛', '防晒', '卸妆', '洁面', '洗面奶', '香水', '香氛', '淡香', '古龙', '香薰', '香膏', '彩妆', '化妆', '美发造型', '发蜡', '发泥', '定型', '发胶', '发油', '弹力素', '安瓶', '原液', '精粹', '日霜', '晚霜', '颈霜', '手霜', '润肤', '保湿', '美白', '抗皱', '紧致', '修护', '去角质', '祛痘'],
+    '家居家电': ['家纺', '床品', '家居', '四件套', '被套', '床单', '枕套', '床笠', '床罩', '被子', '被芯', '羽绒被', '蚕丝被', '羊毛被', '棉被', '夏凉被', '空调被', '枕头', '枕芯', '乳胶枕', '记忆枕', '毛毯', '盖毯', '法兰绒毯', '珊瑚绒毯', '凉席', '冰丝席', '竹席', '藤席', '蚊帐', '蒙古包', '抱枕', '坐垫', '靠枕', '腰靠', '收纳用品', '沙发垫', '毯子', '家电', '小家电', '电器', '厨电', '电饭煲', '电饭锅', '电压力锅', '电炖锅', '电蒸锅', '电火锅', '电饼铛', '空气炸锅', '微波炉', '烤箱', '电磁炉', '电陶炉', '养生壶', '电水壶', '电热水瓶', '饮水机', '茶吧机', '破壁机', '榨汁机', '豆浆机', '料理机', '搅拌机', '绞肉机', '咖啡机', '面包机', '酸奶机', '厨师机', '打蛋器', '净水器', '加湿器', '除湿机', '空气净化器', '电风扇', '空调扇', '取暖器', '暖风机', '吸尘器', '扫地机', '洗地机', '挂烫机', '电熨斗', '吹风机', '剃须刀', '电动牙刷', '美容仪', '洁面仪', '卷发棒', '直发器', '理发器', '干衣机', '烘鞋器', '除螨仪', '毛球修剪器', '保温杯', '保温壶', '水杯', '插座', '充电器', '排插', '插线板', '接线板'],
+    '运动户外': ['运动', '健身', '瑜伽', '瑜伽垫', '瑜伽服', '瑜伽球', '瑜伽砖', '瑜伽柱', '瑜伽带', '跑步', '跑步机', '跑鞋', '运动鞋', '健步', '暴走', '马拉松', '跳绳', '哑铃', '俯卧撑', '拉力器', '健腹轮', '弹力带', '壶铃', '杠铃', '动感单车', '椭圆机', '筋膜枪', '划船机', '仰卧板', '引体向上', '篮球', '足球', '排球', '乒乓球', '羽毛球', '网球', '台球', '高尔夫', '游泳', '骑行', '滑板', '轮滑', '球拍', '球类', '运动护具', '运动水杯', '户外', '露营', '登山', '徒步', '帐篷', '睡袋', '防潮垫', '冲锋衣', '登山杖', '吊床', '烧烤炉', '野餐', '野餐垫', '折叠椅', '露营灯', '防晒帽', '垂钓', '骑行装备', '登山装备', '露营装备', '游泳装备', '垂钓装备'],
+    '企业定制': ['定制礼盒', '定制保温杯', '定制雨伞', '定制帆布袋', '文创礼品', '企业定制', '文创', '办公用品', '文具', '礼品', '日历', '对联', '春联', '福字', '红包', '窗花', '灯笼', '中国结', '剪纸', '年画', '钢笔', '圆珠笔', '签字笔', '铅笔', '马克笔', '荧光笔', '毛笔', '中性笔', '笔芯', '笔袋', '笔筒', '笔记本', '记事本', '手账', '日记本', '便签', '便利贴', '线圈本', '活页本', '方格本', '台历', '挂历', '周历', '年历', '万年历', '贺卡', '明信片', '贴纸', '胶带', '书签', '文件夹', '订书机', '回形针', '胶棒', '胶水', '剪刀', '尺子', '橡皮', '修正带', '计算器', '地球仪', '文房', '文房四宝'],
+    '卡券文娱': ['卡券', '购物卡', '超市卡', '电影票', '蛋糕券', '餐饮券', '咖啡券', '景区门票', '兑换卡', '礼品卡', '代金券', '提货券', '体验券', '会员卡', '文化娱乐', '演出票', '展览票', '游乐园', '旅游卡']
+};
+
+function categoryMatches(productCat, requiredCat) {
+    if (!productCat || !requiredCat) return false;
+    if (productCat === requiredCat) return true;
+    const aliases = CATEGORY_MAP[requiredCat];
+    if (!aliases) return false;
+    return aliases.some(k => productCat === k || productCat.includes(k));
+}
+
 function extractCategoriesFromRequirement(requirement) {
-    const categoryMap = {
-        '食品': ['食品', '零食', '粽子', '月饼', '坚果', '茶叶', '糕点', '糖果', '干果', '礼盒食品', '吃的'],
-        '日化': ['日化', '日用', '洗护', '洗发', '沐浴', '洗衣', '清洁', '纸巾', '个护', '日用品'],
-        '美妆': ['美妆', '护肤', '面膜', '口红', '香水', '化妆'],
-        '家电': ['家电', '小家电', '电器', '厨电', '生活电器'],
-        '家纺': ['家纺', '床品', '毛巾', '被子', '枕头'],
-        '运动': ['运动', '健身', '户外'],
-        '文创': ['文创', '办公用品', '文具', '礼品']
-    };
     const found = [];
-    for (const [cat, keywords] of Object.entries(categoryMap)) {
+    for (const [cat, keywords] of Object.entries(CATEGORY_MAP)) {
         if (keywords.some(k => requirement.includes(k))) {
             found.push(cat);
         }
@@ -2432,70 +2602,45 @@ async function generateProposals(projectId) {
         </div>`;
     console.log('生成方案 - 选中品牌:', project.selectedBrands);
 
-    // 预筛选商品：确保覆盖所有需求品类
+    // 预筛选商品：放宽条件，给算法更多选择空间
     const budget = project.budgetPerPerson || 200;
-    // 从约束中提取毛利率
     const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
     const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
     const targetMargin = effectiveMargin / 100;
-    const maxPurchasePrice = budget * (1 - targetMargin);
-    const minPurchasePrice = budget * 0.02;
-    console.log('生成方案 - 目标毛利率:', effectiveMargin + '%', '最高采购价:', maxPurchasePrice);
+    const maxPurchasePrice = budget * 0.9; // 放宽：采购价不超预算90%
+    console.log('生成方案 - 目标毛利率:', effectiveMargin + '%');
 
     // 提取需求品类
     const requiredCategories = extractCategoriesFromRequirement(project.structuredRequirement || '');
 
-    // 按品类分别筛选，确保每个品类都有候选
+    // 按品类分组，优先选中品牌
     const candidatesByCategory = {};
 
-    // 1. 先从选中品牌中筛选每个品类的商品
     requiredCategories.forEach(cat => {
-        const categoryCandidates = products.filter(p =>
+        // 选中品牌的该品类商品（放宽价格限制）
+        const selectedBrandProds = products.filter(p =>
             project.selectedBrands.includes(p.brand) &&
-            p.majorCategory === cat &&
-            p.purchasePrice >= minPurchasePrice &&
+            categoryMatches(p.majorCategory, cat) &&
+            p.purchasePrice > 0 &&
             p.purchasePrice <= maxPurchasePrice
         );
-        if (categoryCandidates.length > 0) {
-            candidatesByCategory[cat] = categoryCandidates;
-        }
+        // 非选中品牌的该品类商品（补充）
+        const otherProds = products.filter(p =>
+            !project.selectedBrands.includes(p.brand) &&
+            categoryMatches(p.majorCategory, cat) &&
+            p.purchasePrice > 0 &&
+            p.purchasePrice <= maxPurchasePrice
+        );
+        candidatesByCategory[cat] = [...selectedBrandProds, ...otherProds];
     });
 
-    // 2. 如果某些品类没有候选，从全库补充
-    requiredCategories.forEach(cat => {
-        if (!candidatesByCategory[cat] || candidatesByCategory[cat].length === 0) {
-            const additional = products.filter(p =>
-                p.majorCategory === cat &&
-                p.purchasePrice >= minPurchasePrice &&
-                p.purchasePrice <= maxPurchasePrice
-            );
-            if (additional.length > 0) {
-                candidatesByCategory[cat] = additional.slice(0, 50);
-            }
-        }
-    });
-
-    // 3. 合并所有品类的候选
+    // 合并去重
+    const seen = new Set();
     let candidates = [];
     for (const [cat, prods] of Object.entries(candidatesByCategory)) {
-        candidates.push(...prods);
-    }
-
-    // 4. 去重
-    const seen = new Set();
-    candidates = candidates.filter(p => {
-        if (seen.has(p.id)) return false;
-        seen.add(p.id);
-        return true;
-    });
-
-    // 5. 如果品类筛选结果太少，放宽条件
-    if (candidates.length < 20) {
-        const more = products.filter(p =>
-            project.selectedBrands.includes(p.brand) &&
-            p.purchasePrice <= budget * 0.9
-        );
-        candidates = [...candidates, ...more];
+        for (const p of prods) {
+            if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); }
+        }
     }
 
     // 约束筛选
@@ -2508,99 +2653,488 @@ async function generateProposals(projectId) {
         }
     });
 
-    // 检查每个品类是否都有候选
-    const missingCategories = requiredCategories.filter(cat => {
-        const catCandidates = candidates.filter(p => p.majorCategory === cat);
-        return catCandidates.length === 0;
-    });
+    const totalCandidates = candidates.length;
+    console.log(`预筛选完成: ${totalCandidates} 个候选商品，${requiredCategories.length} 个品类`, requiredCategories);
 
-    if (missingCategories.length > 0) {
-        console.warn('以下品类缺少候选商品:', missingCategories);
-    }
-
-    if (candidates.length < 5) {
+    if (candidates.length < 3) {
         alert('符合条件的商品太少，请调整品牌选择或约束条件');
         project.status = 'requirement_ready';
         await saveAllData();
-        showRequirementConfirm(project);
+        showSelectionPage(project);
         return;
     }
 
-    // 限制候选数量，按品类均匀采样
-    if (candidates.length > 150) {
-        const byCategory = {};
-        candidates.forEach(p => {
-            const cat = p.majorCategory || '其他';
-            if (!byCategory[cat]) byCategory[cat] = [];
-            byCategory[cat].push(p);
-        });
-        candidates = [];
-        const perCat = Math.ceil(150 / Object.keys(byCategory).length);
-        for (const ps of Object.values(byCategory)) {
-            candidates.push(...ps.slice(0, perCat));
-        }
-    }
-
-    try {
-        // 尝试 AI 选品
-        if (aiSettings.apiKey && aiSettings.enableProposal !== false) {
-            const aiResult = await aiGenerateProposals(project, candidates, count);
-            await buildProposalsFromAI(project, aiResult, candidates);
-        } else {
-            throw new Error('未配置 API Key，请先在 AI 设置中配置');
-        }
-    } catch (e) {
-        console.error('AI 选品失败:', e);
-        alert(`AI 选品失败: ${e.message}\n\n将使用随机选品作为降级方案`);
-        await mockGenerateProposals(project, candidates, count);
-    }
+    // 程序算法选品
+    await algorithmSelectProducts(project, candidates, count);
 
     project.status = 'generated';
     project.updatedAt = new Date().toISOString();
     await saveAllData();
-    showRequirementConfirm(project);
+    showSelectionPage(project);
 }
 
-// 随机选品（降级方案）
-async function mockGenerateProposals(project, candidates, count) {
+// ========== 程序算法自动选品 ==========
+async function algorithmSelectProducts(project, candidates, count, selectedCats, minProducts, maxProducts) {
     const budget = project.budgetPerPerson || 200;
-    const targetMargin = (project.targetMargin || 20) / 100;
-    const marginFactor = 1 - targetMargin;
+    const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
+    const marginFactor = 1 - effectiveMargin / 100;
+    const minBudget = budget * 0.9;
+    const maxBudget = budget * 1.1;
+    const selectedBrands = project.selectedBrands || [];
+    // 计算每个产品的实际供货价
+    const calcQuote = (p) => {
+        let q = p.purchasePrice / marginFactor;
+        if (p.retailPrice > 0 && q > p.retailPrice) q = p.retailPrice;
+        return Math.round(q * 100) / 100;
+    };
+
+    // 按品类分组，优先选中品牌
+    const byCategory = {};
+    for (const p of candidates) {
+        const cat = p.majorCategory || '其他';
+        if (!byCategory[cat]) byCategory[cat] = { selected: [], other: [] };
+        if (selectedBrands.includes(p.brand)) {
+            byCategory[cat].selected.push(p);
+        } else {
+            byCategory[cat].other.push(p);
+        }
+    }
+
+    // 使用传入的品类选择（如果有），否则使用全部品类
+    const allCats = Object.keys(byCategory);
+    const cats = (selectedCats && selectedCats.length > 0)
+        ? selectedCats.filter(c => allCats.includes(c))
+        : allCats;
+    if (cats.length === 0) { alert('没有可用的产品品类'); return; }
+    const ppMin = parseInt(minProducts) > 0 ? parseInt(minProducts) : cats.length;
+    const ppMax = parseInt(maxProducts) > 0 ? parseInt(maxProducts) : Math.max(cats.length * 2, cats.length);
+
+    // 为每个品类构建可选产品列表（优先选中品牌）
+    const catProducts = {};
+    for (const cat of cats) {
+        catProducts[cat] = [...byCategory[cat].selected, ...byCategory[cat].other];
+    }
+
+    // 生成所有品类×1的组合（每个品类至少1个）
+    function enumerateCombos(catList, idx, current, allCombos) {
+        if (idx >= catList.length) {
+            const total = current.reduce((s, p) => s + calcQuote(p), 0);
+            current._totalQuote = Math.round(total * 100) / 100;
+            if (current._totalQuote >= minBudget && current._totalQuote <= maxBudget) {
+                const copy = [...current];
+                copy._totalQuote = current._totalQuote;
+                allCombos.push(copy);
+            }
+            return;
+        }
+        const cat = catList[idx];
+        const products = catProducts[cat];
+        for (const p of products) {
+            current.push(p);
+            enumerateCombos(catList, idx + 1, current, allCombos);
+            current.pop();
+            if (allCombos.length > 5000) return; // 防止爆炸
+        }
+    }
+
+    let allCombos = [];
+    enumerateCombos(cats, 0, [], allCombos);
+
+    // 如果品类×1不够，尝试某些品类选2个
+    if (allCombos.length < count * 2) {
+        console.log('品类×1组合不够，尝试增加产品数量');
+        // 品类×1 + 任意品类多选1个
+        const baseCombos = [];
+        enumerateCombos(cats, 0, [], baseCombos);
+        // 从接近预算的组合中，尝试加一个产品
+        baseCombos.sort((a, b) => b._totalQuote - a._totalQuote);
+        const topBase = baseCombos.slice(0, 200);
+        for (const base of topBase) {
+            for (const p of candidates) {
+                if (base.some(bp => bp.id === p.id)) continue;
+                const newCombo = [...base, p];
+                newCombo._totalQuote = Math.round((base._totalQuote + calcQuote(p)) * 100) / 100;
+                if (newCombo._totalQuote >= minBudget && newCombo._totalQuote <= maxBudget) {
+                    allCombos.push(newCombo);
+                }
+            }
+            if (allCombos.length > 5000) break;
+        }
+    }
+
+    // 如果仍然不够，放宽预算下限到80%
+    if (allCombos.length < count) {
+        console.log('放宽预算约束到85%');
+        allCombos = [];
+        enumerateCombos(cats, 0, [], allCombos);
+        allCombos = allCombos.filter(c => c._totalQuote >= budget * 0.8 && c._totalQuote <= maxBudget);
+        // 如果还不够，再尝试品类×2
+        if (allCombos.length < count) {
+            const baseCombos = [];
+            enumerateCombos(cats, 0, [], baseCombos);
+            baseCombos.sort((a, b) => b._totalQuote - a._totalQuote);
+            for (const base of baseCombos.slice(0, 200)) {
+                for (const p of candidates) {
+                    if (base.some(bp => bp.id === p.id)) continue;
+                    const newCombo = [...base, p];
+                    newCombo._totalQuote = Math.round((base._totalQuote + calcQuote(p)) * 100) / 100;
+                    if (newCombo._totalQuote >= budget * 0.8 && newCombo._totalQuote <= maxBudget) {
+                        allCombos.push(newCombo);
+                    }
+                }
+                if (allCombos.length > 3000) break;
+            }
+        }
+    }
+
+    // 去重
+    const seen = new Set();
+    allCombos = allCombos.filter(c => {
+        const key = c.map(p => p.id).sort().join(',');
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+
+    // 按总价排序
+    allCombos.sort((a, b) => a._totalQuote - b._totalQuote);
+
+    console.log(`找到 ${allCombos.length} 个有效组合`);
+
+    // 从有效组合中选 count 个差异化方案
+    // 策略定义：每种策略有不同的选品逻辑
+    const strategyDefs = [
+        { name: '品类均衡', tagline: '各大品类精选搭配', desc: '每个品类精选1款，总价均衡', catsPerGroup: 1, budgetTarget: 0.97, preferExpensive: false },
+        { name: '食品主打', tagline: '食品为主+日化点缀', desc: '以食品品类为主，搭配日化', foodHeavy: true, budgetTarget: 0.98, preferExpensive: true },
+        { name: '超高性价比', tagline: '精打细算最优选', desc: '各品类最低价产品组合', cheapest: true, budgetTarget: 0.95, preferExpensive: false },
+        { name: '轻奢配置', tagline: '品质升级一步到位', desc: '各品类高价产品，接近预算上限', catsPerGroup: 1, budgetTarget: 0.99, preferExpensive: true },
+        { name: '日化主打', tagline: '日化为主+食品点缀', desc: '以日化品类为主，搭配食品', dailyHeavy: true, budgetTarget: 0.97, preferExpensive: true },
+        { name: '多品组合', tagline: '更多产品更多选择', desc: '包含更多产品品类', multiCat: true, budgetTarget: 0.98, preferExpensive: false },
+        { name: '品牌专选', tagline: '同一品牌整套方案', desc: '尽量使用同一品牌产品', sameBrand: true, budgetTarget: 0.96, preferExpensive: false },
+        { name: '高端品牌', tagline: '一线品牌品质之选', desc: '优先一线品牌和老字号', premiumBrand: true, budgetTarget: 0.98, preferExpensive: true }
+    ];
 
     proposals = proposals.filter(p => p.projectId !== project.id);
 
-    const themes = ['品质生活', '实用主义', '国潮文化', '健康养生', '简约时尚', '混搭精选', '轻奢体验', '商务大气', '新潮有趣', '经典传承'];
-    const taglines = ['品质之选', '实用搭配', '国风雅韵', '健康生活', '简约不凡', '精选组合', '轻奢体验', '商务典范', '新潮好物', '经典传承'];
+    if (allCombos.length === 0) {
+        const fallback = cats.map(cat => catProducts[cat][0]).filter(Boolean);
+        if (fallback.length > 0) {
+            allCombos = [fallback];
+            fallback._totalQuote = fallback.reduce((s, p) => s + calcQuote(p), 0);
+        }
+    }
 
-    for (let i = 0; i < count; i++) {
-        const shuffled = [...candidates].sort(() => Math.random() - 0.5);
-        const selected = [];
-        let currentTotal = 0;
-        const maxQuoteTotal = budget * 1.05;
+    const usedMainProducts = new Set();
 
-        for (const p of shuffled) {
-            if (selected.length >= 4) break;
-            const estimatedQuote = p.purchasePrice / marginFactor;
-            if (currentTotal + estimatedQuote <= maxQuoteTotal) {
-                selected.push(p);
-                currentTotal += estimatedQuote;
+    // 品牌优先：selected brand 产品排前面，非选中品牌排后面（各自内部按 sortFn 排序）
+    const getCatProds = (cat, sortFn) => {
+        const sel = [...(byCategory[cat]?.selected || [])].sort(sortFn);
+        const oth = [...(byCategory[cat]?.other || [])].sort(sortFn);
+        return [...sel, ...oth];
+    };
+
+    // 预算强制调整（三轮兜底）
+    const adjustToBudget = (selected, minB, maxB) => {
+        let total = selected.reduce((s, p) => s + calcQuote(p), 0);
+        if (total >= minB && total <= maxB) return { products: [...selected], total };
+
+        // 先尝试 allCombos 里找最接近目标预算的组合（且产品数在范围内）
+        if (allCombos.length > 0) {
+            let best = null, bestDiff = Infinity;
+            const target = (minB + maxB) / 2;
+            for (const c of allCombos) {
+                // 如果有产品数范围要求，跳过不符合的
+                if (minProducts > 0 && c.length < minProducts) continue;
+                if (maxProducts > 0 && c.length > maxProducts) continue;
+                const diff = Math.abs(c._totalQuote - target);
+                if (diff < bestDiff) { bestDiff = diff; best = c; }
+            }
+            if (best && best._totalQuote >= minB && best._totalQuote <= maxB) {
+                return { products: [...best], total: best._totalQuote };
             }
         }
 
-        if (selected.length === 0 && shuffled.length > 0) {
-            selected.push(shuffled[0]);
+        const arr = [...selected];
+        if (total < minB && arr.length > 0) {
+            // 从贵到便宜追加产品，减少产品数增长
+            const avail = candidates
+                .filter(p => !arr.some(sp => sp.id === p.id))
+                .sort((a, b) => calcQuote(b) - calcQuote(a));
+            for (const p of avail) {
+                const add = calcQuote(p);
+                if (total + add > maxB) continue;
+                arr.push(p); total += add;
+                if (total >= minB) break;
+            }
+            // 放宽至 maxBudget
+            if (total < minB) {
+                const remaining = candidates
+                    .filter(p => !arr.some(sp => sp.id === p.id))
+                    .sort((a, b) => calcQuote(b) - calcQuote(a));
+                for (const p of remaining) {
+                    const add = calcQuote(p);
+                    if (total + add > maxBudget) continue;
+                    arr.push(p); total += add;
+                    if (total >= minB) break;
+                }
+            }
+            // 第三轮：用更贵的商品替换最便宜的，逐步逼近预算
+            if (total < minB) {
+                for (let attempt = 0; attempt < 15 && total < minB; attempt++) {
+                    arr.sort((a, b) => calcQuote(a) - calcQuote(b));
+                    const cheapest = arr[0];
+                    const replacement = candidates
+                        .filter(p => !arr.some(sp => sp.id === p.id) && calcQuote(p) > calcQuote(cheapest))
+                        .sort((a, b) => calcQuote(a) - calcQuote(b))
+                        .find(p => total - calcQuote(cheapest) + calcQuote(p) <= maxBudget);
+                    if (replacement) {
+                        total = total - calcQuote(cheapest) + calcQuote(replacement);
+                        arr[0] = replacement;
+                    } else break;
+                }
+            }
+        } else if (total > maxB && arr.length > 1) {
+            // 总价太高：把最贵的替换为便宜的，或直接移除
+            const sorted = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
+            const avail = candidates
+                .filter(p => !arr.some(sp => sp.id === p.id))
+                .sort((a, b) => calcQuote(a) - calcQuote(b));
+            for (const exp of sorted) {
+                if (total <= maxB) break;
+                for (const cheap of avail) {
+                    if (arr.some(sp => sp.id === cheap.id)) continue;
+                    const newTotal = total - calcQuote(exp) + calcQuote(cheap);
+                    if (newTotal <= maxB) {
+                        const idx = arr.findIndex(p => p.id === exp.id);
+                        if (idx >= 0) { arr[idx] = cheap; total = newTotal; }
+                        break;
+                    }
+                }
+                if (total > maxB && arr.length > cats.length) {
+                    const idx = arr.findIndex(p => p.id === exp.id);
+                    if (idx >= 0) { total -= calcQuote(exp); arr.splice(idx, 1); }
+                }
+            }
         }
 
-        const proposalProducts = selected.map(p => {
-            const quotePrice = p.purchasePrice / marginFactor;
+        // 兜底：从 allCombos 找绝对最接近预算的（且产品数在范围内）
+        if ((total < minB * 0.7 || total > maxB * 1.3) && allCombos.length > 0) {
+            let best = null, bestDiff = Infinity;
+            const target = (minB + maxB) / 2;
+            for (const c of allCombos) {
+                if (minProducts > 0 && c.length < minProducts) continue;
+                if (maxProducts > 0 && c.length > maxProducts) continue;
+                const diff = Math.abs(c._totalQuote - target);
+                if (diff < bestDiff) { bestDiff = diff; best = c; }
+            }
+            if (best) return { products: [...best], total: best._totalQuote };
+        }
+
+        return { products: arr, total };
+    };
+
+    // 产品数量范围调整
+    const adjustProductCount = (products, minN, maxN) => {
+        const arr = [...products];
+        let total = arr.reduce((s, p) => s + calcQuote(p), 0);
+        const absMin = cats.length; // 至少每品类一个
+
+        // 太少：每次动态找当前能放进预算的最便宜产品，最多加到 minN
+        while (arr.length < minN) {
+            let best = null, bestPrice = Infinity;
+            for (const p of candidates) {
+                if (arr.some(sp => sp.id === p.id)) continue;
+                const add = calcQuote(p);
+                if (total + add <= maxBudget && add < bestPrice) {
+                    best = p; bestPrice = add;
+                }
+            }
+            if (best) { arr.push(best); total += bestPrice; } else break;
+        }
+
+        // 太多：移除最低价的冗余产品（保留每品类至少一个，不跌破预算下限）
+        if (arr.length > maxN && arr.length > absMin) {
+            const sorted = [...arr].sort((a, b) => calcQuote(a) - calcQuote(b));
+            for (const cheap of sorted) {
+                if (arr.length <= maxN || arr.length <= absMin) break;
+                const cat = cheap.majorCategory;
+                const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
+                if (sameCatCnt <= 1) continue;
+                const newTotal = total - calcQuote(cheap);
+                if (newTotal < minBudget) continue;
+                const idx = arr.findIndex(p => p.id === cheap.id);
+                if (idx >= 0) { total = newTotal; arr.splice(idx, 1); }
+            }
+        }
+
+        return { products: arr, total: Math.round(total * 100) / 100 };
+    };
+
+    for (let i = 0; i < count; i++) {
+        const strategy = strategyDefs[i % strategyDefs.length];
+        let selectedProducts = [];
+
+        // 根据策略选品（所有策略均使用 getCatProds 保证品牌优先级）
+        if (strategy.cheapest) {
+            for (const cat of cats) {
+                const cheapest = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
+                if (cheapest && !selectedProducts.some(p => p.id === cheapest.id)) {
+                    selectedProducts.push(cheapest);
+                }
+            }
+        } else if (strategy.foodHeavy) {
+            const FOOD_CATS = ['食品饮料', '生鲜特产', '健康养护', '食品', '生鲜', '健康'];
+            const foodCat = cats.find(c => FOOD_CATS.includes(c)) || cats[0];
+            const otherCats = cats.filter(c => c !== foodCat);
+            const foodProds = getCatProds(foodCat, (a, b) => calcQuote(b) - calcQuote(a));
+            let added = 0;
+            for (const p of foodProds) {
+                if (added >= 2) break;
+                if (!usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id)) {
+                    selectedProducts.push(p); usedMainProducts.add(p.id); added++;
+                }
+            }
+            if (added < 2) {
+                for (const p of foodProds) {
+                    if (added >= 2) break;
+                    if (!selectedProducts.some(sp => sp.id === p.id)) { selectedProducts.push(p); added++; }
+                }
+            }
+            for (const cat of otherCats) {
+                const cheap = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
+                if (cheap && !selectedProducts.some(p => p.id === cheap.id)) selectedProducts.push(cheap);
+            }
+        } else if (strategy.dailyHeavy) {
+            const DAILY_CATS = ['日化', '日用', '日化个护'];
+            const dailyCat = cats.find(c => DAILY_CATS.includes(c)) || cats[cats.length - 1];
+            const otherCats = cats.filter(c => c !== dailyCat);
+            const dailyProds = getCatProds(dailyCat, (a, b) => calcQuote(b) - calcQuote(a));
+            let added = 0;
+            for (const p of dailyProds) {
+                if (added >= 2) break;
+                if (!usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id)) {
+                    selectedProducts.push(p); usedMainProducts.add(p.id); added++;
+                }
+            }
+            if (added < 2) {
+                for (const p of dailyProds) {
+                    if (added >= 2) break;
+                    if (!selectedProducts.some(sp => sp.id === p.id)) { selectedProducts.push(p); added++; }
+                }
+            }
+            for (const cat of otherCats) {
+                const cheap = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
+                if (cheap && !selectedProducts.some(p => p.id === cheap.id)) selectedProducts.push(cheap);
+            }
+        } else if (strategy.sameBrand) {
+            const brandCount = {};
+            // 只统计选中品牌
+            for (const p of candidates.filter(c => selectedBrands.includes(c.brand))) {
+                brandCount[p.brand] = (brandCount[p.brand] || 0) + 1;
+                const catSet = brandCount[p.brand + '__cats'] || new Set();
+                catSet.add(p.majorCategory);
+                brandCount[p.brand + '__cats'] = catSet;
+            }
+            let bestBrand = null, bestCoverage = 0;
+            for (const [brand, cnt] of Object.entries(brandCount)) {
+                if (brand.includes('__')) continue;
+                const catCoverage = brandCount[brand + '__cats']?.size || 0;
+                if (catCoverage > bestCoverage && cnt >= cats.length) {
+                    bestCoverage = catCoverage; bestBrand = brand;
+                }
+            }
+            if (!bestBrand && selectedBrands.length > 0) bestBrand = selectedBrands[0];
+            if (bestBrand) {
+                for (const cat of cats) {
+                    const p = catProducts[cat].find(p => p.brand === bestBrand && !selectedProducts.some(sp => sp.id === p.id));
+                    if (p) selectedProducts.push(p);
+                }
+            }
+            // 补足缺失品类（优先选中品牌）
+            if (selectedProducts.length < cats.length) {
+                for (const cat of cats) {
+                    if (!selectedProducts.some(p => categoryMatches(p.majorCategory, cat))) {
+                        const p = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
+                        if (p && !selectedProducts.some(sp => sp.id === p.id)) selectedProducts.push(p);
+                    }
+                }
+            }
+        } else if (strategy.multiCat) {
+            for (const cat of cats) {
+                const cheap = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
+                if (cheap && !selectedProducts.some(p => p.id === cheap.id)) selectedProducts.push(cheap);
+            }
+            // 从任意品类再加1个（价格排序时也优先选中品牌）
+            const avail = candidates
+                .filter(p => !selectedProducts.some(sp => sp.id === p.id))
+                .sort((a, b) => calcQuote(a) - calcQuote(b));
+            for (const p of avail) {
+                const withExtra = [...selectedProducts, p];
+                if (withExtra.reduce((s, pp) => s + calcQuote(pp), 0) <= maxBudget) {
+                    selectedProducts.push(p); break;
+                }
+            }
+        } else if (strategy.premiumBrand) {
+            // 高端品牌：优先一线品牌和老字号
+            const premiumBrands = brandList.filter(b => {
+                const bp = products.find(p => p.brand === b);
+                return bp && (bp.brandLevel === '一线' || bp.brandLevel === '老字号');
+            });
+            for (const cat of cats) {
+                const prods = getCatProds(cat, (a, b) => calcQuote(b) - calcQuote(a));
+                let picked = prods.find(p => premiumBrands.includes(p.brand) && !usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id));
+                if (!picked) picked = prods.find(p => !usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id));
+                if (!picked) picked = prods[0];
+                if (picked) { selectedProducts.push(picked); usedMainProducts.add(picked.id); }
+            }
+        } else {
+            // 默认：品类均衡，每个品类1个
+            for (const cat of cats) {
+                const prods = getCatProds(cat, (a, b) => strategy.preferExpensive ? calcQuote(b) - calcQuote(a) : calcQuote(a) - calcQuote(b));
+                let picked = prods.find(p => !usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id));
+                if (!picked) picked = prods[0];
+                if (picked) { selectedProducts.push(picked); usedMainProducts.add(picked.id); }
+            }
+        }
+
+        // 预算强制调整
+        const adjusted = adjustToBudget(selectedProducts, minBudget, maxBudget);
+        selectedProducts = adjusted.products;
+
+        // 产品数量范围调整
+        const countAdjusted = adjustProductCount(selectedProducts, ppMin, ppMax);
+        selectedProducts = countAdjusted.products;
+
+        if (selectedProducts.length === 0) {
+            selectedProducts = candidates.filter(c => selectedBrands.includes(c.brand)).slice(0, Math.max(1, cats.length));
+            if (selectedProducts.length === 0) selectedProducts = candidates.slice(0, Math.max(1, cats.length));
+        }
+
+        // 去重
+        const seenIds = new Set();
+        selectedProducts = selectedProducts.filter(p => {
+            if (!p || !p.id || seenIds.has(p.id)) return false;
+            seenIds.add(p.id);
+            return true;
+        });
+
+        const proposalProducts = selectedProducts.map(p => {
+            const quotePrice = calcQuote(p);
             const actualMargin = ((quotePrice - p.purchasePrice) / quotePrice * 100).toFixed(1);
             const supplierObj = suppliers.find(s => s.id === p.supplierId || s.name === p.supplierId);
             const supplierName = supplierObj?.name || p.supplierName || p.supplierId || '-';
             return {
-                productId: p.id, sku: p.sku, name: p.name, supplierId: p.supplierId, supplier: supplierName,
+                productId: p.id, sku: p.sku, name: p.name,
+                supplierId: p.supplierId, supplier: supplierName,
                 brand: p.brand, brandLevel: p.brandLevel || '',
-                purchasePrice: p.purchasePrice, quotePrice: Math.round(quotePrice * 100) / 100,
-                margin: actualMargin + '%', image: p.mainImage || '', quantity: 1, subtotal: Math.round(quotePrice * 100) / 100
+                purchasePrice: p.purchasePrice,
+                retailPrice: p.retailPrice || 0,
+                quotePrice: Math.round(quotePrice * 100) / 100,
+                margin: actualMargin + '%',
+                image: p.mainImage || '',
+                quantity: 1,
+                subtotal: Math.round(quotePrice * 100) / 100
             };
         });
 
@@ -2609,22 +3143,25 @@ async function mockGenerateProposals(project, candidates, count) {
         const overallMargin = totalPerPerson > 0 ? ((totalPerPerson - totalCost) / totalPerPerson * 100).toFixed(1) : 0;
         const budgetUtil = budget > 0 ? (totalPerPerson / budget * 100).toFixed(0) : 0;
 
+        const catSummary = [...new Set(selectedProducts.map(p => p.majorCategory).filter(Boolean))].join('+');
+        const brandSummary = [...new Set(selectedProducts.map(p => p.brand).filter(Boolean))].join('、');
+
         proposals.push({
             id: nextProposalId++,
             projectId: project.id,
             index: i + 1,
-            name: `方案${i + 1}：${themes[i % themes.length]}组合`,
-            tagline: taglines[i % taglines.length],
-            theme: themes[i % themes.length],
+            name: `方案${i + 1}：${strategy.name}`,
+            tagline: strategy.tagline,
+            theme: strategy.name,
             products: proposalProducts,
             totalPerPerson: Math.round(totalPerPerson * 100) / 100,
             totalPrice: Math.round(totalPerPerson * project.peopleCount * 100) / 100,
             totalCost: Math.round(totalCost * 100) / 100,
             overallMargin: parseFloat(overallMargin),
             budgetUtilization: parseInt(budgetUtil),
-            maxLeadTime: 0,
+            maxLeadTime: Math.max(...selectedProducts.map(p => parseInt((p.leadTime || '0').replace(/\D/g, '')) || 0)),
             canFulfill: true,
-            aiRationale: '随机组合方案（AI 选品失败时的降级方案）',
+            aiRationale: `${strategy.desc}。覆盖品类：${catSummary}，品牌：${brandSummary}，报价${totalPerPerson.toFixed(2)}元（预算${budgetUtil}%），毛利率${overallMargin}%。`,
             isManualEdited: false,
             manualChanges: '',
             createdAt: new Date().toISOString(),
@@ -2640,13 +3177,13 @@ function renderProposalCards(projectId) {
     if (!grid) return;
 
     if (proposalsForProject.length === 0) {
-        grid.innerHTML = '<div class="col-span-3 text-center text-gray-400 py-8">点击"生成方案"开始</div>';
+        grid.innerHTML = '<div class="col-span-2 text-center text-gray-400 py-8">点击"生成方案"开始</div>';
         return;
     }
 
     grid.innerHTML = proposalsForProject.map(pp => {
         const marginColor = pp.overallMargin >= (findProject(projectId)?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
-        const budgetWarning = pp.budgetUtilization < 95 ? '<span class="tag bg-red-100 text-red-600 ml-2">预算不足</span>' : '';
+        const budgetWarning = pp.budgetUtilization < 90 ? '<span class="tag bg-red-100 text-red-600 ml-2">预算不足</span>' : '';
         return `
         <div class="proposal-card border rounded-lg p-4 hover:shadow-lg cursor-pointer bg-white" onclick="viewProposal(${pp.id})">
             <div class="flex justify-between items-start mb-2">
@@ -2666,7 +3203,7 @@ function renderProposalCards(projectId) {
             </div>
             <div class="border-t pt-2 space-y-1 text-xs">
                 <div class="flex justify-between"><span class="text-gray-400">人均价</span><span class="font-medium">${formatMoney(pp.totalPerPerson)}</span></div>
-                <div class="flex justify-between"><span class="text-gray-400">预算利用率</span><span class="${pp.budgetUtilization < 95 ? 'text-red-500' : ''}">${pp.budgetUtilization}%</span></div>
+                <div class="flex justify-between"><span class="text-gray-400">预算利用率</span><span class="${pp.budgetUtilization < 90 ? 'text-red-500' : ''}">${pp.budgetUtilization}%</span></div>
                 <div class="flex justify-between"><span class="text-gray-400">毛利率</span><span class="${marginColor} font-medium">${pp.overallMargin}%</span></div>
                 <div class="flex justify-between"><span class="text-gray-400">履约</span>
                     ${pp.canFulfill ? '<span class="text-green-600">✓ 可交付</span>' : '<span class="text-red-500">⚠ ' + pp.maxLeadTime + '天</span>'}
@@ -2680,8 +3217,14 @@ function renderProposalCards(projectId) {
 function viewProposal(proposalId) {
     const pp = proposals.find(p => p.id === proposalId);
     if (!pp) return;
+    renderProposalModal(pp, false);
+}
+
+function renderProposalModal(pp, editMode) {
     const project = findProject(pp.projectId);
     const marginColor = pp.overallMargin >= (project?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
+    const budget = project?.budgetPerPerson || 200;
+    const budgetUtil = budget > 0 ? Math.round(pp.totalPerPerson / budget * 100) : 0;
 
     document.getElementById('modal-proposal-content').innerHTML = `
         <div class="flex justify-between items-center mb-4">
@@ -2689,24 +3232,30 @@ function viewProposal(proposalId) {
                 <h3 class="text-lg font-bold">${pp.name}</h3>
                 <p class="text-sm text-gray-500">${pp.tagline}</p>
             </div>
-            <button onclick="closeModal('modal-proposal')" class="text-gray-400 hover:text-gray-600">✕</button>
+            <button onclick="closeModal('modal-proposal')" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
         </div>
         <div class="space-y-4">
             <div class="grid grid-cols-4 gap-3 text-center">
-                <div class="bg-blue-50 rounded-lg p-3"><div class="text-lg font-bold text-blue-600">${formatMoney(pp.totalPerPerson)}</div><div class="text-xs text-gray-500">人均报价</div></div>
-                <div class="bg-green-50 rounded-lg p-3"><div class="text-lg font-bold text-green-600">${pp.budgetUtilization}%</div><div class="text-xs text-gray-500">预算利用率</div></div>
-                <div class="bg-purple-50 rounded-lg p-3"><div class="text-lg font-bold ${marginColor}">${pp.overallMargin}%</div><div class="text-xs text-gray-500">方案毛利率</div></div>
+                <div class="bg-blue-50 rounded-lg p-3"><div class="text-lg font-bold text-blue-600" id="edit-totalPrice">${formatMoney(pp.totalPerPerson)}</div><div class="text-xs text-gray-500">人均报价</div></div>
+                <div class="bg-green-50 rounded-lg p-3"><div class="text-lg font-bold text-green-600" id="edit-budgetUtil">${budgetUtil}%</div><div class="text-xs text-gray-500">预算利用率</div></div>
+                <div class="bg-purple-50 rounded-lg p-3"><div class="text-lg font-bold ${marginColor}" id="edit-overallMargin">${pp.overallMargin}%</div><div class="text-xs text-gray-500">方案毛利率</div></div>
                 <div class="bg-orange-50 rounded-lg p-3"><div class="text-lg font-bold ${pp.canFulfill ? 'text-green-600' : 'text-red-500'}">${pp.canFulfill ? '✓' : pp.maxLeadTime + '天'}</div><div class="text-xs text-gray-500">履约状态</div></div>
             </div>
 
             <div>
-                <h4 class="font-medium mb-2">产品明细</h4>
+                <div class="flex justify-between items-center mb-2">
+                    <h4 class="font-medium">产品明细</h4>
+                    ${editMode ? `
+                    <button onclick="showAddProductDialog(${pp.id})" class="px-3 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">+ 添加产品</button>
+                    ` : ''}
+                </div>
                 <table class="w-full text-sm border">
                     <thead class="bg-gray-50"><tr>
                         <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-left">供应商</th><th class="px-3 py-2 text-right">集采成本</th><th class="px-3 py-2 text-right">零售价</th><th class="px-3 py-2 text-right">供货价</th><th class="px-3 py-2 text-right">毛利率</th><th class="px-3 py-2 text-right">小计</th>
+                        ${editMode ? '<th class="px-3 py-2 text-center w-16">操作</th>' : ''}
                     </tr></thead>
                     <tbody>
-                    ${pp.products.map(p => `
+                    ${pp.products.map((p, idx) => `
                         <tr class="border-t">
                             <td class="px-3 py-2 flex items-center gap-2">
                                 ${p.image ? `<img src="${p.image}" class="w-10 h-10 rounded object-cover" onerror="this.style.display='none'">` : ''}
@@ -2719,28 +3268,38 @@ function viewProposal(proposalId) {
                             <td class="px-3 py-2 text-right">${formatMoney(p.quotePrice)}</td>
                             <td class="px-3 py-2 text-right">${p.margin}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.subtotal)}</td>
+                            ${editMode ? `
+                            <td class="px-3 py-2 text-center">
+                                <button onclick="replaceProductInProposal(${pp.id}, ${idx})" class="text-blue-600 text-xs hover:underline mr-1" title="替换">↻</button>
+                                <button onclick="removeProductFromProposal(${pp.id}, ${idx})" class="text-red-500 text-xs hover:underline" title="删除">×</button>
+                            </td>` : ''}
                         </tr>
                     `).join('')}
                     </tbody>
                 </table>
             </div>
 
-            ${(() => {
+            ${!editMode ? (() => {
                 const nonSelectedBrands = pp.products.filter(p => !project?.selectedBrands?.includes(p.brand)).map(p => p.brand);
                 const uniqueNonSelected = [...new Set(nonSelectedBrands)];
                 return uniqueNonSelected.length > 0 ? `
                 <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
                     <p class="text-sm text-yellow-700">⚠️ 以下品牌不在选中列表内（系统自动补充）：${uniqueNonSelected.join('、')}</p>
                 </div>` : '';
-            })()}
+            })() : ''}
 
             <div class="bg-gray-50 rounded-lg p-4">
-                <h4 class="font-medium mb-2 text-sm">AI 推荐理由</h4>
+                <h4 class="font-medium mb-2 text-sm">推荐理由</h4>
                 <p class="text-sm text-gray-600">${pp.aiRationale}</p>
             </div>
 
             <div class="flex justify-end gap-2 pt-4 border-t">
+                ${editMode ? `
+                <button onclick="viewProposal(${pp.id})" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消编辑</button>
+                <button onclick="saveProposalEdit(${pp.id})" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">💾 保存修改</button>
+                ` : `
                 <button onclick="closeModal('modal-proposal')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">关闭</button>
+                <button onclick="renderProposalModal(proposals.find(p=>p.id===${pp.id}), true)" class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm hover:bg-orange-600">✏️ 编辑方案</button>
                 ${project?.proposalUsage === '内部快速决策' ? `
                 <button onclick="exportProposalExcel(${pp.id})" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">📊 导出Excel（推荐）</button>
                 <button onclick="exportProposalPPT(${pp.id})" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">📽 导出PPT</button>
@@ -2748,9 +3307,206 @@ function viewProposal(proposalId) {
                 <button onclick="exportProposalPPT(${pp.id})" class="px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700 font-medium">📽 导出PPT（推荐）</button>
                 <button onclick="exportProposalExcel(${pp.id})" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">📊 导出Excel</button>
                 `}
+                `}
             </div>
         </div>`;
     openModal('modal-proposal');
+}
+
+// ========== 方案编辑 ==========
+function removeProductFromProposal(proposalId, productIdx) {
+    const pp = proposals.find(p => p.id === proposalId);
+    if (!pp || pp.products.length <= 1) { alert('方案至少保留1个产品'); return; }
+    pp.products.splice(productIdx, 1);
+    recalcProposal(pp);
+    renderProposalModal(pp, true);
+}
+
+function recalcProposal(pp) {
+    const totalPerPerson = pp.products.reduce((s, p) => s + p.quotePrice, 0);
+    const totalCost = pp.products.reduce((s, p) => s + p.purchasePrice, 0);
+    pp.totalPerPerson = Math.round(totalPerPerson * 100) / 100;
+    pp.totalCost = Math.round(totalCost * 100) / 100;
+    pp.overallMargin = totalPerPerson > 0 ? parseFloat(((totalPerPerson - totalCost) / totalPerPerson * 100).toFixed(1)) : 0;
+    pp.subtotal = pp.products.reduce((s, p) => s + p.subtotal, 0);
+    pp.isManualEdited = true;
+}
+
+function showAddProductDialog(proposalId) {
+    const pp = proposals.find(p => p.id === proposalId);
+    const project = findProject(pp.projectId);
+    const existingIds = new Set(pp.products.map(p => p.productId));
+    const budget = project?.budgetPerPerson || 200;
+
+    // 从商品库找候选：排除已选中的
+    const available = products.filter(p => !existingIds.has(p.id) && p.purchasePrice > 0 && p.purchasePrice <= budget);
+
+    // 按品类分组
+    const byCat = {};
+    available.forEach(p => {
+        const cat = p.majorCategory || '其他';
+        if (!byCat[cat]) byCat[cat] = [];
+        byCat[cat].push(p);
+    });
+
+    const catList = Object.entries(byCat).map(([cat, prods]) => `
+        <div class="mb-3">
+            <div class="text-xs font-medium text-gray-500 mb-1">${cat}（${prods.length}个）</div>
+            <div class="space-y-1 max-h-40 overflow-y-auto">
+                ${prods.slice(0, 30).map(p => `
+                <div class="flex items-center justify-between px-2 py-1 rounded hover:bg-blue-50 cursor-pointer border" onclick="addProductToProposal(${proposalId}, ${p.id})">
+                    <div class="flex-1 text-xs">
+                        <span class="font-medium">${p.brand || ''} ${p.name || ''}</span>
+                        <span class="text-gray-400 ml-2">采购${formatMoney(p.purchasePrice)}</span>
+                    </div>
+                    <span class="text-blue-600 text-xs">+ 添加</span>
+                </div>`).join('')}
+                ${prods.length > 30 ? `<div class="text-xs text-gray-400 px-2">...还有 ${prods.length - 30} 个</div>` : ''}
+            </div>
+        </div>
+    `).join('');
+
+    document.getElementById('modal-proposal-content').innerHTML = `
+        <div class="flex justify-between items-center mb-4">
+            <h3 class="text-lg font-bold">添加产品</h3>
+            <button onclick="renderProposalModal(proposals.find(p=>p.id===${proposalId}), true)" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+        <input type="text" id="add-product-search" oninput="filterAddProduct(this.value)" placeholder="搜索产品名称或品牌..." class="w-full border rounded-lg px-3 py-2 text-sm mb-4">
+        <div id="add-product-list">${catList}</div>
+        <div class="flex justify-end pt-4 border-t">
+            <button onclick="renderProposalModal(proposals.find(p=>p.id===${proposalId}), true)" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">返回</button>
+        </div>`;
+    openModal('modal-proposal');
+}
+
+function filterAddProduct(keyword) {
+    const list = document.getElementById('add-product-list');
+    if (!list) return;
+    const items = list.querySelectorAll('.flex.items-center.justify-between');
+    const kw = keyword.toLowerCase();
+    items.forEach(item => {
+        const text = item.textContent.toLowerCase();
+        item.style.display = kw === '' || text.includes(kw) ? '' : 'none';
+    });
+}
+
+async function addProductToProposal(proposalId, productId) {
+    const pp = proposals.find(p => p.id === proposalId);
+    const product = products.find(p => p.id === productId);
+    if (!pp || !product) return;
+
+    const marginConstraint = (findProject(pp.projectId)?.constraints || []).find(c => c.field === '毛利率');
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : 20;
+    const marginFactor = 1 - effectiveMargin / 100;
+
+    let quotePrice = product.purchasePrice / marginFactor;
+    if (product.retailPrice > 0 && quotePrice > product.retailPrice) quotePrice = product.retailPrice;
+
+    pp.products.push({
+        productId: product.id, sku: product.sku, name: product.name,
+        supplierId: product.supplierId, supplier: (suppliers.find(s => s.id === product.supplierId || s.name === product.supplierId)?.name) || product.supplierName || product.supplierId || '-',
+        brand: product.brand, brandLevel: product.brandLevel || '',
+        purchasePrice: product.purchasePrice,
+        retailPrice: product.retailPrice || 0,
+        quotePrice: Math.round(quotePrice * 100) / 100,
+        margin: ((quotePrice - product.purchasePrice) / quotePrice * 100).toFixed(1) + '%',
+        image: product.mainImage || '',
+        quantity: 1,
+        subtotal: Math.round(quotePrice * 100) / 100
+    });
+    recalcProposal(pp);
+    renderProposalModal(pp, true);
+}
+
+function replaceProductInProposal(proposalId, productIdx) {
+    const pp = proposals.find(p => p.id === proposalId);
+    if (!pp) return;
+    const oldProduct = pp.products[productIdx];
+    const existingIds = new Set(pp.products.map(p => p.productId));
+
+    // 找同品类或相似产品
+    const sameCat = products.filter(p =>
+        !existingIds.has(p.id) &&
+        p.majorCategory === (oldProduct.majorCategory || '') &&
+        p.purchasePrice > 0
+    );
+    const others = products.filter(p =>
+        !existingIds.has(p.id) &&
+        p.majorCategory !== (oldProduct.majorCategory || '') &&
+        p.purchasePrice > 0
+    );
+    const candidates = [...sameCat.sort((a, b) => a.purchasePrice - b.purchasePrice), ...others.sort((a, b) => a.purchasePrice - b.purchasePrice)].slice(0, 60);
+
+    document.getElementById('modal-proposal-content').innerHTML = `
+        <div class="flex justify-between items-center mb-4">
+            <div>
+                <h3 class="text-lg font-bold">替换 "${oldProduct.name}"</h3>
+                <p class="text-xs text-gray-500">${oldProduct.brand} | 供货价 ${formatMoney(oldProduct.quotePrice)}</p>
+            </div>
+            <button onclick="renderProposalModal(proposals.find(p=>p.id===${proposalId}), true)" class="text-gray-400 hover:text-gray-600 text-xl">✕</button>
+        </div>
+        <input type="text" id="replace-product-search" oninput="filterReplaceProduct(this.value)" placeholder="搜索替换产品..." class="w-full border rounded-lg px-3 py-2 text-sm mb-4">
+        <div id="replace-product-list" class="space-y-1 max-h-96 overflow-y-auto">
+            ${candidates.map(p => `
+            <div class="flex items-center justify-between px-3 py-2 rounded hover:bg-green-50 cursor-pointer border" onclick="doReplaceProduct(${proposalId}, ${productIdx}, ${p.id})">
+                <div class="flex-1 text-xs">
+                    <span class="font-medium">${p.brand || ''} ${p.name || ''}</span>
+                    <span class="text-gray-400">| ${p.majorCategory || ''} | 采购${formatMoney(p.purchasePrice)} | 零售${formatMoney(p.retailPrice) || '-'}</span>
+                </div>
+                <span class="text-green-600 text-xs">替换</span>
+            </div>`).join('')}
+        </div>
+        <div class="flex justify-end pt-4 border-t">
+            <button onclick="renderProposalModal(proposals.find(p=>p.id===${proposalId}), true)" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+        </div>`;
+    openModal('modal-proposal');
+}
+
+function filterReplaceProduct(keyword) {
+    const list = document.getElementById('replace-product-list');
+    if (!list) return;
+    const items = list.querySelectorAll('.flex.items-center.justify-between');
+    const kw = keyword.toLowerCase();
+    items.forEach(item => {
+        item.style.display = kw === '' || item.textContent.toLowerCase().includes(kw) ? '' : 'none';
+    });
+}
+
+async function doReplaceProduct(proposalId, productIdx, newProductId) {
+    const pp = proposals.find(p => p.id === proposalId);
+    const product = products.find(p => p.id === newProductId);
+    if (!pp || !product) return;
+
+    const marginConstraint = (findProject(pp.projectId)?.constraints || []).find(c => c.field === '毛利率');
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : 20;
+    const marginFactor = 1 - effectiveMargin / 100;
+
+    let quotePrice = product.purchasePrice / marginFactor;
+    if (product.retailPrice > 0 && quotePrice > product.retailPrice) quotePrice = product.retailPrice;
+
+    pp.products[productIdx] = {
+        productId: product.id, sku: product.sku, name: product.name,
+        supplierId: product.supplierId, supplier: (suppliers.find(s => s.id === product.supplierId || s.name === product.supplierId)?.name) || product.supplierName || product.supplierId || '-',
+        brand: product.brand, brandLevel: product.brandLevel || '',
+        purchasePrice: product.purchasePrice,
+        retailPrice: product.retailPrice || 0,
+        quotePrice: Math.round(quotePrice * 100) / 100,
+        margin: ((quotePrice - product.purchasePrice) / quotePrice * 100).toFixed(1) + '%',
+        image: product.mainImage || '',
+        quantity: 1,
+        subtotal: Math.round(quotePrice * 100) / 100
+    };
+    recalcProposal(pp);
+    renderProposalModal(pp, true);
+}
+
+async function saveProposalEdit(proposalId) {
+    const pp = proposals.find(p => p.id === proposalId);
+    if (!pp) return;
+    pp.manualChanges = '已手动编辑';
+    pp.updatedAt = new Date().toISOString();
+    await saveAllData();
+    viewProposal(proposalId);
 }
 
 // ========== 项目详情页入口 ==========
@@ -2773,8 +3529,23 @@ function openProject(projectId) {
             });
         }
         updateChatSummary(project);
-    } else if (['requirement_ready', 'generating', 'generated', 'adjusted', 'confirmed'].includes(project.status)) {
-        showRequirementConfirm(project);
+    } else if (project.status === 'requirement_ready') {
+        // 回到聊天页，显示需求文档卡片
+        currentProjectId = projectId;
+        showPage('page-chat');
+        document.getElementById('chat-project-name').textContent = project.name;
+        document.getElementById('chat-messages').innerHTML = '';
+        if (project.conversation && project.conversation.length > 0) {
+            project.conversation.forEach(msg => {
+                const displayRole = msg.role === 'assistant' ? 'ai' : msg.role;
+                addChatMessage(displayRole, msg.content);
+            });
+        }
+        renderRequirementCard(project);
+        document.getElementById('chat-status').textContent = '需求已生成';
+        document.getElementById('chat-status').className = 'text-xs px-2 py-1 bg-green-100 text-green-600 rounded';
+    } else if (['selecting', 'generating', 'generated', 'adjusted', 'confirmed'].includes(project.status)) {
+        showSelectionPage(project);
     } else {
         // draft - 继续编辑
         showNewProjectModal();
