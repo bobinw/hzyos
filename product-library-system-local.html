@@ -2795,19 +2795,7 @@
                 filterField: 'brand'
             },
             category: {
-                id: 'category', label: '品类', type: 'select', group: 'product',
-                options: [
-                    { value: '', label: '全部分类' },
-                    { value: '食品饮料', label: '食品饮料' },
-                    { value: '生鲜特产', label: '生鲜特产' },
-                    { value: '健康养护', label: '健康养护' },
-                    { value: '日化个护', label: '日化个护' },
-                    { value: '家居家电', label: '家居家电' },
-                    { value: '运动户外', label: '运动户外' },
-                    { value: '企业定制', label: '企业定制' },
-                    { value: '卡券文娱', label: '卡券文娱' }
-                ],
-                filterField: 'majorCategory'
+                id: 'category', label: '品类', type: 'dynamicSelect', group: 'product', filterField: 'category'
             },
             brandLevel: {
                 id: 'brandLevel', label: '品牌级别', type: 'select', group: 'product',
@@ -2870,6 +2858,25 @@
                     { value: '顺丰', label: '顺丰' }
                 ],
                 filterField: 'defaultExpress'
+            },
+            supportsDropship: {
+                id: 'supportsDropship', label: '支持代发', type: 'select', group: 'supply',
+                options: [
+                    { value: '', label: '全部' },
+                    { value: '是', label: '是' },
+                    { value: '否', label: '否' }
+                ],
+                filterField: 'supportsDropship',
+                formatField: (v) => v ? '是' : '否'
+            },
+            status: {
+                id: 'status', label: '状态', type: 'select', group: 'core',
+                options: [
+                    { value: '上架中', label: '上架中' },
+                    { value: '待审核', label: '待审核' },
+                    { value: '已过期', label: '已过期' }
+                ],
+                filterField: 'status'
             }
         };
 
@@ -4233,6 +4240,8 @@ const BRAND_TONE = {
 
                 // 刷新显示
                 try {
+                    buildAllFieldFilters();
+                    initFilterOptions();
                     renderFilterBar();
                     renderTableHeader();
                     renderList();
@@ -4295,24 +4304,11 @@ const BRAND_TONE = {
 
         // 获取筛选后的商品列表
         function getFilteredProducts() {
-            const getCombo = (id) => getComboValues('filter' + id.charAt(0).toUpperCase() + id.slice(1));
-            const filterMargin = getCombo('margin');
-            const filterProductType = getCombo('productType');
-            const filterBrandLevel = getCombo('brandLevel');
-            const filterStockStatus = getCombo('stockStatus');
-            const filterSupplier = getCombo('supplier');
-            const filterShipFrom = getCombo('shipFrom');
-            const filterStockType = getCombo('stockType');
+            const filterMargin = getComboValues('filterMargin');
             const filterSearch = (document.getElementById('filterSearch')?.value || '').toLowerCase();
-            const filterCategory = getCombo('category');
-            const filterBrand = getCombo('brand');
-            const filterOrigin = getCombo('origin');
-            const filterSugarFree = getCombo('sugarFree');
-            const filterOrganic = getCombo('organic');
-            const filterFreightIncluded = getCombo('freightIncluded');
-            const filterDefaultExpress = getCombo('defaultExpress');
 
             return products.filter(p => {
+                // 毛利率特殊处理
                 if (filterMargin.length > 0) {
                     const margin = parseFloat(calculateMargin(p.retailPrice, p.purchasePrice));
                     let ok = false;
@@ -4321,22 +4317,21 @@ const BRAND_TONE = {
                     if (filterMargin.includes('high') && margin >= 35) ok = true;
                     if (!ok) return false;
                 }
-                if (filterProductType.length > 0 && !filterProductType.includes(p.productType || '普通')) return false;
-                if (filterBrandLevel.length > 0 && !filterBrandLevel.includes(p.brandLevel)) return false;
-                if (filterStockStatus.length > 0 && !filterStockStatus.includes(p.stockStatus)) return false;
-                if (filterSupplier.length > 0 && !filterSupplier.includes(p.supplierId)) return false;
-                if (filterShipFrom.length > 0 && !filterShipFrom.includes(p.shipFrom)) return false;
-                if (filterStockType.length > 0 && !filterStockType.includes(p.stockType)) return false;
-                if (filterCategory.length > 0 && !filterCategory.includes(p.majorCategory)) return false;
-                if (filterBrand.length > 0 && !filterBrand.includes(p.brand)) return false;
-                if (filterOrigin.length > 0 && !filterOrigin.includes(p.origin)) return false;
-                if (filterSugarFree.length > 0 && !filterSugarFree.includes(String(p.isSugarFree))) return false;
-                if (filterOrganic.length > 0 && !filterOrganic.includes(String(p.isOrganic))) return false;
-                if (filterFreightIncluded.length > 0 && !filterFreightIncluded.includes(String(p.freightIncluded))) return false;
-                if (filterDefaultExpress.length > 0 && !filterDefaultExpress.includes(p.defaultExpress)) return false;
-                if (filterSearch && !p.name.toLowerCase().includes(filterSearch) &&
-                    !p.sku.toLowerCase().includes(filterSearch) &&
-                    !(p.barcode && p.barcode.includes(filterSearch))) return false;
+                // 通用筛选：遍历 FILTER_DEFINITIONS 中所有有 filterField 的定义
+                for (const [fid, def] of Object.entries(FILTER_DEFINITIONS)) {
+                    if (fid === 'margin' || fid === 'search' || !def.filterField) continue;
+                    const vals = getComboValues('filter' + fid.charAt(0).toUpperCase() + fid.slice(1));
+                    if (vals.length === 0) continue;
+                    const pv = p[def.filterField];
+                    const pvStr = def.formatField ? def.formatField(pv) : (pv !== undefined && pv !== null ? String(pv) : '');
+                    if (fid === 'productType' && pvStr === '') { if (!vals.includes('普通')) return false; }
+                    else if (!vals.includes(pvStr)) return false;
+                }
+                // 全字段文本搜索
+                if (filterSearch) {
+                    const vals = Object.values(p).filter(v => v !== null && v !== undefined && typeof v !== 'object');
+                    if (!vals.some(v => String(v).toLowerCase().includes(filterSearch))) return false;
+                }
 
                 for (const cond of window._conditionRows) {
                     if (!cond.value || cond.value.trim() === '') {
@@ -5224,6 +5219,23 @@ const BRAND_TONE = {
         }
 
         // ========== 筛选栏动态渲染 ==========
+        function buildAllFieldFilters() {
+            // 从 COLUMN_DEFINITIONS 自动为所有字段生成筛选定义（dynamicSelect 类型）
+            for (const [colId, col] of Object.entries(COLUMN_DEFINITIONS)) {
+                if (col.type === 'system' || col.type === 'actions') continue;
+                const field = col.field || colId;
+                if (FILTER_DEFINITIONS[field]) continue;
+                FILTER_DEFINITIONS[field] = {
+                    id: field, label: col.label, type: 'dynamicSelect', group: 'auto',
+                    filterField: field
+                };
+            }
+            // moreFilters 纳入所有字段（排除已在优先筛选中的）
+            const prioritySet = new Set(userFilterConfig.priorityFilters);
+            userFilterConfig.moreFilters = Object.keys(FILTER_DEFINITIONS)
+                .filter(fid => !prioritySet.has(fid) && fid !== 'search' && fid !== 'margin');
+        }
+
         function renderFilterBar() {
             const priorityContainer = document.getElementById('priority-filters');
             const moreContainer = document.getElementById('more-filters-content');
@@ -5320,18 +5332,14 @@ const BRAND_TONE = {
 
         function initFilterOptions() {
             if (!products || products.length === 0) return;
-
-            const shipFromValues = [...new Set(products.map(p => p.shipFrom).filter(Boolean))];
-            setComboDynamicOptions('filterShipFrom', shipFromValues);
-
-            const supplierValues = [...new Set(products.map(p => p.supplierId).filter(Boolean))];
-            setComboDynamicOptions('filterSupplier', supplierValues);
-
-            const brandValues = [...new Set(products.map(p => p.brand).filter(Boolean))];
-            setComboDynamicOptions('filterBrand', brandValues);
-
-            const originValues = [...new Set(products.map(p => p.origin).filter(Boolean))];
-            setComboDynamicOptions('filterOrigin', originValues);
+            // 遍历所有 dynamicSelect 类型的筛选定义，从产品数据中提取唯一值
+            for (const [filterId, def] of Object.entries(FILTER_DEFINITIONS)) {
+                if (def.type !== 'dynamicSelect' || !def.filterField) continue;
+                const values = [...new Set(products.map(p => p[def.filterField]).filter(Boolean))];
+                if (values.length > 0) {
+                    setComboDynamicOptions('filter' + filterId.charAt(0).toUpperCase() + filterId.slice(1), values);
+                }
+            }
         }
 
         function setComboDynamicOptions(controlId, values) {
@@ -5391,64 +5399,7 @@ const BRAND_TONE = {
             if (resetPage) listCurrentPage = 1;
             initFilterOptions();
 
-            // 获取 combo box 筛选值（返回数组），搜索框仍用 text input
-            const getCombo = (id) => getComboValues('filter' + id.charAt(0).toUpperCase() + id.slice(1));
-            const filterMargin = getCombo('margin');
-            const filterProductType = getCombo('productType');
-            const filterBrandLevel = getCombo('brandLevel');
-            const filterStockStatus = getCombo('stockStatus');
-            const filterSupplier = getCombo('supplier');
-            const filterShipFrom = getCombo('shipFrom');
-            const filterStockType = getCombo('stockType');
-            const filterSearch = (document.getElementById('filterSearch')?.value || '').toLowerCase();
-            const filterCategory = getCombo('category');
-            const filterBrand = getCombo('brand');
-            const filterOrigin = getCombo('origin');
-            const filterSugarFree = getCombo('sugarFree');
-            const filterOrganic = getCombo('organic');
-            const filterFreightIncluded = getCombo('freightIncluded');
-            const filterDefaultExpress = getCombo('defaultExpress');
-
-            // 筛选
-            let filtered = products.filter(p => {
-                // 毛利率筛选（多选OR：选中low=毛利率<25%, mid=25-35%, high=≥35%）
-                if (filterMargin.length > 0) {
-                    const margin = parseFloat(calculateMargin(p.retailPrice, p.purchasePrice));
-                    let ok = false;
-                    if (filterMargin.includes('low') && margin < 25) ok = true;
-                    if (filterMargin.includes('mid') && margin >= 25 && margin < 35) ok = true;
-                    if (filterMargin.includes('high') && margin >= 35) ok = true;
-                    if (!ok) return false;
-                }
-                if (filterProductType.length > 0 && !filterProductType.includes(p.productType || '普通')) return false;
-                if (filterBrandLevel.length > 0 && !filterBrandLevel.includes(p.brandLevel)) return false;
-                if (filterStockStatus.length > 0 && !filterStockStatus.includes(p.stockStatus)) return false;
-                if (filterSupplier.length > 0 && !filterSupplier.includes(p.supplierId)) return false;
-                if (filterShipFrom.length > 0 && !filterShipFrom.includes(p.shipFrom)) return false;
-                if (filterStockType.length > 0 && !filterStockType.includes(p.stockType)) return false;
-                if (filterCategory.length > 0 && !filterCategory.includes(p.majorCategory)) return false;
-                if (filterBrand.length > 0 && !filterBrand.includes(p.brand)) return false;
-                if (filterOrigin.length > 0 && !filterOrigin.includes(p.origin)) return false;
-                if (filterSugarFree.length > 0 && !filterSugarFree.includes(String(p.isSugarFree))) return false;
-                if (filterOrganic.length > 0 && !filterOrganic.includes(String(p.isOrganic))) return false;
-                if (filterFreightIncluded.length > 0 && !filterFreightIncluded.includes(String(p.freightIncluded))) return false;
-                if (filterDefaultExpress.length > 0 && !filterDefaultExpress.includes(p.defaultExpress)) return false;
-                if (filterSearch && !p.name.toLowerCase().includes(filterSearch) &&
-                    !p.sku.toLowerCase().includes(filterSearch) &&
-                    !(p.barcode && p.barcode.includes(filterSearch))) return false;
-
-                // 动态条件行（AND）
-                for (const cond of window._conditionRows) {
-                    if (!cond.value || cond.value.trim() === '') {
-                        // 为空/不为空 不需要输入值，其余运算符跳过
-                        if (cond.op !== 'empty' && cond.op !== 'notEmpty') continue;
-                    }
-                    const val = getProductFieldValue(p, cond.field);
-                    if (!matchCondition(val, cond.op, cond.value)) return false;
-                }
-
-                return true;
-            });
+            let filtered = getFilteredProducts();
 
             // 保存筛选结果，计算分页
             listFiltered = filtered;
