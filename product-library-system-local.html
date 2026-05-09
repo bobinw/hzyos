@@ -1851,7 +1851,7 @@
         const SYSTEM_FIELDS = {
             core: ['供应商ID', '供应商SKU', '商品名称', '大类', '品类', '单位'],
             spec: ['产品条码', '外箱条码', '箱规', '内配', '包装形式', '产品尺寸', '整箱尺寸', '单品规格', '单品重量', '整箱重量'],
-            product: ['品牌', '品牌级别', '价格', '调性', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码'],
+            product: ['品牌', '品牌级别', '价格', '调性', '产地', '保质期', '配料表', '是否无糖', '是否有机', '税收编码', '风格调性', '档次等级', '适用场景', '价格定位'],
             price: ['集采价', '零售价', '渠道价', '团购价', '集采毛利率', '代发价', '代发运费', '代发毛利率', '京东顺丰代发价', '京东顺丰代发运费', '京东顺丰代发毛利率'],
             delivery: ['发货地', '运费包含', '不包邮区域', '默认快递公司'],
             supply: ['库存类型', '备货状态', '最小起订量', '产品类型', '支持代发', '价格有效期'],
@@ -2807,6 +2807,22 @@
                 ],
                 filterField: 'brandLevel'
             },
+            styleTag: {
+                id: 'styleTag', label: '风格调性', type: 'dynamicSelect', group: 'product',
+                filterField: 'styleTag'
+            },
+            highEndAttribute: {
+                id: 'highEndAttribute', label: '档次等级', type: 'dynamicSelect', group: 'product',
+                filterField: 'highEndAttribute'
+            },
+            sceneTag: {
+                id: 'sceneTag', label: '适用场景', type: 'dynamicSelect', group: 'product',
+                filterField: 'sceneTag'
+            },
+            pricePosition: {
+                id: 'pricePosition', label: '价格定位', type: 'dynamicSelect', group: 'product',
+                filterField: 'pricePosition'
+            },
             stockType: {
                 id: 'stockType', label: '库存类型', type: 'select', group: 'supply',
                 options: [
@@ -2913,6 +2929,10 @@
             isSugarFree: { id: 'isSugarFree', label: '是否无糖', type: 'field', field: 'isSugarFree', width: '80px', format: (v) => v === true || v === 'true' ? '是' : '否' },
             isOrganic: { id: 'isOrganic', label: '是否有机', type: 'field', field: 'isOrganic', width: '80px', format: (v) => v === true || v === 'true' ? '是' : '否' },
             taxCode: { id: 'taxCode', label: '税收编码', type: 'field', field: 'taxCode', width: '120px' },
+            styleTag: { id: 'styleTag', label: '风格调性', type: 'field', field: 'styleTag', width: '80px' },
+            highEndAttribute: { id: 'highEndAttribute', label: '档次等级', type: 'field', field: 'highEndAttribute', width: '80px' },
+            sceneTag: { id: 'sceneTag', label: '适用场景', type: 'field', field: 'sceneTag', width: '120px' },
+            pricePosition: { id: 'pricePosition', label: '价格定位', type: 'field', field: 'pricePosition', width: '80px' },
             // 价格
             retailPrice: { id: 'retailPrice', label: '零售价', type: 'price', field: 'retailPrice', width: '70px' },
             purchasePrice: { id: 'purchasePrice', label: '集采价', type: 'price', field: 'purchasePrice', width: '70px' },
@@ -2956,7 +2976,7 @@
 
         const DEFAULT_COLUMN_CONFIG = {
             visibleColumns: ['checkbox', 'supplierId', 'brand', 'name', 'retailPrice', 'purchasePrice', 'normalExpressPrice', 'purchaseMargin', 'dropshipMargin', 'actions'],
-            hiddenColumns: ['sku', 'majorCategory', 'category', 'unit', 'barcode', 'boxBarcode', 'boxSpec', 'innerConfig', 'productSize', 'boxSize', 'weight', 'grossWeight', 'boxWeight', 'brandLevel', 'origin', 'shelfLife', 'ingredients', 'isSugarFree', 'isOrganic', 'taxCode', 'channelPrice', 'groupPrice', 'dropshipFreight', 'jdsfExpressPrice', 'jdsfExpressFreight', 'jdsfExpressMargin', 'shipFrom', 'freightIncluded', 'noPostArea', 'defaultExpress', 'stockType', 'stockStatus', 'moq', 'productType', 'supportsDropship', 'priceExpiry', 'jdLink', 'jdPrice', 'tbLink', 'tbPrice', 'pddLink', 'pddPrice', 'mainImage', 'detailImages']
+            hiddenColumns: ['sku', 'majorCategory', 'category', 'unit', 'barcode', 'boxBarcode', 'boxSpec', 'innerConfig', 'productSize', 'boxSize', 'weight', 'grossWeight', 'boxWeight', 'brandLevel', 'origin', 'shelfLife', 'ingredients', 'isSugarFree', 'isOrganic', 'taxCode', 'styleTag', 'highEndAttribute', 'sceneTag', 'pricePosition', 'channelPrice', 'groupPrice', 'dropshipFreight', 'jdsfExpressPrice', 'jdsfExpressFreight', 'jdsfExpressMargin', 'shipFrom', 'freightIncluded', 'noPostArea', 'defaultExpress', 'stockType', 'stockStatus', 'moq', 'productType', 'supportsDropship', 'priceExpiry', 'jdLink', 'jdPrice', 'tbLink', 'tbPrice', 'pddLink', 'pddPrice', 'mainImage', 'detailImages']
         };
 
         let userFilterConfig = JSON.parse(JSON.stringify(DEFAULT_FILTER_CONFIG));
@@ -5634,6 +5654,10 @@ const BRAND_TONE = {
                 shipFrom: { type: 'datalist', options: [...new Set(products.map(p => p.shipFrom).filter(Boolean))] },
                 origin: { type: 'datalist', options: [...new Set(products.map(p => p.origin).filter(Boolean))] },
                 brandLevel: { type: 'datalist', options: [...new Set(products.map(p => p.brandLevel).filter(Boolean))] },
+                styleTag: { type: 'datalist', options: [...new Set(products.map(p => p.styleTag).filter(Boolean))] },
+                highEndAttribute: { type: 'datalist', options: [...new Set(products.map(p => p.highEndAttribute).filter(Boolean))] },
+                sceneTag: { type: 'datalist', options: [...new Set(products.map(p => p.sceneTag).filter(Boolean))] },
+                pricePosition: { type: 'datalist', options: [...new Set(products.map(p => p.pricePosition).filter(Boolean))] },
                 stockType: { type: 'datalist', options: [...new Set(products.map(p => p.stockType).filter(Boolean))] },
                 stockStatus: { type: 'datalist', options: [...new Set(products.map(p => p.stockStatus).filter(Boolean))] },
                 unit: { type: 'datalist', options: [...new Set(products.map(p => p.unit).filter(Boolean))] },
