@@ -2916,7 +2916,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                 for (const cheap of avail) {
                     if (arr.some(sp => sp.id === cheap.id)) continue;
                     const newTotal = total - calcQuote(exp) + calcQuote(cheap);
-                    if (newTotal <= maxB) {
+                    if (newTotal < total) {
                         const idx = arr.findIndex(p => p.id === exp.id);
                         if (idx >= 0) { arr[idx] = cheap; total = newTotal; }
                         break;
@@ -3106,6 +3106,18 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                 let picked = prods.find(p => !usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id));
                 if (!picked) picked = prods[0];
                 if (picked) { selectedProducts.push(picked); usedMainProducts.add(picked.id); }
+            }
+        }
+
+        // 预算预检：策略选品可能严重超预算（如轻奢全选高价品），先重建为最便宜组合
+        const preCheckTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
+        if (preCheckTotal > maxBudget * 1.5) {
+            selectedProducts = [];
+            for (const cat of cats) {
+                const cheapest = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
+                if (cheapest && !selectedProducts.some(p => p.id === cheapest.id)) {
+                    selectedProducts.push(cheapest);
+                }
             }
         }
 
