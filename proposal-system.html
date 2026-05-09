@@ -2239,14 +2239,14 @@ async function generateProposalsFromParams(projectId) {
 
     // 预估供货价系数，与 adjustToBudget 用同一口径
     const estMargin = 1 - (sp.targetMargin || 20) / 100;
-    const maxPP = budget * 1.1; // maxBudget：方案总价上限
+    const maxProductPrice = budget * 0.5; // 单品上限：不超过预算的50%，防止一骑绝尘
     const estQuote = (p) => p.purchasePrice / estMargin;
 
     // 使用用户选中的大类（如果没有选中则用全部品类）
     const selectedCats = (sp.selectedCategories && sp.selectedCategories.length > 0)
         ? sp.selectedCategories
         : allCats;
-    // 候选过滤：预估供货价 ≤ maxPP + 毛利率达标（零售价封顶时有效毛利率可能 < 目标）
+    // 候选过滤：单品 ≤50%预算 + 预估供货价 ≤110%预算 + 毛利率达标
     const targetMarginDecimal = (sp.targetMargin || 20) / 100;
     const meetsMargin = (p) => {
         if (p.retailPrice <= 0) return true;
@@ -2255,8 +2255,8 @@ async function generateProposalsFromParams(projectId) {
     };
     const seen = new Set(); let candidates = [];
     selectedCats.forEach(cat => {
-        products.filter(p => sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
-        products.filter(p => !sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxProductPrice && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => !sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxProductPrice && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
     });
     if (candidates.length < 3) { alert('符合条件的商品太少'); return; }
 
