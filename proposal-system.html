@@ -325,7 +325,7 @@
 <script>
 // ========== IndexedDB 数据库（与商品库共享） ==========
 const DB_NAME = 'ProductLibraryDB';
-const DB_VERSION = 7;
+const DB_VERSION = 8;
 let db = null;
 
 // ========== 数据变量 ==========
@@ -461,11 +461,13 @@ async function loadSetting(key) {
 
 async function saveSetting(key, value) {
     return new Promise((resolve, reject) => {
-        if (!db) { reject('DB未初始化'); return; }
+        if (!db) { reject(new Error('DB未初始化')); return; }
         const tx = db.transaction(['settings'], 'readwrite');
         const store = tx.objectStore('settings');
-        const req = store.put({ key, value });
-        req.onsuccess = () => resolve(value); req.onerror = () => reject(req.error);
+        store.put({ key, value });
+        tx.oncomplete = () => resolve(value);
+        tx.onerror = () => reject(tx.error || new Error('保存设置失败'));
+        tx.onabort = () => reject(new Error('事务被中止'));
     });
 }
 
@@ -2037,7 +2039,12 @@ function showSelectionPage(project) {
         proposalCount: project.proposalCount || 6,
         selectedCategories: [],
         minProducts: 0,
-        maxProducts: 0
+        maxProducts: 0,
+        scenePreference: [],
+        tierPreference: '',
+        stylePreference: [],
+        brandLevelPreference: [],
+        brandStylePreference: []
     };
     const sp = project.selectionParams;
     // 8大固定大类（与产品库majorCategory字段一致）
@@ -2077,16 +2084,46 @@ function showSelectionPage(project) {
                 <h3 class="font-medium mb-3">⚙️ 选品参数 <span class="text-xs text-gray-400">(可编辑)</span></h3>
                 <div class="space-y-3 text-sm">
                     <div>
-                        <label class="text-xs text-gray-500">选中品牌 ${sp.selectedBrands.length > 0 ? '(' + sp.selectedBrands.length + '个)' : ''}</label>
-                        <div class="flex flex-wrap gap-1 mt-1" id="param-brands-${project.id}">
-                            ${sp.selectedBrands.map(b => `<span class="tag bg-purple-50 text-purple-700 text-xs cursor-pointer" onclick="removeSelectionBrand(${project.id},'${b.replace(/'/g,"\\'")}')" title="点击删除">${b} ×</span>`).join('')}
+                        <label class="text-xs text-gray-500">场景偏好</label>
+                        <div class="flex flex-wrap gap-1 mt-1" id="param-scene-${project.id}">
+                            ${['端午','中秋','春节','三八','夏日','年终','生日','日常'].map(s => {
+                                const active = (sp.scenePreference || []).includes(s);
+                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'scenePreference','${s}')">${s}</span>`;
+                            }).join('')}
                         </div>
-                        <div class="flex gap-1 mt-1">
-                            <select id="add-brand-select-${project.id}" class="border rounded px-2 py-1 text-xs flex-1">
-                                <option value="">添加品牌...</option>
-                                ${brandList.filter(b => !sp.selectedBrands.includes(b)).map(b => `<option value="${b.replace(/"/g,'&quot;')}">${b}</option>`).join('')}
-                            </select>
-                            <button onclick="addSelectionBrand(${project.id})" class="px-2 py-1 bg-blue-500 text-white rounded text-xs">+</button>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500">档次偏好</label>
+                        <select id="param-tier-${project.id}" class="w-full border rounded px-2 py-1 text-sm mt-1" onchange="updateSelectionParam(${project.id},'tierPreference',this.value)">
+                            <option value="">不限</option>
+                            ${['亲民','中端','中高端','高端'].map(t => `<option value="${t}" ${sp.tierPreference === t ? 'selected' : ''}>${t}</option>`).join('')}
+                        </select>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500">风格偏好</label>
+                        <div class="flex flex-wrap gap-1 mt-1" id="param-style-${project.id}">
+                            ${['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'].map(s => {
+                                const active = (sp.stylePreference || []).includes(s);
+                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'stylePreference','${s}')">${s}</span>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500">品牌级别偏好</label>
+                        <div class="flex flex-wrap gap-1 mt-1" id="param-brandlevel-${project.id}">
+                            ${['全国一线品牌','地方品牌','进口品牌','老字号'].map(s => {
+                                const active = (sp.brandLevelPreference || []).includes(s);
+                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'brandLevelPreference','${s}')">${s}</span>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-500">品牌调性偏好</label>
+                        <div class="flex flex-wrap gap-1 mt-1" id="param-brandstyle-${project.id}">
+                            ${['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'].map(s => {
+                                const active = (sp.brandStylePreference || []).includes(s);
+                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'brandStylePreference','${s}')">${s}</span>`;
+                            }).join('')}
                         </div>
                     </div>
                     <div class="flex gap-3">
@@ -2162,6 +2199,18 @@ function updateSelectionCategories(projectId) {
     saveAllData();
 }
 
+function toggleSelectionArray(projectId, key, value) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    const arr = project.selectionParams[key] || [];
+    const idx = arr.indexOf(value);
+    if (idx >= 0) arr.splice(idx, 1);
+    else arr.push(value);
+    project.selectionParams[key] = arr;
+    saveAllData();
+    showSelectionPage(project);
+}
+
 function removeSelectionBrand(projectId, brandName) {
     const project = findProject(projectId);
     if (!project || !project.selectionParams) return;
@@ -2186,21 +2235,40 @@ async function getAISelectionSuggestion(projectId) {
     if (!aiSettings.apiKey) { alert('请先配置 AI API Key'); return; }
     const el = document.getElementById(`ai-suggestion-${projectId}`);
     el.innerHTML = '<div class="animate-pulse text-xs text-gray-400">AI 分析中...</div>';
-    const categories = extractCategoriesFromRequirement(project.structuredRequirement || '');
-    const brandInfoList = brandList.map(brand => {
-        const ps = products.filter(p => p.brand === brand);
-        return { name: brand, cats: [...new Set(ps.map(p => p.majorCategory).filter(Boolean))], count: ps.length };
-    });
+    const allCats = MAJOR_CATEGORIES;
     try {
         const response = await callAI([
-            { role: 'system', content: `你是团购选品顾问。根据客户需求推荐品牌和产品选择方向。返回JSON: {"brands":["品牌1"],"categoryAdvice":{"食品":{"priceRange":"X-Y元","note":"说明"}},"rationale":"理由"}` },
-            { role: 'user', content: `## 需求\n${project.structuredRequirement}\n\n## 品牌\n${JSON.stringify(brandInfoList.slice(0, 60))}\n\n请给选品建议。` }
+            { role: 'system', content: `你是团购选品顾问。根据客户需求分析，输出结构化的选品参数。只返回JSON，不返回其他内容。
+
+JSON格式：
+{
+  "scene": ["端午","中秋","春节","三八","夏日","年终","生日","日常"], // 适用场景，从可选值中选
+  "tier": "中高端", // 档次偏好：亲民/中端/中高端/高端，可不选则留空
+  "style": ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"], // 产品风格，从可选值中选
+  "brandLevel": ["全国一线品牌","地方品牌","进口品牌","老字号"], // 品牌级别偏好
+  "brandStyle": ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"], // 品牌调性偏好
+  "budget": 200, // 人均预算建议
+  "margin": 20, // 毛利率建议
+  "categories": ["食品饮料"], // 推荐大类，可选${allCats.join('/')}
+  "rationale": "简要分析理由，2-3句话"
+}
+
+注意：不要返回具体品牌名或产品名，只返回属性偏好。` },
+            { role: 'user', content: `## 客户需求\n${project.structuredRequirement || project.requirement || ''}\n\n请分析并输出结构化选品参数。` }
         ], { temperature: 0.7, maxTokens: 2048 });
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
         if (result) {
             project.aiSuggestion = result;
-            if (result.brands) project.selectionParams.selectedBrands = result.brands;
+            const sp = project.selectionParams;
+            if (result.scene) sp.scenePreference = result.scene;
+            if (result.tier) sp.tierPreference = result.tier;
+            if (result.style) sp.stylePreference = result.style;
+            if (result.brandLevel) sp.brandLevelPreference = result.brandLevel;
+            if (result.brandStyle) sp.brandStylePreference = result.brandStyle;
+            if (result.budget) sp.budget = result.budget;
+            if (result.margin) sp.targetMargin = result.margin;
+            if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
             await saveAllData();
             showSelectionPage(project);
         }
@@ -2227,8 +2295,6 @@ async function generateProposalsFromParams(projectId) {
     const project = findProject(projectId);
     if (!project || products.length === 0) return;
     const sp = project.selectionParams;
-    if (!sp.selectedBrands || sp.selectedBrands.length === 0) { alert('请先选择品牌'); return; }
-    project.selectedBrands = sp.selectedBrands;
     project.targetMargin = sp.targetMargin;
     project.budgetPerPerson = sp.budget;
     project.constraints = [{ field: '毛利率', operator: '≥', value: '' + sp.targetMargin }];
@@ -2257,14 +2323,13 @@ async function generateProposalsFromParams(projectId) {
     };
     const seen = new Set(); let candidates = [];
     selectedCats.forEach(cat => {
-        products.filter(p => sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) >= minProductPrice && estQuote(p) <= maxProductPrice && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
-        products.filter(p => !sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) >= minProductPrice && estQuote(p) <= maxProductPrice && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) >= minProductPrice && estQuote(p) <= maxProductPrice && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
     });
     if (candidates.length < 3) { alert('符合条件的商品太少'); return; }
 
     // 适配打分：给每个候选品按集采权重打分，策略选品时优先高分
     candidates.forEach(p => {
-        p._score = scoreProduct(p, budget, sp.targetMargin || 20, estMargin, expectedMinCount, project.structuredRequirement || '');
+        p._score = scoreProduct(p, budget, sp.targetMargin || 20, estMargin, expectedMinCount, sp);
     });
     console.log(`候选品 ${candidates.length} 个，分数范围 ${Math.min(...candidates.map(p => p._score))}-${Math.max(...candidates.map(p => p._score))}`);
 
@@ -2393,50 +2458,62 @@ function buildProductSummary(candidates) {
 }
 
 // ========== 产品适配打分（简化集采权重，满分100） ==========
-function matchScene(requirementText, sceneTag) {
-    if (!requirementText || !sceneTag) return 0;
-    const text = requirementText.toLowerCase();
-    const scenes = sceneTag.split(/[,，、\s]+/).filter(Boolean);
-    const keywords = {
-        '端午': ['端午', '粽子', '粽'],
-        '中秋': ['中秋', '月饼', '月'],
-        '春节': ['春节', '过年', '年货', '新年', '新春'],
-        '三八': ['三八', '妇女', '女神', '女生'],
-        '夏日': ['夏日', '夏天', '清凉', '消暑', '夏季'],
-        '年终': ['年终', '年末', '年底'],
-        '生日': ['生日', '诞辰'],
-        '日常': ['日常', '慰问', '福利']
-    };
+function matchScene(scenePreference, sceneTag) {
+    if (!sceneTag) return 0;
+    if (!scenePreference || scenePreference.length === 0) return 0;
+    const productScenes = sceneTag.split(/[,，、\s]+/).filter(Boolean);
     let matched = 0;
-    for (const scene of scenes) {
-        const kws = keywords[scene] || [scene];
-        if (kws.some(kw => text.includes(kw))) matched++;
+    for (const prefScene of scenePreference) {
+        if (productScenes.includes(prefScene)) matched++;
     }
     return matched;
 }
 
-function scoreProduct(p, budget, targetMargin, estMargin, expectedMinCount, requirementText) {
+function scoreProduct(p, budget, targetMargin, estMargin, expectedMinCount, selectionParams) {
     let score = 0;
     const targetMarginDecimal = targetMargin / 100;
     const estQuote = p.purchasePrice / estMargin;
     const avgPrice = budget / Math.max(expectedMinCount, 1);
     const actualQuote = (p.retailPrice > 0 && estQuote > p.retailPrice) ? p.retailPrice : estQuote;
     const actualMargin = actualQuote > 0 ? (actualQuote - p.purchasePrice) / actualQuote : 0;
+    const sp = selectionParams || {};
 
     // 1. 预算匹配 25分：距均分价格越近越高
     const deviation = avgPrice > 0 ? Math.abs(actualQuote - avgPrice) / avgPrice : 1;
     score += Math.round(Math.max(0, 25 - deviation * 30));
 
-    // 2. 品牌风格 20分
+    // 2. 品牌风格 20分：按用户偏好动态赋分
     const bl = (p.brandLevel || '');
-    if (bl.includes('一线') || bl.includes('老字号')) score += 10;
-    else if (bl.includes('二线') || bl.includes('国民')) score += 7;
-    else if (bl.includes('地方') || bl.includes('进口')) score += 5;
-    else score += 3;
-    const style = (p.styleTag || p.brandStyle || '');
-    if (style && !style.includes('大众') && !style.includes('亲民')) score += 5;
-    const tone = getBrandTone(p.brand);
-    if (tone && !tone.includes('大众') && !tone.includes('性价比')) score += 5;
+    const blPref = sp.brandLevelPreference || [];
+    if (blPref.length > 0) {
+        let blScore = 3;
+        const blNorm = bl.replace('全国', '').replace('品牌', '');
+        if (blPref.some(pref => blNorm.includes(pref.replace('全国', '').replace('品牌', '')))) blScore = 10;
+        else if (bl.includes('一线') || bl.includes('老字号')) blScore = 7;
+        else if (bl.includes('二线') || bl.includes('国民')) blScore = 5;
+        score += blScore;
+    } else {
+        if (bl.includes('一线') || bl.includes('老字号')) score += 10;
+        else if (bl.includes('二线') || bl.includes('国民')) score += 7;
+        else if (bl.includes('地方') || bl.includes('进口')) score += 5;
+        else score += 3;
+    }
+    const pStyle = (p.brandStyle || '');
+    const stylePref = sp.stylePreference || [];
+    if (stylePref.length > 0) {
+        if (stylePref.some(s => pStyle.includes(s))) score += 10;
+        else if (pStyle) score += 3;
+        else score += 1;
+    } else {
+        if (pStyle) score += 5;
+        const tone = getBrandTone(p.brand);
+        if (tone && !tone.includes('大众') && !tone.includes('性价比')) score += 5;
+    }
+    const bsPref = sp.brandStylePreference || [];
+    if (bsPref.length > 0) {
+        const tone = getBrandTone(p.brand);
+        if (tone && bsPref.some(s => tone.includes(s))) score += 5;
+    }
 
     // 3. 价格毛利 20分
     if (actualMargin >= targetMarginDecimal + 0.05) score += 10;
@@ -2457,17 +2534,33 @@ function scoreProduct(p, budget, targetMargin, estMargin, expectedMinCount, requ
     else if (lt > 0 && lt <= 14) score += 1;
 
     // 5. 场景匹配 10分
-    const sceneMatch = matchScene(requirementText, p.sceneTag);
-    if (sceneMatch >= 2) score += 10;
-    else if (sceneMatch >= 1) score += 8;
-    else score += 5;
+    const scenePref = sp.scenePreference || [];
+    if (scenePref.length > 0) {
+        const sceneMatch = matchScene(scenePref, p.sceneTag);
+        if (sceneMatch >= 2) score += 10;
+        else if (sceneMatch >= 1) score += 8;
+        else score += 3;
+    } else {
+        score += 5;
+    }
 
     // 6. 档次匹配 5分
     const att = (p.highEndAttribute || '');
-    if (att.includes('高端')) score += 5;
-    else if (att.includes('中高端')) score += 4;
-    else if (att.includes('中端')) score += 3;
-    else score += 1;
+    const tierPref = sp.tierPreference || '';
+    const tiers = ['亲民', '中端', '中高端', '高端'];
+    if (tierPref) {
+        const pIdx = tiers.indexOf(att);
+        const tIdx = tiers.indexOf(tierPref);
+        if (pIdx === tIdx) score += 5;
+        else if (Math.abs(pIdx - tIdx) === 1) score += 3;
+        else if (pIdx >= 0) score += 1;
+        else score += 2;
+    } else {
+        if (att.includes('高端')) score += 5;
+        else if (att.includes('中高端')) score += 4;
+        else if (att.includes('中端')) score += 3;
+        else score += 1;
+    }
 
     // 7. 合规资质 5分：暂全员满分
     score += 5;
@@ -2689,12 +2782,6 @@ async function generateProposals(projectId) {
     if (!project) return;
     if (products.length === 0) { alert('商品库为空，请先在商品库中导入商品数据'); return; }
 
-    // 检查是否已选品牌
-    if (!project.selectedBrands || project.selectedBrands.length === 0) {
-        alert('请先点击"AI选品牌"选择品牌');
-        return;
-    }
-
     // 收集约束
     const constraintRows = document.querySelectorAll(`#constraint-rows-${projectId} .flex`);
     project.constraints = [];
@@ -2715,51 +2802,31 @@ async function generateProposals(projectId) {
     document.getElementById(`proposal-grid-${projectId}`).innerHTML = `
         <div class="col-span-3 text-center py-8">
             <div class="animate-spin text-4xl mb-4">🤖</div>
-            <div class="text-gray-500">AI 正在精选产品...</div>
-            <div class="text-xs text-gray-400 mt-2">从 ${project.selectedBrands.length} 个品牌中选品：${project.selectedBrands.slice(0, 5).join('、')}${project.selectedBrands.length > 5 ? '...' : ''}</div>
+            <div class="text-gray-500">算法正在精选产品...</div>
         </div>`;
-    console.log('生成方案 - 选中品牌:', project.selectedBrands);
 
     // 预筛选商品：放宽条件，给算法更多选择空间
     const budget = project.budgetPerPerson || 200;
     const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
     const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
-    const targetMargin = effectiveMargin / 100;
-    const maxPurchasePrice = budget * 0.9; // 放宽：采购价不超预算90%
+    const maxPurchasePrice = budget * 0.9;
     console.log('生成方案 - 目标毛利率:', effectiveMargin + '%');
 
     // 提取需求品类
     const requiredCategories = extractCategoriesFromRequirement(project.structuredRequirement || '');
 
-    // 按品类分组，优先选中品牌
-    const candidatesByCategory = {};
-
-    requiredCategories.forEach(cat => {
-        // 选中品牌的该品类商品（放宽价格限制）
-        const selectedBrandProds = products.filter(p =>
-            project.selectedBrands.includes(p.brand) &&
-            majorCategoryMatch(p.majorCategory, cat) &&
-            p.purchasePrice > 0 &&
-            p.purchasePrice <= maxPurchasePrice
-        );
-        // 非选中品牌的该品类商品（补充）
-        const otherProds = products.filter(p =>
-            !project.selectedBrands.includes(p.brand) &&
-            majorCategoryMatch(p.majorCategory, cat) &&
-            p.purchasePrice > 0 &&
-            p.purchasePrice <= maxPurchasePrice
-        );
-        candidatesByCategory[cat] = [...selectedBrandProds, ...otherProds];
-    });
-
-    // 合并去重
+    // 按品类分组，所有品牌均参与
     const seen = new Set();
     let candidates = [];
-    for (const [cat, prods] of Object.entries(candidatesByCategory)) {
-        for (const p of prods) {
+    requiredCategories.forEach(cat => {
+        products.filter(p =>
+            majorCategoryMatch(p.majorCategory, cat) &&
+            p.purchasePrice > 0 &&
+            p.purchasePrice <= maxPurchasePrice
+        ).forEach(p => {
             if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); }
-        }
-    }
+        });
+    });
 
     // 约束筛选
     project.constraints.forEach(c => {
@@ -2775,7 +2842,7 @@ async function generateProposals(projectId) {
     console.log(`预筛选完成: ${totalCandidates} 个候选商品，${requiredCategories.length} 个品类`, requiredCategories);
 
     if (candidates.length < 3) {
-        alert('符合条件的商品太少，请调整品牌选择或约束条件');
+        alert('符合条件的商品太少，请调整品类选择或约束条件');
         project.status = 'requirement_ready';
         await saveAllData();
         showSelectionPage(project);
@@ -2799,7 +2866,6 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
     const marginFactor = 1 - effectiveMargin / 100;
     const minBudget = budget * 0.9;
     const maxBudget = budget * 1.1;
-    const selectedBrands = project.selectedBrands || [];
     // 计算每个产品的实际供货价
     const calcQuote = (p) => {
         let q = p.purchasePrice / marginFactor;
@@ -2807,16 +2873,12 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         return Math.round(q * 100) / 100;
     };
 
-    // 按品类分组，优先选中品牌
+    // 按品类分组
     const byCategory = {};
     for (const p of candidates) {
         const cat = p.majorCategory || '其他';
-        if (!byCategory[cat]) byCategory[cat] = { selected: [], other: [] };
-        if (selectedBrands.includes(p.brand)) {
-            byCategory[cat].selected.push(p);
-        } else {
-            byCategory[cat].other.push(p);
-        }
+        if (!byCategory[cat]) byCategory[cat] = [];
+        byCategory[cat].push(p);
     }
 
     // 使用传入的品类选择（如果有），否则使用全部品类
@@ -2828,10 +2890,10 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
     const ppMin = parseInt(minProducts) > 0 ? parseInt(minProducts) : cats.length;
     const ppMax = parseInt(maxProducts) > 0 ? parseInt(maxProducts) : Math.max(cats.length * 2, cats.length);
 
-    // 为每个品类构建可选产品列表（优先选中品牌）
+    // 为每个品类构建可选产品列表（按分数排序）
     const catProducts = {};
     for (const cat of cats) {
-        catProducts[cat] = [...byCategory[cat].selected, ...byCategory[cat].other];
+        catProducts[cat] = [...(byCategory[cat] || [])];
     }
 
     // 生成所有品类×1的组合（每个品类至少1个）
@@ -2944,14 +3006,12 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
     }
 
     const usedMainProducts = new Set();
+    const usedProductSets = new Set(); // 跨方案去重：记录已使用的产品ID组合
 
-    // 品牌优先：selected brand 产品排前面，非选中品牌排后面（各自内部按 sortFn 排序）
+    // 分数优先、价格辅助排序：高分品优先入选，同分再按价格策略排
     const getCatProds = (cat, sortFn) => {
-        // 分数优先、价格辅助排序：高分品优先入选，同分再按价格策略排
         const sortWithScore = (a, b) => (b._score || 0) - (a._score || 0) || sortFn(a, b);
-        const sel = [...(byCategory[cat]?.selected || [])].sort(sortWithScore);
-        const oth = [...(byCategory[cat]?.other || [])].sort(sortWithScore);
-        return [...sel, ...oth];
+        return [...(byCategory[cat] || [])].sort(sortWithScore);
     };
 
     // 预算强制调整（三轮兜底）
@@ -2999,23 +3059,56 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                 }
             }
         } else if (total > maxB && arr.length > 1) {
-            // 总价太高：把最贵的替换为便宜的，或直接移除
-            const sorted = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
+            // 总价太高：优先替换为便宜的，尽量不减少产品数
             const avail = candidates
                 .filter(p => !arr.some(sp => sp.id === p.id))
                 .sort((a, b) => calcQuote(a) - calcQuote(b));
+            // 第1轮：逐产品替换为同品类更便宜的
+            const sorted = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
             for (const exp of sorted) {
                 if (total <= maxB) break;
-                for (const cheap of avail) {
-                    if (arr.some(sp => sp.id === cheap.id)) continue;
-                    const newTotal = total - calcQuote(exp) + calcQuote(cheap);
-                    if (newTotal < total) {
-                        const idx = arr.findIndex(p => p.id === exp.id);
-                        if (idx >= 0) { arr[idx] = cheap; total = newTotal; }
-                        break;
-                    }
+                const cat = exp.majorCategory;
+                const cheapAlt = avail.find(p => calcQuote(p) < calcQuote(exp) && total - calcQuote(exp) + calcQuote(p) <= maxB);
+                if (cheapAlt) {
+                    const idx = arr.findIndex(p => p.id === exp.id);
+                    if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(cheapAlt); arr[idx] = cheapAlt; }
+                    continue;
                 }
-                if (total > maxB && arr.length > ppMin) {
+                // 同品类找不到，试试跨品类替换（只要能降价）
+                const anyCheap = avail.find(p => calcQuote(p) < calcQuote(exp) && total - calcQuote(exp) + calcQuote(p) <= maxB);
+                if (anyCheap) {
+                    const idx = arr.findIndex(p => p.id === exp.id);
+                    if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(anyCheap); arr[idx] = anyCheap; }
+                    continue;
+                }
+            }
+            // 第2轮：仍超预算，尝试把最贵的替换为两个更便宜的
+            if (total > maxB) {
+                const sorted2 = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
+                for (const exp of sorted2) {
+                    if (total <= maxB) break;
+                    const cat = exp.majorCategory;
+                    const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
+                    // 找一个便宜的替换品 + 一个额外产品腾预算空间
+                    const alt = avail.find(p => calcQuote(p) < calcQuote(exp) && p.majorCategory === cat);
+                    if (!alt) continue;
+                    const newTotalNoAdd = total - calcQuote(exp) + calcQuote(alt);
+                    if (newTotalNoAdd <= maxB) {
+                        const idx = arr.findIndex(p => p.id === exp.id);
+                        if (idx >= 0) { total = newTotalNoAdd; arr[idx] = alt; }
+                        continue;
+                    }
+                    // 还是超：换成便宜的 + 再找一个更便宜的换掉另一个贵的
+                }
+            }
+            // 第3轮：最后手段 — 移除产品（但保留每品类至少1个 + 不低于ppMin）
+            if (total > maxB && arr.length > ppMin) {
+                const sorted3 = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
+                for (const exp of sorted3) {
+                    if (total <= maxB || arr.length <= ppMin) break;
+                    const cat = exp.majorCategory;
+                    const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
+                    if (sameCatCnt <= 1) continue; // 保留品类唯一产品
                     const idx = arr.findIndex(p => p.id === exp.id);
                     if (idx >= 0) { total -= calcQuote(exp); arr.splice(idx, 1); }
                 }
@@ -3044,17 +3137,52 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         let total = arr.reduce((s, p) => s + calcQuote(p), 0);
         const absMin = cats.length; // 至少每品类一个
 
-        // 太少：每次动态找当前能放进预算的最便宜产品，最多加到 minN
+        // 太少：三阶段补足
+        // 阶段1：在预算内找最便宜的产品加进来
         while (arr.length < minN) {
             let best = null, bestPrice = Infinity;
             for (const p of candidates) {
                 if (arr.some(sp => sp.id === p.id)) continue;
                 const add = calcQuote(p);
-                if (total + add <= maxBudget && add < bestPrice) {
-                    best = p; bestPrice = add;
+                if (total + add <= maxBudget && add < bestPrice) { best = p; bestPrice = add; }
+            }
+            if (best) { arr.push(best); total += bestPrice; continue; }
+            // 阶段2：预算内加不进，尝试把最贵产品替换为更便宜的，腾出预算再加
+            let freed = false;
+            const sortedByPrice = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
+            for (const exp of sortedByPrice) {
+                if (arr.length <= absMin) break;
+                const cat = exp.majorCategory;
+                const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
+                if (sameCatCnt <= 1) continue; // 保留品类唯一产品
+                // 找一个更便宜的替代品 + 一个能塞进去的新品
+                const avail = candidates
+                    .filter(p => !arr.some(sp => sp.id === p.id))
+                    .sort((a, b) => calcQuote(a) - calcQuote(b));
+                const cheapAlt = avail.find(p => calcQuote(p) < calcQuote(exp) && p.majorCategory === cat);
+                if (!cheapAlt) continue;
+                const budgetLeft = maxBudget - (total - calcQuote(exp) + calcQuote(cheapAlt));
+                const extra = avail.find(p => p.id !== cheapAlt.id && calcQuote(p) <= budgetLeft);
+                if (extra) {
+                    const idx = arr.findIndex(p => p.id === exp.id);
+                    total = total - calcQuote(exp) + calcQuote(cheapAlt) + calcQuote(extra);
+                    arr[idx] = cheapAlt; arr.push(extra);
+                    freed = true;
+                    break;
                 }
             }
-            if (best) { arr.push(best); total += bestPrice; } else break;
+            if (freed) continue;
+            // 阶段3：放宽预算到 maxBudget*1.1，确保最少产品数达标
+            let best2 = null, bestPrice2 = Infinity;
+            for (const p of candidates) {
+                if (arr.some(sp => sp.id === p.id)) continue;
+                const add = calcQuote(p);
+                if (total + add <= maxBudget * 1.1 && add < bestPrice2) { best2 = p; bestPrice2 = add; }
+            }
+            if (best2 && arr.length < minN) {
+                arr.push(best2); total += bestPrice2;
+                console.warn(`产品数不足，放宽预算至${(maxBudget*1.1).toFixed(0)}以达标minN=${minN}`);
+            } else break;
         }
 
         // 太多：移除最低价的冗余产品（保留每品类至少一个，不跌破预算下限）
@@ -3134,7 +3262,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         } else if (strategy.sameBrand) {
             const brandCount = {};
             // 只统计选中品牌
-            for (const p of candidates.filter(c => selectedBrands.includes(c.brand))) {
+            for (const p of candidates) {
                 brandCount[p.brand] = (brandCount[p.brand] || 0) + 1;
                 const catSet = brandCount[p.brand + '__cats'] || new Set();
                 catSet.add(p.majorCategory);
@@ -3148,7 +3276,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                     bestCoverage = catCoverage; bestBrand = brand;
                 }
             }
-            if (!bestBrand && selectedBrands.length > 0) bestBrand = selectedBrands[0];
+            if (!bestBrand) bestBrand = candidates[0]?.brand;
             if (bestBrand) {
                 for (const cat of cats) {
                     const p = catProducts[cat].find(p => p.brand === bestBrand && !selectedProducts.some(sp => sp.id === p.id));
@@ -3246,9 +3374,49 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         }
 
         if (selectedProducts.length === 0) {
-            selectedProducts = candidates.filter(c => selectedBrands.includes(c.brand)).slice(0, Math.max(ppMin, 1));
-            if (selectedProducts.length === 0) selectedProducts = candidates.slice(0, Math.max(ppMin, 1));
+            selectedProducts = candidates.slice(0, Math.max(ppMin, 1));
         }
+
+        // 跨方案去重：检测产品ID组合是否与已有方案重复，重复则尝试替换
+        const productKey = selectedProducts.map(p => p.id).sort().join(',');
+        if (usedProductSets.has(productKey)) {
+            console.log(`方案${i + 1} 产品组合与已有方案重复，尝试差异化...`);
+            // 尝试逐个品类替换为次优产品
+            for (let attempt = 0; attempt < 3; attempt++) {
+                let replaced = false;
+                for (let ci = 0; ci < cats.length; ci++) {
+                    const cat = cats[ci];
+                    const currentInCat = selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat));
+                    if (currentInCat.length === 0) continue;
+                    const altProds = getCatProds(cat, (a, b) => (b._score || 0) - (a._score || 0));
+                    const alt = altProds.find(p => !selectedProducts.some(sp => sp.id === p.id));
+                    if (alt) {
+                        // 替换该品类第一个产品
+                        const oldIdx = selectedProducts.findIndex(p => p.id === currentInCat[0].id);
+                        if (oldIdx >= 0) {
+                            selectedProducts[oldIdx] = alt;
+                            replaced = true;
+                            // 预算重调 + 产品数约束
+                            const reAdj = adjustToBudget(selectedProducts, minBudget, maxBudget);
+                            selectedProducts = adjustProductCount(reAdj.products, ppMin, ppMax).products;
+                        }
+                    }
+                }
+                const newKey = selectedProducts.map(p => p.id).sort().join(',');
+                if (!usedProductSets.has(newKey)) {
+                    console.log(`  第${attempt + 1}次尝试成功差异化`);
+                    break;
+                }
+                if (!replaced) break; // 无产品可替换，放弃
+            }
+        }
+
+        const finalKey = selectedProducts.map(p => p.id).sort().join(',');
+        if (usedProductSets.has(finalKey)) {
+            console.warn(`方案${i + 1} 无法差异化，跳过（与已有方案重复）`);
+            continue;
+        }
+        usedProductSets.add(finalKey);
 
         // 去重
         const seenIds = new Set();
@@ -3420,14 +3588,6 @@ function renderProposalModal(pp, editMode) {
                 </table>
             </div>
 
-            ${!editMode ? (() => {
-                const nonSelectedBrands = pp.products.filter(p => !project?.selectedBrands?.includes(p.brand)).map(p => p.brand);
-                const uniqueNonSelected = [...new Set(nonSelectedBrands)];
-                return uniqueNonSelected.length > 0 ? `
-                <div class="bg-yellow-50 border border-yellow-200 rounded-lg p-3 mb-4">
-                    <p class="text-sm text-yellow-700">⚠️ 以下品牌不在选中列表内（系统自动补充）：${uniqueNonSelected.join('、')}</p>
-                </div>` : '';
-            })() : ''}
 
             <div class="bg-gray-50 rounded-lg p-4">
                 <h4 class="font-medium mb-2 text-sm">推荐理由</h4>
@@ -4310,8 +4470,18 @@ async function saveAISettings() {
     aiSettings.enableBid = document.getElementById('ai-enable-bid')?.checked || false;
     // Kimi API
     aiSettings.kimiApiKey = document.getElementById('kimi-api-key')?.value?.trim() || '';
-    await saveSetting('aiSettings', aiSettings);
-    alert('AI 设置已保存');
+    try {
+        if (!db) {
+            console.warn('DB连接丢失，尝试重新连接...');
+            await initDB();
+        }
+        await saveSetting('aiSettings', aiSettings);
+        console.log('AI设置已保存到 IndexedDB:', { ...aiSettings, apiKey: aiSettings.apiKey ? '***' : '' });
+        alert('AI 设置已保存');
+    } catch (e) {
+        console.error('保存AI设置失败:', e);
+        alert('保存失败: ' + (e.message || e));
+    }
 }
 
 function resetAISettings() {
