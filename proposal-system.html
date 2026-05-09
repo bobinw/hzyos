@@ -2924,7 +2924,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         }
 
         // 兜底：从 allCombos 找绝对最接近预算的（且产品数在范围内）
-        if ((total < minB * 0.7 || total > maxB * 1.3) && allCombos.length > 0) {
+        if ((total < minB || total > maxB) && allCombos.length > 0) {
             let best = null, bestDiff = Infinity;
             const target = (minB + maxB) / 2;
             for (const c of allCombos) {
@@ -3111,6 +3111,19 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         const countAdjusted = adjustProductCount(selectedProducts, ppMin, ppMax);
         selectedProducts = countAdjusted.products;
 
+        // 最终预算复核：adjustProductCount 可能把总价推出范围
+        const finalCheckTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
+        if (finalCheckTotal < minBudget || finalCheckTotal > maxBudget) {
+            const reAdjusted = adjustToBudget(selectedProducts, minBudget, maxBudget);
+            selectedProducts = reAdjusted.products;
+        }
+        // 兜底警告：即使 allCombos fallback 也用尽，仍可能偏出范围
+        const verifyTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
+        const verifyUtil = budget > 0 ? (verifyTotal / budget * 100) : 0;
+        if (verifyUtil < 90 || verifyUtil > 110) {
+            console.warn(`方案${i + 1} 预算偏差: 总价=${verifyTotal.toFixed(2)}, 利用率=${verifyUtil.toFixed(1)}% (目标 90-110%)`);
+        }
+
         if (selectedProducts.length === 0) {
             selectedProducts = candidates.filter(c => selectedBrands.includes(c.brand)).slice(0, Math.max(1, cats.length));
             if (selectedProducts.length === 0) selectedProducts = candidates.slice(0, Math.max(1, cats.length));
@@ -3188,7 +3201,9 @@ function renderProposalCards(projectId) {
 
     grid.innerHTML = proposalsForProject.map(pp => {
         const marginColor = pp.overallMargin >= (findProject(projectId)?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
-        const budgetWarning = pp.budgetUtilization < 90 ? '<span class="tag bg-red-100 text-red-600 ml-2">预算不足</span>' : '';
+        let budgetWarning = '';
+        if (pp.budgetUtilization < 90) budgetWarning = '<span class="tag bg-red-100 text-red-600 ml-2">预算不足</span>';
+        else if (pp.budgetUtilization > 110) budgetWarning = '<span class="tag bg-yellow-100 text-yellow-700 ml-2">超预算</span>';
         return `
         <div class="proposal-card border rounded-lg p-4 hover:shadow-lg cursor-pointer bg-white" onclick="viewProposal(${pp.id})">
             <div class="flex justify-between items-start mb-2">
