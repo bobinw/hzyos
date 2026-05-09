@@ -2246,11 +2246,17 @@ async function generateProposalsFromParams(projectId) {
     const selectedCats = (sp.selectedCategories && sp.selectedCategories.length > 0)
         ? sp.selectedCategories
         : allCats;
-    // 候选过滤：用预估供货价（与 adjustToBudget 同口径）
+    // 候选过滤：预估供货价 ≤ maxPP + 毛利率达标（零售价封顶时有效毛利率可能 < 目标）
+    const targetMarginDecimal = (sp.targetMargin || 20) / 100;
+    const meetsMargin = (p) => {
+        if (p.retailPrice <= 0) return true;
+        if (p.purchasePrice / estMargin <= p.retailPrice) return true;
+        return (p.retailPrice - p.purchasePrice) / p.retailPrice >= targetMarginDecimal;
+    };
     const seen = new Set(); let candidates = [];
     selectedCats.forEach(cat => {
-        products.filter(p => sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
-        products.filter(p => !sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => !sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
     });
     if (candidates.length < 3) { alert('符合条件的商品太少'); return; }
 
@@ -2916,7 +2922,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                         break;
                     }
                 }
-                if (total > maxB && arr.length > cats.length) {
+                if (total > maxB && arr.length > ppMin) {
                     const idx = arr.findIndex(p => p.id === exp.id);
                     if (idx >= 0) { total -= calcQuote(exp); arr.splice(idx, 1); }
                 }
@@ -2928,8 +2934,8 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             let best = null, bestDiff = Infinity;
             const target = (minB + maxB) / 2;
             for (const c of allCombos) {
-                if (minProducts > 0 && c.length < minProducts) continue;
-                if (maxProducts > 0 && c.length > maxProducts) continue;
+                if (c.length < ppMin) continue;
+                if (c.length > ppMax) continue;
                 const diff = Math.abs(c._totalQuote - target);
                 if (diff < bestDiff) { bestDiff = diff; best = c; }
             }
@@ -3117,16 +3123,26 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             const reAdjusted = adjustToBudget(selectedProducts, minBudget, maxBudget);
             selectedProducts = reAdjusted.products;
         }
+        // 预算调整后重新约束产品数
+        const countRecheck = adjustProductCount(selectedProducts, ppMin, ppMax);
+        selectedProducts = countRecheck.products;
+
         // 兜底警告：即使 allCombos fallback 也用尽，仍可能偏出范围
         const verifyTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
         const verifyUtil = budget > 0 ? (verifyTotal / budget * 100) : 0;
         if (verifyUtil < 90 || verifyUtil > 110) {
             console.warn(`方案${i + 1} 预算偏差: 总价=${verifyTotal.toFixed(2)}, 利用率=${verifyUtil.toFixed(1)}% (目标 90-110%)`);
         }
+        // 毛利率兜底校验
+        const verifyCost = selectedProducts.reduce((s, p) => s + p.purchasePrice, 0);
+        const verifyMargin = verifyTotal > 0 ? (verifyTotal - verifyCost) / verifyTotal : 0;
+        if (verifyMargin < effectiveMargin / 100) {
+            console.warn(`方案${i + 1} 毛利率偏差: ${(verifyMargin * 100).toFixed(1)}% < ${effectiveMargin}%`);
+        }
 
         if (selectedProducts.length === 0) {
-            selectedProducts = candidates.filter(c => selectedBrands.includes(c.brand)).slice(0, Math.max(1, cats.length));
-            if (selectedProducts.length === 0) selectedProducts = candidates.slice(0, Math.max(1, cats.length));
+            selectedProducts = candidates.filter(c => selectedBrands.includes(c.brand)).slice(0, Math.max(ppMin, 1));
+            if (selectedProducts.length === 0) selectedProducts = candidates.slice(0, Math.max(ppMin, 1));
         }
 
         // 去重
