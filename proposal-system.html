@@ -325,7 +325,7 @@
 <script>
 // ========== IndexedDB 数据库（与商品库共享） ==========
 const DB_NAME = 'ProductLibraryDB';
-const DB_VERSION = 6;
+const DB_VERSION = 7;
 let db = null;
 
 // ========== 数据变量 ==========
@@ -396,7 +396,13 @@ function initDB() {
     return new Promise((resolve, reject) => {
         const request = indexedDB.open(DB_NAME, DB_VERSION);
         request.onerror = () => { console.error('DB打开失败:', request.error); reject(request.error); };
-        request.onsuccess = () => { db = request.result; console.log('方案系统DB连接成功'); resolve(db); };
+        request.onblocked = () => { console.error('DB升级被阻塞：请关闭其他已打开此系统的标签页'); alert('数据库升级被阻塞\n\n请关闭所有已打开"商品库"或"方案系统"的标签页，然后刷新此页面。'); };
+        request.onsuccess = () => {
+            db = request.result;
+            db.onclose = () => { console.warn('DB连接被强制关闭'); db = null; };
+            db.onversionchange = () => { db.close(); db = null; console.warn('DB版本变更，连接已关闭'); };
+            console.log('方案系统DB连接成功 (V' + DB_VERSION + ')'); resolve(db);
+        };
         request.onupgradeneeded = (event) => {
             const database = event.target.result;
             if (!database.objectStoreNames.contains('products')) database.createObjectStore('products', { keyPath: 'id' });
@@ -409,29 +415,24 @@ function initDB() {
             if (!database.objectStoreNames.contains('excelTemplates')) database.createObjectStore('excelTemplates', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('customers')) database.createObjectStore('customers', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('brandTones')) database.createObjectStore('brandTones', { keyPath: 'brand' });
-            console.log('方案系统DB结构创建完成');
+            if (!database.objectStoreNames.contains('productImages')) database.createObjectStore('productImages', { keyPath: 'productId' });
+            console.log('方案系统DB结构创建完成 (V' + DB_VERSION + ')');
         };
     });
 }
 
 function saveToDB(storeName, data) {
     return new Promise((resolve, reject) => {
-        if (!db) { reject('DB未初始化'); return; }
+        if (!db) { reject(new Error('DB未初始化')); return; }
         const tx = db.transaction([storeName], 'readwrite');
         const store = tx.objectStore(storeName);
+        tx.oncomplete = () => resolve();
+        tx.onerror = () => reject(tx.error || new Error('事务失败'));
+        tx.onabort = () => reject(new Error('事务被中止'));
         if (Array.isArray(data)) {
-            const cr = store.clear();
-            cr.onsuccess = () => {
-                const adds = data.map(item => new Promise((ra, rj) => {
-                    const req = store.add(item);
-                    req.onsuccess = () => ra(); req.onerror = () => rj(req.error);
-                }));
-                Promise.all(adds).then(() => resolve(adds.length)).catch(reject);
-            };
-            cr.onerror = () => reject(cr.error);
+            data.forEach(item => store.put(item));
         } else {
-            const req = store.put(data);
-            req.onsuccess = () => resolve(data); req.onerror = () => reject(req.error);
+            store.put(data);
         }
     });
 }
@@ -486,6 +487,7 @@ async function saveAllData() {
         return true;
     } catch (e) {
         console.error('保存失败:', e);
+        alert('保存失败: ' + (e?.message || e));
         return false;
     }
 }
@@ -2033,17 +2035,23 @@ function showSelectionPage(project) {
         targetMargin: project.targetMargin || 20,
         budget: project.budgetPerPerson || 200,
         proposalCount: project.proposalCount || 6,
-        categoryCount: 0,
+        selectedCategories: [],
         minProducts: 0,
         maxProducts: 0
     };
     const sp = project.selectionParams;
-    const allCats = sp.categories?.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
-    sp.categories = allCats;
-    // 品类数默认=全部，产品数默认=品类数×1.5（至少品类数+1）
-    if (!sp.categoryCount || sp.categoryCount <= 0) sp.categoryCount = allCats.length;
-    if (!sp.minProducts || sp.minProducts <= 0) sp.minProducts = allCats.length;
-    if (!sp.maxProducts || sp.maxProducts <= 0) sp.maxProducts = Math.min(allCats.length + 1, allCats.length * 2);
+    // 8大固定大类（与产品库majorCategory字段一致）
+    const allCats = MAJOR_CATEGORIES;
+    // 需求中识别到的大类用于预勾选
+    const requirementCats = sp.categories?.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
+    sp.categories = requirementCats;
+    // 选中大类默认=需求识别到的（如果为空则全选）
+    if (!sp.selectedCategories || sp.selectedCategories.length === 0) {
+        sp.selectedCategories = requirementCats.length > 0 ? [...requirementCats] : [...allCats];
+    }
+    const effectiveCatCount = sp.selectedCategories.length || allCats.length;
+    if (!sp.minProducts || sp.minProducts <= 0) sp.minProducts = effectiveCatCount;
+    if (!sp.maxProducts || sp.maxProducts <= 0) sp.maxProducts = Math.min(effectiveCatCount + 1, effectiveCatCount * 2);
 
     let html = `
     <div class="flex items-center gap-4 mb-6">
@@ -2095,10 +2103,15 @@ function showSelectionPage(project) {
                         <label class="text-xs text-gray-500">方案数量</label>
                         <input type="number" id="param-count-${project.id}" value="${sp.proposalCount}" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'proposalCount',parseInt(this.value))">
                     </div>
-                    <div class="flex gap-3">
-                        <div class="flex-1">
-                            <label class="text-xs text-gray-500">覆盖品类数</label>
-                            <input type="number" id="param-catcount-${project.id}" value="${sp.categoryCount}" min="1" max="${allCats.length}" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'categoryCount',parseInt(this.value))">
+                    <div>
+                        <label class="text-xs text-gray-500">覆盖大类 <span class="text-gray-400">(${allCats.length}个)</span></label>
+                        <div id="param-cats-${project.id}" class="border rounded p-2 max-h-32 overflow-y-auto space-y-1 mt-1">
+                            ${allCats.map(cat => `
+                                <label class="flex items-center gap-1.5 text-sm cursor-pointer hover:bg-gray-50 rounded px-1">
+                                    <input type="checkbox" value="${cat}" ${sp.selectedCategories.includes(cat) ? 'checked' : ''} onchange="updateSelectionCategories(${project.id})" class="rounded">
+                                    ${cat}
+                                </label>
+                            `).join('')}
                         </div>
                     </div>
                     <div class="flex gap-3">
@@ -2137,6 +2150,15 @@ function updateSelectionParam(projectId, key, value) {
     const project = findProject(projectId);
     if (!project || !project.selectionParams) return;
     project.selectionParams[key] = value;
+    saveAllData();
+}
+
+function updateSelectionCategories(projectId) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    const container = document.getElementById(`param-cats-${projectId}`);
+    if (!container) return;
+    project.selectionParams.selectedCategories = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
     saveAllData();
 }
 
@@ -2211,7 +2233,6 @@ async function generateProposalsFromParams(projectId) {
     project.budgetPerPerson = sp.budget;
     project.constraints = [{ field: '毛利率', operator: '≥', value: '' + sp.targetMargin }];
     const count = sp.proposalCount || 6, budget = sp.budget || 200;
-    const categoryCount = sp.categoryCount || 0;
     const minProducts = sp.minProducts || 0;
     const maxProducts = sp.maxProducts || 0;
     const allCats = sp.categories.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
@@ -2221,22 +2242,15 @@ async function generateProposalsFromParams(projectId) {
     const maxPP = budget * 1.1; // maxBudget：方案总价上限
     const estQuote = (p) => p.purchasePrice / estMargin;
 
-    // 按选中品牌的候选商品数排序品类（选中品牌优先，总数次之），排除无候选的品类
-    const catCandidateCounts = allCats.map(cat => {
-        const selCnt = products.filter(p => sp.selectedBrands.includes(p.brand) && categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).length;
-        const allCnt = products.filter(p => categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).length;
-        return { cat, selCnt, allCnt };
-    }).filter(cc => cc.selCnt + cc.allCnt > 0)
-      .sort((a, b) => (b.selCnt - a.selCnt) || (b.allCnt - a.allCnt));
-    const effectiveCatCount = Math.min(categoryCount > 0 ? categoryCount : catCandidateCounts.length, catCandidateCounts.length);
-    const selectedCats = effectiveCatCount < catCandidateCounts.length
-        ? catCandidateCounts.slice(0, effectiveCatCount).map(c => c.cat)
-        : catCandidateCounts.map(c => c.cat);
+    // 使用用户选中的大类（如果没有选中则用全部品类）
+    const selectedCats = (sp.selectedCategories && sp.selectedCategories.length > 0)
+        ? sp.selectedCategories
+        : allCats;
     // 候选过滤：用预估供货价（与 adjustToBudget 同口径）
     const seen = new Set(); let candidates = [];
     selectedCats.forEach(cat => {
-        products.filter(p => sp.selectedBrands.includes(p.brand) && categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
-        products.filter(p => !sp.selectedBrands.includes(p.brand) && categoryMatches(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        products.filter(p => !sp.selectedBrands.includes(p.brand) && majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= maxPP).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
     });
     if (candidates.length < 3) { alert('符合条件的商品太少'); return; }
 
@@ -2364,7 +2378,14 @@ function buildProductSummary(candidates) {
     }));
 }
 
-// ========== 品类映射（V8: 18大品类体系 — 同步自商品库版本） ==========
+// ========== 8大类（与产品库 majorCategory 字段精确匹配） ==========
+const MAJOR_CATEGORIES = ['食品饮料', '生鲜特产', '健康养护', '日化个护', '家居家电', '运动户外', '企业定制', '卡券文娱'];
+
+function majorCategoryMatch(productCat, selectedCat) {
+    return productCat === selectedCat;
+}
+
+// ========== 品类映射（需求分析用——从需求文本提取大类关键词） ==========
 const CATEGORY_MAP = {
     '食品饮料': ['大米', '米', '面', '粉', '粮油', '食用油', '面条', '面粉', '杂粮', '五谷', '粗粮', '小米', '糯米', '黑米', '糙米', '高粱', '荞麦', '藜麦', '绿豆', '红豆', '黄豆', '黑豆', '芸豆', '豌豆', '鹰嘴豆', '玉米', '紫薯', '红薯', '山药', '南瓜', '芝麻', '香油', '麻油', '菜籽油', '花生油', '橄榄油', '核桃油', '亚麻籽油', '山茶油', '调味', '调味品', '蚝油', '生抽', '老抽', '料酒', '陈醋', '香醋', '白醋', '味精', '鸡精', '淀粉', '酵母', '火锅底料', '蘸料', '辣酱', '豆瓣酱', '芝麻酱', '花生酱', '番茄酱', '沙拉酱', '果酱', '调料', '酱料', '零食', '小吃', '饼干', '糖果', '巧克力', '肉脯', '膨化', '薯片', '薯条', '锅巴', '爆米花', '肉干', '肉松', '牛肉干', '猪肉脯', '鸭脖', '鸭翅', '鸭舌', '凤爪', '鸡爪', '卤味', '卤', '解馋', '零嘴', '饮料', '咖啡', '可可', '奶茶', '果汁', '椰子水', '椰汁', '杏仁露', '核桃露', '豆奶', '豆浆', '酸梅汤', '凉茶', '汽水', '可乐', '气泡', '苏打', '矿泉水', '纯净水', '功能饮料', '运动饮料', '茶饮', '果茶', '花茶饮', '柠檬茶', '电解质', 'NFC', '冷萃', '挂耳', '咖啡液', '冻干粉', '即饮', '饮用', '椰乳', '厚椰乳', '生椰', '植物饮', '沙棘汁', '西梅汁', '杨梅汁', '气泡水', '冲泡', '速食', '即食', '代餐', '燕麦', '麦片', '藕粉', '芝麻糊', '螺蛳粉', '酸辣粉', '方便面', '方便粉', '拌面', '拉面', '挂面', '米线', '米粉', '罐头', '坚果', '夏威夷果', '巴旦木', '开心果', '碧根果', '腰果', '核桃', '松子', '榛子', '瓜子', '花生', '板栗', '杏仁', '炒货', '每日坚果', '混合坚果', '糕点', '曲奇', '蛋黄酥', '月饼', '蛋糕', '蛋黄派', '凤梨酥', '榴莲酥', '蝴蝶酥', '桃酥', '麻薯', '沙琪玛', '威化', '华夫', '蛋卷', '面包', '吐司', '蛋挞', '马卡龙', '酥饼', '烘焙', '焙烤', '麻花', '绿豆糕', '桂花糕', '云片糕', '米糕', '千层酥', '牛舌饼', '老婆饼', '老公饼', '粽子', '粽礼', '粽香', '月韵', '月宴', '年糕', '汤圆', '青团', '饺子', '馄饨', '包子', '馒头', '烧卖', '春卷', '八宝饭', '糍粑', '蜜饯', '果脯', '果干', '葡萄干', '话梅', '杨梅', '山楂', '梅子', '乌梅', '青梅', '芒果干', '草莓干', '蓝莓干', '蔓越莓', '柠檬干', '椰子干', '香蕉干', '桂圆干', '陈皮', '金桔', '牛奶', '纯奶', '高钙奶', '有机奶', '儿童奶', '酸奶', '羊奶', '驼奶', '鲜牛奶', '鲜奶', '巴氏', '乳制品', '奶粉', '乳粉', '奶昔', '奶酥', '奶片', '奶条', '奶贝', '奶酪', '芝士', '黄油', '奶油', '炼乳', '乳酪', '干酪', '乳', '奶'],
     '生鲜特产': ['水果', '苹果', '橙', '车厘子', '榴莲', '蛋类', '咸蛋', '皮蛋', '鸡蛋', '鸭蛋', '鹌鹑', '松花蛋', '咸鸭蛋', '蛋黄', '蛋制品', '鲜果', '生鲜', '牛排', '鸡翅', '虾仁', '鱼丸', '冻品', '冷冻', '速冻', '冰鲜', '冷鲜', '虾滑', '鱼片', '肉卷', '肥牛', '羊肉卷', '火锅食材', '半成品菜', '料理包', '冻肉', '特产', '腊味', '腊肉', '腊肠', '香肠', '红肠', '火腿肠', '火腿', '培根', '午餐肉', '肉制品', '畜禽', '熟食', '腌腊', '风干', '牛肉', '猪肉', '羊肉', '鸡肉', '鸭肉', '鹅肉', '鸽子', '卤蛋', '烧鸡', '烤鸭', '酱鸭', '酱肉', '熏肉', '熏肠', '肉枣', '潮汕', '牛肉丸', '海产', '海鲜', '海味', '海珍', '干贝', '虾皮', '虾米', '海米', '蚝干', '蛤蜊', '蛏干', '鲍鱼', '海参', '鱿鱼', '墨鱼', '章鱼', '紫菜', '海带', '海苔', '裙带菜', '龙须菜', '鱼干', '鱼片', '鱼松', '鱼丸', '虾丸', '鱼糜', '水产', '地方特色', '家乡味', '地道', '正宗', '特产食品', '非遗食品', '地理标志', '老字号', '中华老字号'],
@@ -2620,14 +2641,14 @@ async function generateProposals(projectId) {
         // 选中品牌的该品类商品（放宽价格限制）
         const selectedBrandProds = products.filter(p =>
             project.selectedBrands.includes(p.brand) &&
-            categoryMatches(p.majorCategory, cat) &&
+            majorCategoryMatch(p.majorCategory, cat) &&
             p.purchasePrice > 0 &&
             p.purchasePrice <= maxPurchasePrice
         );
         // 非选中品牌的该品类商品（补充）
         const otherProds = products.filter(p =>
             !project.selectedBrands.includes(p.brand) &&
-            categoryMatches(p.majorCategory, cat) &&
+            majorCategoryMatch(p.majorCategory, cat) &&
             p.purchasePrice > 0 &&
             p.purchasePrice <= maxPurchasePrice
         );
@@ -2839,22 +2860,6 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         let total = selected.reduce((s, p) => s + calcQuote(p), 0);
         if (total >= minB && total <= maxB) return { products: [...selected], total };
 
-        // 先尝试 allCombos 里找最接近目标预算的组合（且产品数在范围内）
-        if (allCombos.length > 0) {
-            let best = null, bestDiff = Infinity;
-            const target = (minB + maxB) / 2;
-            for (const c of allCombos) {
-                // 如果有产品数范围要求，跳过不符合的
-                if (minProducts > 0 && c.length < minProducts) continue;
-                if (maxProducts > 0 && c.length > maxProducts) continue;
-                const diff = Math.abs(c._totalQuote - target);
-                if (diff < bestDiff) { bestDiff = diff; best = c; }
-            }
-            if (best && best._totalQuote >= minB && best._totalQuote <= maxB) {
-                return { products: [...best], total: best._totalQuote };
-            }
-        }
-
         const arr = [...selected];
         if (total < minB && arr.length > 0) {
             // 从贵到便宜追加产品，减少产品数增长
@@ -3054,7 +3059,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             // 补足缺失品类（优先选中品牌）
             if (selectedProducts.length < cats.length) {
                 for (const cat of cats) {
-                    if (!selectedProducts.some(p => categoryMatches(p.majorCategory, cat))) {
+                    if (!selectedProducts.some(p => majorCategoryMatch(p.majorCategory, cat))) {
                         const p = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
                         if (p && !selectedProducts.some(sp => sp.id === p.id)) selectedProducts.push(p);
                     }
