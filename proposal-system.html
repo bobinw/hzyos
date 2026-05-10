@@ -24,6 +24,15 @@
         .proposal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
         .tag { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
+        .chat-image-thumb { max-width: 260px; max-height: 200px; border-radius: 8px; cursor: pointer; border: 1px solid #e5e7eb; }
+        .chat-image-thumb:hover { border-color: #3b82f6; }
+        .chat-file-bubble { background: #fef3c7; }
+        .chat-supplement-bubble { background: #f3e8ff; border-left: 3px solid #a855f7; }
+        .chat-input-toolbar-btn { padding: 4px 10px; border: 1px solid #d1d5db; border-radius: 6px; font-size: 12px; background: white; cursor: pointer; }
+        .chat-input-toolbar-btn:hover { background: #f3f4f6; }
+        .sidebar-tab { flex: 1; padding: 8px 4px; font-size: 12px; font-weight: 500; text-align: center; border-bottom: 2px solid transparent; cursor: pointer; background: white; }
+        .sidebar-tab.active { border-bottom-color: #2563eb; color: #2563eb; }
+        .sidebar-tab:not(.active) { color: #9ca3af; }
     </style>
 </head>
 <body class="bg-gray-50 min-h-screen">
@@ -34,8 +43,8 @@
                 <h1 class="font-bold text-lg">智能方案系统</h1>
             </div>
             <nav class="p-2 flex-1">
-                <a onclick="showPage('page-projects')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-projects">📋 项目列表</a>
                 <a onclick="showPage('page-customers')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-customers">👥 客户管理</a>
+                <a onclick="showPage('page-projects')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-projects">📋 项目管理</a>
                 <a onclick="showPage('page-brands')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-brands">🏷️ 品牌调性</a>
                 <a onclick="showPage('page-templates')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-templates">📄 方案模板</a>
                 <a onclick="showPage('page-ai-settings')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-ai-settings">⚙️ AI设置</a>
@@ -135,16 +144,34 @@
                     <div class="flex flex-1 overflow-hidden">
                         <div class="flex-1 flex flex-col">
                             <div class="flex-1 overflow-y-auto p-4 space-y-2" id="chat-messages"></div>
-                            <div class="border-t p-4 bg-white">
+                            <div class="border-t p-3 bg-white">
+                                <div class="flex gap-2 mb-2">
+                                    <button onclick="triggerFileUpload()" class="chat-input-toolbar-btn" title="上传文件（Excel/CSV/TXT）">📎 上传文件</button>
+                                    <span class="text-xs text-gray-400 self-center ml-auto">支持 Ctrl+V 粘贴截图</span>
+                                </div>
                                 <div class="flex gap-2">
                                     <input type="text" id="chat-input" class="flex-1 border rounded-lg px-4 py-2 text-sm" placeholder="输入回复..." onkeydown="if(event.key==='Enter')sendChatMessage()">
                                     <button onclick="sendChatMessage()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">发送</button>
                                 </div>
+                                <input type="file" id="chat-file-input" accept=".xlsx,.xls,.csv,.txt" style="display:none" multiple onchange="handleChatFileSelected(event)">
                             </div>
                         </div>
-                        <div class="w-80 border-l bg-gray-50 p-4 overflow-y-auto" id="chat-summary-panel">
-                            <h4 class="text-sm font-medium mb-3">需求摘要</h4>
-                            <div id="chat-summary" class="text-xs text-gray-500">对话中逐步提取...</div>
+                        <div class="w-80 border-l bg-gray-50 overflow-y-auto flex flex-col" id="chat-summary-panel">
+                            <div class="flex border-b bg-white flex-shrink-0">
+                                <button class="sidebar-tab active" id="sidebar-tab-summary" onclick="switchChatSidebarTab('summary')">📊 需求摘要</button>
+                                <button class="sidebar-tab" id="sidebar-tab-supplement" onclick="switchChatSidebarTab('supplement')">📝 补充信息</button>
+                            </div>
+                            <div id="sidebar-content-summary" class="p-4 overflow-y-auto flex-1">
+                                <div id="chat-summary" class="text-xs text-gray-500">对话中逐步提取...</div>
+                            </div>
+                            <div id="sidebar-content-supplement" class="p-4 overflow-y-auto flex-1" style="display:none">
+                                <label class="text-xs text-gray-500 block mb-1">补充额外需求信息（非对话形式的补充说明）</label>
+                                <textarea id="supplement-textarea" class="w-full h-40 border rounded p-2 text-xs resize-none" placeholder="例如：&#10;- 物流必须发顺丰&#10;- 包装不能有品牌logo&#10;- 决策人偏好进口品牌"></textarea>
+                                <div class="flex items-center gap-2 mt-2">
+                                    <button onclick="saveSupplementaryInfo()" class="px-3 py-1.5 bg-purple-600 text-white rounded text-xs hover:bg-purple-700">💾 保存补充信息</button>
+                                    <span id="supplement-saved-hint" class="text-xs text-green-600" style="display:none">已保存</span>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -289,8 +316,8 @@
     <div id="modal-new-project" class="modal">
         <div class="modal-content w-xl max-h-[85vh] overflow-y-auto">
             <div class="flex justify-between items-center mb-4">
-                <h3 class="text-lg font-bold">新建团购方案项目</h3>
-                <button onclick="closeModal('modal-new-project')" class="text-gray-400 hover:text-gray-600">✕</button>
+                <h3 class="text-lg font-bold" id="modal-project-title">新建团购方案项目</h3>
+                <button onclick="editingProjectId = null; closeModal('modal-new-project')" class="text-gray-400 hover:text-gray-600">✕</button>
             </div>
             <div id="modal-new-project-form"></div>
         </div>
@@ -344,6 +371,7 @@ let nextCustomerId = 1;
 
 // 当前编辑状态
 let currentProjectId = null;
+let editingProjectId = null;
 let currentEditingTemplateId = null;
 let currentEditingTemplateType = 'ppt'; // 'ppt' | 'excel'
 
@@ -390,6 +418,7 @@ function getBrandTone(brand) {
 // 动态品牌调性（从商品库提取并由AI分析）
 let brandTones = {};  // { "品牌名": "调性标签" }
 let brandList = [];   // 从商品库提取的品牌列表
+let supplierList = []; // 从商品库提取的供应商列表 [{id, name, productCount}]
 
 // ========== 数据库操作 ==========
 function initDB() {
@@ -593,6 +622,19 @@ async function init() {
     const brandSet = new Set();
     products.forEach(p => { if (p.brand && p.brand.trim()) brandSet.add(p.brand.trim()); });
     brandList = Array.from(brandSet).sort();
+    // 从商品库提取供应商列表（supplierId 即供应商名）
+    const supplierMap = new Map();
+    products.forEach(p => {
+        const sid = p.supplierId || p.supplierName;
+        if (sid) {
+            if (!supplierMap.has(sid)) {
+                supplierMap.set(sid, { id: sid, name: sid, productCount: 1 });
+            } else {
+                supplierMap.get(sid).productCount++;
+            }
+        }
+    });
+    supplierList = Array.from(supplierMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     // 迁移客户数据
     await migrateCustomers();
     renderProjectList();
@@ -993,9 +1035,13 @@ function renderProjectList() {
                     </div>
                     ${p.structuredRequirement ? `<div class="mt-2 text-xs text-gray-400 line-clamp-2">${p.structuredRequirement.substring(0, 120)}...</div>` : ''}
                 </div>
-                <div class="text-right ml-4">
-                    <div class="text-lg font-bold text-blue-600">${proposalCount}</div>
-                    <div class="text-xs text-gray-400">方案数</div>
+                <div class="text-right ml-4 flex items-start gap-1">
+                    <button onclick="event.stopPropagation(); editProject(${p.id})" class="text-xs text-gray-400 hover:text-blue-600 p-1" title="编辑">✏️</button>
+                    <button onclick="event.stopPropagation(); deleteProject(${p.id})" class="text-xs text-gray-400 hover:text-red-600 p-1" title="删除">🗑️</button>
+                    <div class="ml-2">
+                        <div class="text-lg font-bold text-blue-600">${proposalCount}</div>
+                        <div class="text-xs text-gray-400">方案数</div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -1065,7 +1111,7 @@ function filterCustomerList() {
 
 function showNewCustomerModal(fromProjectForm = false) {
     const formHTML = `
-    <form onsubmit="event.preventDefault(); saveCustomer(${fromProjectForm});" class="space-y-4">
+    <form class="space-y-4">
         <div class="grid grid-cols-2 gap-3">
             <div class="col-span-2">
                 <label class="block text-xs text-gray-500 mb-1">客户公司名称 <span class="text-red-500">*</span></label>
@@ -1132,7 +1178,7 @@ function showNewCustomerModal(fromProjectForm = false) {
         </div>
         <div class="flex justify-end gap-2 pt-4 border-t">
             <button type="button" onclick="closeModal('modal-customer')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+            <button type="button" onclick="saveCustomer(${fromProjectForm})" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
         </div>
     </form>`;
     document.getElementById('modal-customer-title').textContent = '新建客户';
@@ -1145,7 +1191,7 @@ function editCustomer(customerId) {
     if (!customer) return;
 
     const formHTML = `
-    <form onsubmit="event.preventDefault(); saveCustomer(false, ${customerId});" class="space-y-4">
+    <form class="space-y-4">
         <div class="grid grid-cols-2 gap-3">
             <div class="col-span-2">
                 <label class="block text-xs text-gray-500 mb-1">客户公司名称 <span class="text-red-500">*</span></label>
@@ -1231,7 +1277,7 @@ function editCustomer(customerId) {
         </div>
         <div class="flex justify-end gap-2 pt-4 border-t">
             <button type="button" onclick="closeModal('modal-customer')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+            <button type="button" onclick="saveCustomer(false, ${customerId})" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
         </div>
     </form>`;
     document.getElementById('modal-customer-title').textContent = '编辑客户';
@@ -1240,58 +1286,65 @@ function editCustomer(customerId) {
 }
 
 async function saveCustomer(fromProjectForm, editId = null) {
-    const getVal = id => document.getElementById(id)?.value?.trim() || '';
-    const invoiceTypes = [];
-    if (document.getElementById('customer-invoice-special')?.checked) invoiceTypes.push('专票');
-    if (document.getElementById('customer-invoice-normal')?.checked) invoiceTypes.push('普票');
-    if (document.getElementById('customer-invoice-tax')?.checked) invoiceTypes.push('含税');
+    try {
+        const getVal = id => document.getElementById(id)?.value?.trim() || '';
+        const invoiceTypes = [];
+        if (document.getElementById('customer-invoice-special')?.checked) invoiceTypes.push('专票');
+        if (document.getElementById('customer-invoice-normal')?.checked) invoiceTypes.push('普票');
+        if (document.getElementById('customer-invoice-tax')?.checked) invoiceTypes.push('含税');
 
-    const customerData = {
-        customerCompany: getVal('customer-company'),
-        customerContact: getVal('customer-contact'),
-        companyType: getVal('customer-companyType'),
-        companySize: getVal('customer-companySize'),
-        region: getVal('customer-region'),
-        industry: getVal('customer-industry'),
-        purchaseMode: getVal('customer-purchaseMode'),
-        paymentTerms: getVal('customer-paymentTerms'),
-        invoiceType: invoiceTypes,
-        notes: getVal('customer-notes'),
-        updatedAt: new Date().toISOString()
-    };
+        const customerData = {
+            customerCompany: getVal('customer-company'),
+            customerContact: getVal('customer-contact'),
+            companyType: getVal('customer-companyType'),
+            companySize: getVal('customer-companySize'),
+            region: getVal('customer-region'),
+            industry: getVal('customer-industry'),
+            purchaseMode: getVal('customer-purchaseMode'),
+            paymentTerms: getVal('customer-paymentTerms'),
+            invoiceType: invoiceTypes,
+            notes: getVal('customer-notes'),
+            updatedAt: new Date().toISOString()
+        };
 
-    if (!customerData.customerCompany) {
-        alert('请输入客户公司名称');
-        return;
-    }
-
-    if (editId) {
-        const idx = customers.findIndex(c => c.id === editId);
-        if (idx >= 0) {
-            customers[idx] = { ...customers[idx], ...customerData };
+        if (!customerData.customerCompany) {
+            alert('请输入客户公司名称');
+            return;
         }
-    } else {
-        customerData.id = nextCustomerId++;
-        customerData.createdAt = new Date().toISOString();
-        customers.push(customerData);
-    }
 
-    await saveAllData();
-    closeModal('modal-customer');
-
-    if (fromProjectForm) {
-        // 刷新项目表单的客户选择器
-        showNewProjectModal();
-        // 选中新创建的客户
-        setTimeout(() => {
-            const select = document.getElementById('np-customerId');
-            if (select && editId === null) {
-                select.value = nextCustomerId - 1; // 刚创建的客户ID
-                fillCustomerPreview();
+        if (editId) {
+            const idx = customers.findIndex(c => c.id === editId);
+            if (idx >= 0) {
+                customers[idx] = { ...customers[idx], ...customerData };
             }
-        }, 100);
-    } else {
-        renderCustomerList();
+        } else {
+            customerData.id = nextCustomerId++;
+            customerData.createdAt = new Date().toISOString();
+            customers.push(customerData);
+        }
+
+        const saved = await saveAllData();
+        if (!saved) {
+            alert('保存失败，请重试');
+            return;
+        }
+        closeModal('modal-customer');
+
+        if (fromProjectForm) {
+            showNewProjectModal();
+            setTimeout(() => {
+                const select = document.getElementById('np-customerId');
+                if (select && editId === null) {
+                    select.value = nextCustomerId - 1;
+                    fillCustomerPreview();
+                }
+            }, 100);
+        } else {
+            renderCustomerList();
+        }
+    } catch (e) {
+        console.error('saveCustomer error:', e);
+        alert('保存客户失败: ' + (e.message || '未知错误'));
     }
 }
 
@@ -1387,10 +1440,12 @@ function fillCustomerPreview() {
 }
 
 // ========== 新建项目表单 ==========
-function showNewProjectModal() {
-    const customerOptions = customers.map(c => `<option value="${c.id}">${c.customerCompany}${c.customerContact ? ' - ' + c.customerContact : ''}</option>`).join('');
+function showNewProjectModal(projectToEdit) {
+    editingProjectId = projectToEdit ? projectToEdit.id : null;
+    const customerOptions = customers.map(c => `<option value="${c.id}" ${projectToEdit && projectToEdit.customerId === c.id ? 'selected' : ''}>${c.customerCompany}${c.customerContact ? ' - ' + c.customerContact : ''}</option>`).join('');
+    const p = projectToEdit || {};
     const formHTML = `
-    <form onsubmit="event.preventDefault(); startProjectChat();" class="space-y-4">
+    <form onsubmit="event.preventDefault(); editingProjectId ? saveProjectEdit() : startProjectChat();" class="space-y-4">
         <!-- 客户选择 -->
         <div>
             <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">客户信息</h4>
@@ -1424,41 +1479,28 @@ function showNewProjectModal() {
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">项目名称 <span class="text-red-500">*</span></label>
-                    <input type="text" id="np-name" class="w-full border rounded px-3 py-2 text-sm" placeholder="如"XX公司2026春节福利"" required>
+                    <input type="text" id="np-name" class="w-full border rounded px-3 py-2 text-sm" placeholder="如&quot;XX公司2026春节福利&quot;" value="${p.name || ''}" required>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">预计人数 <span class="text-red-500">*</span></label>
-                    <input type="number" id="np-peopleCount" class="w-full border rounded px-3 py-2 text-sm" min="1" required>
+                    <input type="number" id="np-peopleCount" class="w-full border rounded px-3 py-2 text-sm" value="${p.peopleCount || ''}" min="1" required>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">人均预算(元) <span class="text-red-500">*</span></label>
-                    <input type="number" id="np-budgetPerPerson" class="w-full border rounded px-3 py-2 text-sm" min="1" step="0.01" required>
+                    <input type="number" id="np-budgetPerPerson" class="w-full border rounded px-3 py-2 text-sm" value="${p.budgetPerPerson || ''}" min="1" step="0.01" required>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">交付日期 <span class="text-red-500">*</span></label>
-                    <input type="date" id="np-deadline" class="w-full border rounded px-3 py-2 text-sm" required>
+                    <input type="date" id="np-deadline" class="w-full border rounded px-3 py-2 text-sm" value="${p.deadline || ''}" required>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">履约周期(天)</label>
-                    <input type="number" id="np-fulfillmentDays" class="w-full border rounded px-3 py-2 text-sm" placeholder="下单到交付完成天数" min="1">
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">方案毛利率要求(%)</label>
-                    <input type="number" id="np-targetMargin" class="w-full border rounded px-3 py-2 text-sm" placeholder="如20" min="0" max="100">
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">初步场景</label>
-                    <select id="np-initialScene" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="">请选择</option>
-                        <option>春节福利</option><option>中秋福利</option><option>员工生日</option>
-                        <option>年会奖品</option><option>客户送礼</option><option>开业伴手礼</option>
-                        <option>投标邀约</option><option>其他</option>
-                    </select>
+                    <input type="number" id="np-fulfillmentDays" class="w-full border rounded px-3 py-2 text-sm" value="${p.fulfillmentDays || ''}" placeholder="下单到交付完成天数" min="1">
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">紧急程度</label>
                     <select id="np-urgency" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="正常">正常</option><option value="加急">加急（一周内）</option><option value="紧急">紧急（3天内）</option>
+                        <option value="正常" ${p.urgency === '正常' ? 'selected' : ''}>正常</option><option value="加急" ${p.urgency === '加急' ? 'selected' : ''}>加急（一周内）</option><option value="紧急" ${p.urgency === '紧急' ? 'selected' : ''}>紧急（3天内）</option>
                     </select>
                 </div>
             </div>
@@ -1469,52 +1511,38 @@ function showNewProjectModal() {
             <h4 class="text-sm font-medium text-gray-700 mb-3 border-b pb-2">采购执行</h4>
             <div class="grid grid-cols-2 gap-3">
                 <div>
-                    <label class="block text-xs text-gray-500 mb-1">采购模式</label>
-                    <select id="np-purchaseMode" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="">未定</option>
-                        <option>集采统一配送</option><option>员工自选兑换</option><option>混合模式</option>
-                    </select>
-                </div>
-                <div>
                     <label class="block text-xs text-gray-500 mb-1">员工分档</label>
                     <select id="np-employeeTiers" class="w-full border rounded px-3 py-2 text-sm">
                         <option value="">未定</option>
-                        <option>全员统一</option><option>按层级分档</option>
+                        <option ${p.employeeTiers === '全员统一' ? 'selected' : ''}>全员统一</option><option ${p.employeeTiers === '按层级分档' ? 'selected' : ''}>按层级分档</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">配送方式</label>
                     <select id="np-deliveryMode" class="w-full border rounded px-3 py-2 text-sm">
                         <option value="">未定</option>
-                        <option>单一地址（公司）</option><option>多地配送</option><option>配送到家</option>
-                    </select>
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">付款方式</label>
-                    <select id="np-paymentTerms" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="">未定</option>
-                        <option>预付</option><option>货到付款</option><option>月结</option>
+                        <option ${p.deliveryMode === '单一地址（公司）' ? 'selected' : ''}>单一地址（公司）</option><option ${p.deliveryMode === '多地配送' ? 'selected' : ''}>多地配送</option><option ${p.deliveryMode === '配送到家' ? 'selected' : ''}>配送到家</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">是否需要定制</label>
                     <select id="np-needCustomization" class="w-full border rounded px-3 py-2 text-sm">
                         <option value="">未定</option>
-                        <option>Logo定制</option><option>包装定制</option><option>不需要</option>
+                        <option ${p.needCustomization === 'Logo定制' ? 'selected' : ''}>Logo定制</option><option ${p.needCustomization === '包装定制' ? 'selected' : ''}>包装定制</option><option ${p.needCustomization === '不需要' ? 'selected' : ''}>不需要</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">是否需要样品</label>
                     <select id="np-needSample" class="w-full border rounded px-3 py-2 text-sm">
-                        <option value="">未定</option><option>需要先寄样</option><option>不需要</option>
+                        <option value="">未定</option><option ${p.needSample === '需要先寄样' ? 'selected' : ''}>需要先寄样</option><option ${p.needSample === '不需要' ? 'selected' : ''}>不需要</option>
                     </select>
                 </div>
                 <div class="col-span-2">
                     <label class="block text-xs text-gray-500 mb-1">发票要求</label>
                     <div class="flex gap-4">
-                        <label class="text-sm"><input type="checkbox" id="np-invoice-special"> 增值税专票</label>
-                        <label class="text-sm"><input type="checkbox" id="np-invoice-normal"> 普票</label>
-                        <label class="text-sm"><input type="checkbox" id="np-invoice-tax" checked> 含税</label>
+                        <label class="text-sm"><input type="checkbox" id="np-invoice-special" ${(p.invoiceType || []).includes('专票') ? 'checked' : ''}> 增值税专票</label>
+                        <label class="text-sm"><input type="checkbox" id="np-invoice-normal" ${(p.invoiceType || []).includes('普票') ? 'checked' : ''}> 普票</label>
+                        <label class="text-sm"><input type="checkbox" id="np-invoice-tax" ${p.invoiceType === undefined || (p.invoiceType || []).includes('含税') ? 'checked' : ''}> 含税</label>
                     </div>
                 </div>
             </div>
@@ -1526,28 +1554,28 @@ function showNewProjectModal() {
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">往年福利</label>
-                    <textarea id="np-previousWelfare" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="之前做过什么？预算？"></textarea>
+                    <textarea id="np-previousWelfare" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="之前做过什么？预算？">${p.previousWelfare || ''}</textarea>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">员工反馈</label>
-                    <textarea id="np-employeeFeedback" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="上次福利员工的反馈"></textarea>
+                    <textarea id="np-employeeFeedback" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="上次福利员工的反馈">${p.employeeFeedback || ''}</textarea>
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">竞品参照</label>
-                    <input type="text" id="np-competitorRef" class="w-full border rounded px-3 py-2 text-sm" placeholder="客户提到的参照公司或方案">
+                    <input type="text" id="np-competitorRef" class="w-full border rounded px-3 py-2 text-sm" value="${p.competitorRef || ''}" placeholder="客户提到的参照公司或方案">
                 </div>
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">决策人</label>
                     <select id="np-decisionMaker" class="w-full border rounded px-3 py-2 text-sm">
                         <option value="">未定</option>
-                        <option>工会</option><option>HR</option><option>采购部</option><option>老板</option>
+                        <option ${p.decisionMaker === '工会' ? 'selected' : ''}>工会</option><option ${p.decisionMaker === 'HR' ? 'selected' : ''}>HR</option><option ${p.decisionMaker === '采购部' ? 'selected' : ''}>采购部</option><option ${p.decisionMaker === '老板' ? 'selected' : ''}>老板</option>
                     </select>
                 </div>
                 <div class="col-span-2">
                     <label class="block text-xs text-gray-500 mb-1">方案用途</label>
                     <select id="np-proposalUsage" class="w-full border rounded px-3 py-2 text-sm">
                         <option value="">未定</option>
-                        <option>精美方案书（给客户看）</option><option>内部快速决策</option>
+                        <option ${p.proposalUsage === '精美方案书（给客户看）' ? 'selected' : ''}>精美方案书（给客户看）</option><option ${p.proposalUsage === '内部快速决策' ? 'selected' : ''}>内部快速决策</option>
                     </select>
                 </div>
             </div>
@@ -1560,20 +1588,20 @@ function showNewProjectModal() {
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">是否有招标文件</label>
                     <select id="np-hasBidDoc" class="w-full border rounded px-3 py-2 text-sm" onchange="toggleBidFields()">
-                        <option value="否">否</option><option value="是">是</option>
+                        <option value="否" ${p.hasBidDoc ? '' : 'selected'}>否</option><option value="是" ${p.hasBidDoc ? 'selected' : ''}>是</option>
                     </select>
                 </div>
-                <div id="bid-row-deadline" style="display:none">
+                <div id="bid-row-deadline" style="${p.hasBidDoc ? 'display:block' : 'display:none'}">
                     <label class="block text-xs text-gray-500 mb-1">投标截止日期</label>
-                    <input type="date" id="np-bidDeadline" class="w-full border rounded px-3 py-2 text-sm">
+                    <input type="date" id="np-bidDeadline" class="w-full border rounded px-3 py-2 text-sm" value="${p.bidDeadline || ''}">
                 </div>
-                <div id="bid-row-scoring" style="display:none" class="col-span-2">
+                <div id="bid-row-scoring" style="${p.hasBidDoc ? 'display:block' : 'display:none'}" class="col-span-2">
                     <label class="block text-xs text-gray-500 mb-1">评分标准</label>
-                    <textarea id="np-bidScoring" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="价格分/技术分/商务分权重"></textarea>
+                    <textarea id="np-bidScoring" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="价格分/技术分/商务分权重">${p.bidScoring || ''}</textarea>
                 </div>
-                <div id="bid-row-qual" style="display:none" class="col-span-2">
+                <div id="bid-row-qual" style="${p.hasBidDoc ? 'display:block' : 'display:none'}" class="col-span-2">
                     <label class="block text-xs text-gray-500 mb-1">资质要求</label>
-                    <textarea id="np-bidQualifications" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="需要的资质证书、业绩案例等"></textarea>
+                    <textarea id="np-bidQualifications" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="需要的资质证书、业绩案例等">${p.bidQualifications || ''}</textarea>
                 </div>
             </div>
         </div>
@@ -1584,29 +1612,38 @@ function showNewProjectModal() {
             <div class="grid grid-cols-2 gap-3">
                 <div>
                     <label class="block text-xs text-gray-500 mb-1">禁忌/规避</label>
-                    <textarea id="np-taboos" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="如清真、素食、避免特定品牌等"></textarea>
-                </div>
-                <div>
-                    <label class="block text-xs text-gray-500 mb-1">关键词标签</label>
-                    <input type="text" id="np-initialTags" class="w-full border rounded px-3 py-2 text-sm" placeholder="逗号分隔：如实用,品牌,礼盒">
+                    <textarea id="np-taboos" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="如清真、素食、避免特定品牌等">${p.taboos || ''}</textarea>
                 </div>
                 <div class="col-span-2">
                     <label class="block text-xs text-gray-500 mb-1">其他备注</label>
-                    <textarea id="np-notes" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="其他补充信息"></textarea>
+                    <textarea id="np-notes" class="w-full border rounded px-3 py-2 text-sm" rows="2" placeholder="其他补充信息">${p.notes || ''}</textarea>
                 </div>
             </div>
         </div>
 
         <div class="flex justify-end gap-2 pt-4 border-t">
-            <button type="button" onclick="closeModal('modal-new-project')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
-            <button type="button" onclick="saveProjectDraft()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">保存草稿</button>
-            <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">开始 AI 需求对话</button>
+            <button type="button" onclick="closeModal('modal-new-project'); editingProjectId = null;" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+            ${editingProjectId ? `
+                <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存修改</button>
+            ` : `
+                <button type="button" onclick="saveProjectDraft()" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">保存草稿</button>
+                <button type="submit" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">开始 AI 需求对话</button>
+            `}
         </div>
     </form>`;
     document.getElementById('modal-new-project-form').innerHTML = formHTML;
+    // 更新模态框标题
+    const titleEl = document.getElementById('modal-project-title');
+    if (titleEl) titleEl.textContent = editingProjectId ? '编辑项目' : '新建团购方案项目';
     openModal('modal-new-project');
-    // 默认履约周期
-    document.getElementById('np-fulfillmentDays').value = 14;
+    // 默认履约周期（仅新建时）
+    if (!editingProjectId) {
+        document.getElementById('np-fulfillmentDays').value = 14;
+    }
+    // 编辑时触发客户预览
+    if (editingProjectId && p.customerId) {
+        setTimeout(() => fillCustomerPreview(), 50);
+    }
 }
 
 // ========== 保存项目草稿 / 开始对话 ==========
@@ -1647,18 +1684,16 @@ function collectProjectForm() {
         budgetPerPerson: parseFloat(getVal('np-budgetPerPerson')) || 0,
         deadline: getVal('np-deadline'),
         fulfillmentDays: parseInt(getVal('np-fulfillmentDays')) || 14,
-        targetMargin: parseFloat(getVal('np-targetMargin')) || 0,
-        initialScene: getVal('np-initialScene'),
-        initialTags: getVal('np-initialTags').split(/[,，]/).filter(Boolean),
         notes: getVal('np-notes'),
         hasBidDoc: getVal('np-hasBidDoc') === '是',
         bidDeadline: getVal('np-bidDeadline'),
         bidScoring: getVal('np-bidScoring'),
         bidQualifications: getVal('np-bidQualifications'),
         conversation: [],
+        supplementaryInfo: '',
         structuredRequirement: '',
         constraints: [],
-        proposalCount: 6,
+        proposalCount: 3,
         status: 'drafting',
         templateId: getVal('np-proposalUsage') === '内部快速决策' ? 'default-excel' : 'default',
         createdAt: new Date().toISOString(),
@@ -1691,12 +1726,75 @@ async function startProjectChat() {
     startChatSession(project);
 }
 
+function editProject(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+    showNewProjectModal(project);
+}
+
+async function saveProjectEdit() {
+    const formData = collectProjectForm();
+    if (!formData.name) { alert('请输入项目名称'); return; }
+
+    const idx = projects.findIndex(p => p.id === editingProjectId);
+    if (idx < 0) return;
+
+    // 保留原有不可编辑字段
+    const existing = projects[idx];
+    projects[idx] = {
+        ...existing,
+        name: formData.name,
+        customerId: formData.customerId,
+        employeeTiers: formData.employeeTiers,
+        deliveryMode: formData.deliveryMode,
+        invoiceType: formData.invoiceType,
+        needCustomization: formData.needCustomization,
+        needSample: formData.needSample,
+        previousWelfare: formData.previousWelfare,
+        employeeFeedback: formData.employeeFeedback,
+        competitorRef: formData.competitorRef,
+        decisionMaker: formData.decisionMaker,
+        proposalUsage: formData.proposalUsage,
+        taboos: formData.taboos,
+        urgency: formData.urgency,
+        peopleCount: formData.peopleCount,
+        budgetPerPerson: formData.budgetPerPerson,
+        deadline: formData.deadline,
+        fulfillmentDays: formData.fulfillmentDays,
+        notes: formData.notes,
+        hasBidDoc: formData.hasBidDoc,
+        bidDeadline: formData.bidDeadline,
+        bidScoring: formData.bidScoring,
+        bidQualifications: formData.bidQualifications,
+        templateId: formData.templateId,
+        updatedAt: new Date().toISOString()
+    };
+
+    editingProjectId = null;
+    await saveAllData();
+    closeModal('modal-new-project');
+    renderProjectList();
+}
+
+async function deleteProject(projectId) {
+    if (!confirm('确定要删除这个项目吗？关联的方案也会被删除。')) return;
+
+    projects = projects.filter(p => p.id !== projectId);
+    proposals = proposals.filter(p => p.projectId !== projectId);
+    await saveAllData();
+    renderProjectList();
+}
+
 // ========== AI 对话 ==========
 async function startChatSession(project) {
     showPage('page-chat');
     document.getElementById('chat-project-name').textContent = project.name;
     document.getElementById('chat-messages').innerHTML = '';
     document.getElementById('chat-summary').innerHTML = '<span class="text-gray-400">对话开始后逐步提取...</span>';
+    setupChatPasteHandler();
+    const suppTextarea = document.getElementById('supplement-textarea');
+    if (suppTextarea) suppTextarea.value = project.supplementaryInfo || '';
+    switchChatSidebarTab('summary');
 
     // 初始化对话历史
     project.conversation = [];
@@ -1727,7 +1825,7 @@ async function startChatSession(project) {
 - 人数: ${project.peopleCount}人
 - 人均预算: ${project.budgetPerPerson}元
 - 交付日期: ${project.deadline || '未定'}
-- 场景: ${project.initialScene || '员工福利'}
+- 场景: 员工福利
 - 紧急程度: ${project.urgency || '正常'}
 
 ## 你的任务
@@ -1758,13 +1856,223 @@ async function startChatSession(project) {
     }
 }
 
-function addChatMessage(role, content) {
-    // role: 'ai' 或 'user'，渲染到页面
+function formatConversationForAI(conversation) {
+    return (conversation || []).map(m => {
+        const roleLabel = m.role === 'assistant' ? 'AI' : '用户';
+        const t = m.type || 'text';
+        if (t === 'image') return `${roleLabel}：[上传了图片: ${m.meta?.fileName || '未命名截图'}]`;
+        if (t === 'file') return `${roleLabel}：[上传了文件: ${m.meta?.fileName || '未命名文件'}，内容如下]\n${m.content || ''}`;
+        if (t === 'supplement') return `${roleLabel}：[补充信息]\n${m.content || ''}`;
+        return `${roleLabel}：${m.content || ''}`;
+    }).join('\n\n');
+}
+
+function showImageFullscreen(base64) {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal active';
+    overlay.style.zIndex = '100';
+    overlay.style.background = 'rgba(0,0,0,0.85)';
+    overlay.innerHTML = `
+        <div class="modal-content" style="max-width:90vw; max-height:90vh; padding:8px; background:transparent;">
+            <img src="${base64}" style="max-width:90vw; max-height:85vh; border-radius:8px;" onclick="event.stopPropagation()">
+            <button onclick="this.closest('.modal').remove()" style="position:absolute; top:4px; right:8px; background:rgba(0,0,0,0.6); color:white; border:none; border-radius:4px; padding:4px 8px; cursor:pointer;">✕ 关闭</button>
+        </div>`;
+    overlay.onclick = () => overlay.remove();
+    document.body.appendChild(overlay);
+}
+
+function addChatMessage(role, content, type, meta) {
+    type = type || 'text';
     const div = document.createElement('div');
-    div.className = `chat-bubble ${role === 'ai' ? 'chat-ai' : 'chat-user'}`;
-    div.innerHTML = `<div class="text-xs ${role === 'ai' ? 'text-blue-500' : 'text-green-500'} mb-1">${role === 'ai' ? '🤖 AI顾问' : '👤 我'}</div><div class="text-sm">${content.replace(/\n/g, '<br>')}</div>`;
+    const roleLabel = role === 'ai' ? '🤖 AI顾问' : '👤 我';
+    const roleColor = role === 'ai' ? 'text-blue-500' : 'text-green-500';
+
+    if (type === 'image' && meta && meta.base64) {
+        div.className = 'chat-bubble chat-user';
+        div.innerHTML = `<div class="text-xs ${roleColor} mb-1">${roleLabel}</div>
+            <img src="${meta.base64}" class="chat-image-thumb" alt="${meta.fileName || '截图'}" onclick="showImageFullscreen('${meta.base64}')" title="点击查看大图">
+            <div class="text-xs text-gray-400 mt-1">📷 ${meta.fileName || '截图'}</div>`;
+    } else if (type === 'file' && meta) {
+        div.className = 'chat-bubble chat-user chat-file-bubble';
+        const preview = (content || '').substring(0, 300);
+        div.innerHTML = `<div class="text-xs ${roleColor} mb-1">${roleLabel}</div>
+            <div class="text-xs font-medium mb-1">📎 上传了文件: ${meta.fileName} (${meta.fileType})</div>
+            <div class="text-xs whitespace-pre-wrap max-h-32 overflow-y-auto bg-white rounded p-2 border" style="font-family: monospace; font-size: 11px;">${preview.replace(/\n/g, '<br>')}${(content || '').length > 300 ? '<br>...（已截断，完整内容已提交AI）' : ''}</div>`;
+    } else if (type === 'supplement') {
+        div.className = 'chat-bubble chat-supplement-bubble';
+        div.innerHTML = `<div class="text-xs ${roleColor} mb-1">${roleLabel}</div>
+            <div class="text-xs font-medium text-purple-600 mb-1">📝 补充信息</div>
+            <div class="text-sm whitespace-pre-wrap">${(content || '').replace(/\n/g, '<br>')}</div>`;
+    } else {
+        div.className = `chat-bubble ${role === 'ai' ? 'chat-ai' : 'chat-user'}`;
+        div.innerHTML = `<div class="text-xs ${roleColor} mb-1">${roleLabel}</div><div class="text-sm">${(content || '').replace(/\n/g, '<br>')}</div>`;
+    }
     document.getElementById('chat-messages').appendChild(div);
     div.scrollIntoView({ behavior: 'smooth' });
+}
+
+// ========== 聊天侧边栏 Tab 切换 ==========
+function switchChatSidebarTab(tabName) {
+    document.getElementById('sidebar-tab-summary').classList.toggle('active', tabName === 'summary');
+    document.getElementById('sidebar-tab-supplement').classList.toggle('active', tabName === 'supplement');
+    document.getElementById('sidebar-content-summary').style.display = tabName === 'summary' ? '' : 'none';
+    document.getElementById('sidebar-content-supplement').style.display = tabName === 'supplement' ? '' : 'none';
+}
+
+// ========== 文件上传 ==========
+function triggerFileUpload() {
+    document.getElementById('chat-file-input').click();
+}
+
+async function handleChatFileSelected(event) {
+    const files = event.target.files;
+    if (!files || files.length === 0) return;
+    const project = findProject(currentProjectId);
+    if (!project) { event.target.value = ''; return; }
+
+    for (const file of files) {
+        try {
+            const ext = file.name.split('.').pop().toLowerCase();
+            let extractedText = '';
+            let fileType = '';
+            if (ext === 'xlsx' || ext === 'xls') {
+                fileType = 'excel';
+                extractedText = await parseExcelToText(file);
+            } else if (ext === 'csv') {
+                fileType = 'csv';
+                extractedText = await file.text();
+            } else if (ext === 'txt') {
+                fileType = 'text';
+                extractedText = await file.text();
+            } else {
+                addChatMessage('ai', `不支持的文件类型: .${ext}，请上传 Excel、CSV 或 TXT 文件。`);
+                continue;
+            }
+            if (!extractedText || extractedText.trim().length === 0) {
+                addChatMessage('ai', `文件 "${file.name}" 内容为空，已跳过。`);
+                continue;
+            }
+            const msg = {
+                role: 'user', type: 'file',
+                content: extractedText.substring(0, 10000),
+                meta: { fileName: file.name, fileType, charCount: extractedText.length }
+            };
+            project.conversation = project.conversation || [];
+            project.conversation.push(msg);
+            addChatMessage('user', extractedText, 'file', msg.meta);
+            await saveAllData();
+        } catch (err) {
+            addChatMessage('ai', `读取文件 "${file.name}" 失败: ${err.message}`);
+        }
+    }
+    updateChatSummary(project);
+    event.target.value = '';
+}
+
+function parseExcelToText(file) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = (e) => {
+            try {
+                const workbook = XLSX.read(e.target.result, { type: 'array' });
+                const parts = [];
+                workbook.SheetNames.forEach(sheetName => {
+                    const sheet = workbook.Sheets[sheetName];
+                    const rows = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+                    if (rows.length > 0) {
+                        parts.push(`[Sheet: ${sheetName}]`);
+                        rows.forEach(row => {
+                            const textRow = (Array.isArray(row) ? row : Object.values(row))
+                                .map(c => c != null ? String(c) : '')
+                                .filter(s => s.trim())
+                                .join(' | ');
+                            if (textRow.trim()) parts.push(textRow);
+                        });
+                    }
+                });
+                resolve(parts.join('\n'));
+            } catch (err) { reject(err); }
+        };
+        reader.onerror = () => reject(new Error('文件读取失败'));
+        reader.readAsArrayBuffer(file);
+    });
+}
+
+// ========== 粘贴截图 ==========
+function setupChatPasteHandler() {
+    if (window._chatPasteHandlerBound) return;
+    window._chatPasteHandlerBound = true;
+    document.addEventListener('paste', async (event) => {
+        if (!document.getElementById('page-chat')?.classList.contains('active')) return;
+        if (event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA') return;
+        const items = event.clipboardData?.items;
+        if (!items) return;
+        for (const item of items) {
+            if (item.type.startsWith('image/')) {
+                event.preventDefault();
+                const blob = item.getAsFile();
+                await handlePastedImage(blob);
+                return;
+            }
+        }
+    });
+}
+
+async function handlePastedImage(blob) {
+    const project = findProject(currentProjectId);
+    if (!project) return;
+    try {
+        const base64 = await blobToBase64(blob);
+        const resizedBase64 = await resizeImageBase64(base64, 400);
+        const msg = {
+            role: 'user', type: 'image', content: '[图片]',
+            meta: { fileName: 'pasted-' + new Date().toISOString().replace(/[:.]/g, '-') + '.png', base64: resizedBase64, mimeType: blob.type }
+        };
+        project.conversation = project.conversation || [];
+        project.conversation.push(msg);
+        addChatMessage('user', '[图片]', 'image', msg.meta);
+        await saveAllData();
+    } catch (err) {
+        addChatMessage('ai', `粘贴图片失败: ${err.message}`);
+    }
+}
+
+function blobToBase64(blob) {
+    return new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = () => reject(new Error('读取剪贴板图片失败'));
+        reader.readAsDataURL(blob);
+    });
+}
+
+function resizeImageBase64(base64, maxWidth) {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => {
+            if (img.width <= maxWidth) { resolve(base64); return; }
+            const ratio = maxWidth / img.width;
+            const canvas = document.createElement('canvas');
+            canvas.width = maxWidth;
+            canvas.height = Math.round(img.height * ratio);
+            const ctx = canvas.getContext('2d');
+            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+            resolve(canvas.toDataURL('image/png', 0.7));
+        };
+        img.onerror = () => reject(new Error('图片加载失败'));
+        img.src = base64;
+    });
+}
+
+// ========== 补充信息 ==========
+function saveSupplementaryInfo() {
+    const project = findProject(currentProjectId);
+    if (!project) return;
+    project.supplementaryInfo = document.getElementById('supplement-textarea').value.trim();
+    const hint = document.getElementById('supplement-saved-hint');
+    hint.style.display = '';
+    setTimeout(() => { hint.style.display = 'none'; }, 2000);
+    saveAllData();
 }
 
 async function sendChatMessage() {
@@ -1784,11 +2092,13 @@ async function sendChatMessage() {
     document.getElementById('chat-messages').appendChild(thinkingEl);
 
     try {
-        // 构建对话历史
-        const conversationHistory = (project.conversation || []).map(m => ({
-            role: m.role,
-            content: m.content
-        }));
+        // 构建对话历史（含文件/图片等非文本消息）
+        const conversationHistory = (project.conversation || []).map(m => {
+            const t = m.type || 'text';
+            if (t === 'image') return { role: m.role, content: '[用户上传了一张图片: ' + (m.meta?.fileName || '截图') + ']' };
+            if (t === 'file') return { role: m.role, content: '[用户上传了文件: ' + (m.meta?.fileName || '文件') + '，内容如下]\n' + (m.content || '') };
+            return { role: m.role, content: m.content || '' };
+        });
 
         // 添加当前用户消息
         conversationHistory.push({ role: 'user', content: msg });
@@ -1803,7 +2113,7 @@ async function sendChatMessage() {
 - 人数: ${project.peopleCount}人
 - 人均预算: ${project.budgetPerPerson}元
 - 交付日期: ${project.deadline || '未定'}
-- 场景: ${project.initialScene || '员工福利'}
+- 场景: 员工福利
 
 ## 你的任务
 1. 通过自然对话了解客户的详细需求
@@ -1858,80 +2168,254 @@ function findProject(id) {
 }
 
 function updateChatSummary(project) {
-    // 从对话历史中提取用户消息
     const userReplies = (project.conversation || [])
         .filter(m => m.role === 'user')
-        .map(m => m.content);
-
-    // 简单关键词提取
-    const ageKeywords = ['岁', '年龄', '中年', '青年', '老年', '年轻'];
-    const genderKeywords = ['男', '女', '男女'];
-    const styleKeywords = ['实用', '品质', '精致', '简约', '新潮', '文化', '国潮', '颜值'];
-    const categoryKeywords = ['食品', '日用品', '日化', '家电', '小家电', '家纺', '个护', '文创', '卡券', '美妆', '运动',
-        '食品饮料', '生鲜特产', '健康养护', '日化个护',
-        '家居家电', '运动户外', '企业定制', '卡券文娱'];
-    const packageKeywords = ['礼盒', '包装', '精装', '简装'];
-
-    let summaryHTML = '';
+        .map(m => m.content || '');
+    if (project.supplementaryInfo) userReplies.push(project.supplementaryInfo);
     const allText = userReplies.join(' ');
 
-    // 用户画像
-    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">👥 用户画像</div>';
-    if (ageKeywords.some(k => allText.includes(k))) summaryHTML += '<div class="text-green-600">✓ 年龄段已提及</div>';
-    else summaryHTML += '<div class="text-orange-500">⚠ 年龄待确认</div>';
-    if (genderKeywords.some(k => allText.includes(k))) summaryHTML += '<div class="text-green-600">✓ 性别已提及</div>';
-    else summaryHTML += '<div class="text-orange-500">⚠ 性别待确认</div>';
-    summaryHTML += '</div>';
+    // 关键词库 - 与 selectionParams 对应
+    const sceneKW = ['端午', '中秋节', '中秋', '春节', '三八', '妇女节', '夏日', '年终', '生日', '日常', '年会', '开学', '元宵'];
+    const tierKW = ['高端', '中高端', '中端', '亲民', '实惠', '便宜', '性价比', '品质', '轻奢'];
+    const styleKW = ['商务稳重', '简约实用', '国民大众', '年轻潮流', '轻奢高端', '实用', '精致', '颜值', '国潮', '新潮', '品质感', '简约', '大气', '时尚', '年轻化'];
+    const brandLevelKW = ['一线品牌', '进口', '进口品牌', '老字号', '地方品牌', '大牌', '国民品牌', '名牌', '国际品牌', '全国一线'];
+    const brandStyleKW = styleKW;
+    const packageKW = ['精装', '礼盒', '简装', '环保', '普通包装', '手提袋', '精装礼盒', '简约包装', '环保简装'];
+    const productCountKW = ['个产品', '款产品', '件产品', 'sku', 'SKU', '产品数', '数量', '搭配'];
+
+    const matched = (keywords) => keywords.filter(k => allText.includes(k));
+    const anyMatch = (keywords) => keywords.some(k => allText.includes(k));
+
+    const item = (icon, label, matchedVals, fallback) => {
+        if (matchedVals && matchedVals.length > 0) {
+            return `<div class="flex items-start gap-1.5 py-0.5"><span class="shrink-0">${icon}</span><span class="text-xs text-gray-700">${label}: <span class="text-green-600 font-medium">${matchedVals.slice(0, 3).join('、')}${matchedVals.length > 3 ? '...' : ''}</span></span></div>`;
+        }
+        if (fallback) {
+            return `<div class="flex items-start gap-1.5 py-0.5"><span class="shrink-0">${icon}</span><span class="text-xs text-gray-400">${label}: ${fallback}</span></div>`;
+        }
+        return `<div class="flex items-start gap-1.5 py-0.5"><span class="shrink-0">${icon}</span><span class="text-xs text-orange-500">${label}: ⚠ 待确认</span></div>`;
+    };
+
+    let html = '';
+
+    // 场景
+    const sceneMatch = matched(sceneKW);
+    html += item('🎯', '场景', sceneMatch.length > 0 ? sceneMatch : null, sceneMatch.length === 0 ? '待提取' : null);
+
+    // 档次
+    const tierMatch = matched(tierKW);
+    html += item('🏷', '档次', tierMatch.length > 0 ? tierMatch : null, tierMatch.length === 0 ? '待提取' : null);
 
     // 风格
-    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">🏷 风格</div>';
-    const matchedStyles = styleKeywords.filter(k => allText.includes(k));
-    if (matchedStyles.length > 0) summaryHTML += `<div class="text-green-600">✓ ${matchedStyles.join('、')}</div>`;
-    else summaryHTML += '<div class="text-gray-400">待确认</div>';
-    summaryHTML += '</div>';
+    const styleMatch = matched(styleKW);
+    html += item('🎨', '风格', styleMatch.length > 0 ? styleMatch : null, styleMatch.length === 0 ? '待提取' : null);
+
+    // 品牌级别
+    const blMatch = matched(brandLevelKW);
+    html += item('🏭', '品牌级别', blMatch.length > 0 ? blMatch : null, blMatch.length === 0 ? '待提取' : null);
+
+    // 品牌调性
+    const bsMatch = matched(brandStyleKW);
+    html += item('💎', '品牌调性', bsMatch.length > 0 ? bsMatch : null, bsMatch.length === 0 ? '待提取' : null);
 
     // 品类
-    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">📦 品类</div>';
-    const matchedCats = categoryKeywords.filter(k => allText.includes(k));
-    if (matchedCats.length > 0) summaryHTML += `<div class="text-green-600">✓ ${matchedCats.join('、')}</div>`;
-    else summaryHTML += '<div class="text-gray-400">待确认</div>';
-    summaryHTML += '</div>';
+    const catKW = ['食品饮料', '生鲜特产', '健康养护', '日化个护', '家居家电', '运动户外', '企业定制', '卡券文娱',
+        '食品', '日化', '家电', '家纺', '个护', '文创', '卡券', '美妆', '运动', '茶叶', '粮油', '坚果', '礼盒'];
+    const catMatch = matched(catKW);
+    html += item('📦', '品类', catMatch.length > 0 ? catMatch : null, catMatch.length === 0 ? '待提取' : null);
 
-    // 包装
-    summaryHTML += '<div class="mb-3"><div class="font-medium text-gray-700 mb-1">🎁 包装</div>';
-    const matchedPkg = packageKeywords.filter(k => allText.includes(k));
-    if (matchedPkg.length > 0) summaryHTML += `<div class="text-green-600">✓ ${matchedPkg.join('、')}</div>`;
-    else summaryHTML += '<div class="text-gray-400">待确认</div>';
-    summaryHTML += '</div>';
+    // 包装形式
+    const pkgMatch = matched(packageKW);
+    html += item('📐', '包装形式', pkgMatch.length > 0 ? pkgMatch : null, pkgMatch.length === 0 ? '待提取' : null);
 
-    // 已回复轮数
-    summaryHTML += `<div class="text-xs text-gray-400 pt-2 border-t">已对话 ${userReplies.length} 轮</div>`;
+    // 产品数量
+    const countMatch = allText.match(/(\d+)\s*(个|款|件)\s*(产品|商品|sku)/i);
+    html += item('🔢', '产品数量', countMatch ? [countMatch[0]] : null, '对话中确认');
 
-    document.getElementById('chat-summary').innerHTML = summaryHTML;
+    // 预算
+    html += item('💰', '预算', null, `人均${formatMoney(project.budgetPerPerson)}`);
+
+    // 用户画像
+    const ageKW = ['岁', '年龄', '中年', '青年', '老年', '年轻', '90后', '80后', '00后'];
+    const genderKW = ['男', '女', '男女'];
+    if (anyMatch(ageKW) || anyMatch(genderKW)) {
+        const parts = [];
+        if (anyMatch(ageKW)) parts.push('年龄段已提及');
+        if (anyMatch(genderKW)) parts.push('性别已提及');
+        html += `<div class="flex items-start gap-1.5 py-0.5"><span class="shrink-0">👥</span><span class="text-xs text-green-600 font-medium">用户画像: ${parts.join('、')}</span></div>`;
+    } else {
+        html += item('👥', '用户画像', null, '对话中确认');
+    }
+
+    html += `<div class="text-xs text-gray-400 pt-2 mt-1 border-t">已对话 ${userReplies.length} 轮</div>`;
+
+    document.getElementById('chat-summary').innerHTML = html;
 }
 
 async function finishChat() {
     const project = findProject(currentProjectId);
     if (!project) return;
 
-    // 从对话记录中提取用户回复
-    const userReplies = (project.conversation || [])
-        .filter(m => m.role === 'user')
-        .map(m => m.content);
-    const allText = userReplies.join('\n');
+    // 显示分析状态
+    const statusEl = document.getElementById('chat-status');
+    statusEl.textContent = 'AI 分析中...';
+    statusEl.className = 'text-xs px-2 py-1 bg-purple-100 text-purple-600 rounded';
 
-    project.structuredRequirement = generateStructuredRequirement(project, allText);
-    project.status = 'requirement_ready';
-    project.updatedAt = new Date().toISOString();
+    try {
+        // 构建对话上下文（含文件/图片等非文本消息）
+        const conversation = formatConversationForAI(project.conversation);
 
-    const idx = projects.findIndex(p => p.id === project.id);
-    if (idx >= 0) projects[idx] = project;
-    await saveAllData();
+        const customer = getProjectCustomer(project);
+        const allCats = MAJOR_CATEGORIES;
 
-    // 在聊天页显示需求文档卡片
-    renderRequirementCard(project);
-    document.getElementById('chat-status').textContent = '需求已生成';
-    document.getElementById('chat-status').className = 'text-xs px-2 py-1 bg-green-100 text-green-600 rounded';
+        const response = await callAI([
+            { role: 'system', content: `你是团购选品顾问。你的任务是与客户对话，收集需求信息，然后分析对话内容，输出结构化的选品参数建议。只返回JSON，不返回其他内容。
+
+## 你的工作方式
+1. 对话阶段：通过提问了解客户的使用场景、人群、预算、偏好等
+2. 分析阶段（当前）：通读完整对话，基于客户透露的信息，分析推断最合适的选品参数
+3. 输出建议：给出选品参数推荐值，每个推荐都要有对话中的依据
+
+## 分析原则
+- **主动分析推断**：客户不一定直接说出参数值，你需要从对话细节中推理。例如：客户说"员工福利，不要太寒酸"→推断档次为中端/中高端；客户说"年轻人多"→推断风格偏年轻潮流
+- **项目名称优先**：项目名是最强的场景信号（如"XX端午福利"→场景=["端午"]）
+- **场景可多选**：如果对话中提到多个场景，返回多个
+- **不确定时填默认值**：实在无法推断的字段，budget用项目预设值，margin填20，其他用空数组/空字符串
+- **值必须从可选集合中选**：不要编造不在列表中的值
+
+## JSON格式（示例值仅为演示，请替换为分析结果）
+{
+  "scene": ["端午"],
+  "tier": "中高端",
+  "style": ["简约实用"],
+  "brandLevelByCategory": { "食品饮料": ["全国一线品牌"] },
+  "brandStyleByCategory": { "食品饮料": ["商务稳重"] },
+  "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
+  "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
+  "recommendedProductCount": 8,
+  "budget": 200,
+  "margin": 20,
+  "categories": ["食品饮料", "日化个护"],
+  "rationale": "简要说明你的分析依据，2-3句话"
+}
+
+## 各字段可选值集合
+- scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
+- tier: "亲民" / "中端" / "中高端" / "高端" / ""
+- style: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- brandLevel选项: ["全国一线品牌","地方品牌","进口品牌","老字号"]
+- brandStyle选项: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
+- categories: ${allCats.map(c => `"${c}"`).join(', ')}
+- categoryRatios: 按大类设置百分比，总和应为100。根据场景分配权重（如端午福利→食品饮料比例高）
+- recommendedProductCount: 建议的产品总数（正整数）
+
+## 分析指引
+- scene: 从项目名称和对话结合判断。项目名有节日→优先该节日；客户描述使用时机→匹配对应场景
+- tier: 从客户对品质/价格的表述推断。"品质好一点/拿得出手"→中高端；"实惠/性价比"→亲民；"不要太差"→中端
+- style: 从客户对公司文化/员工群体的描述推断。"互联网公司/年轻人"→年轻潮流；"国企/政府"→商务稳重
+- brandLevelByCategory: 按大类分别推断品牌级别要求。如"食品要知名大牌，日化实用就行"→食品填["全国一线品牌"]，日化填[]
+- brandStyleByCategory: 按大类分别推断品牌调性，推断逻辑同style
+- packageStyleByCategory: 按大类分别推断包装要求。"送礼/福利/有面子"→精装礼盒；"实用/自用"→简约实用；"环保理念"→环保简装
+- categoryRatios: 根据对话内容判断各品类占比，如"主要食品为主，搭配一些日化"→食品占60，日化占40
+- recommendedProductCount: 根据预算和品类数量建议，一般每品类2-4个产品
+- budget: 对话中提到的具体数字优先，否则用项目预设
+- margin: 对话中提到的利润要求优先，否则默认20
+- categories: 从客户提到的具体品类匹配对应大类` },
+            { role: 'user', content: `## 项目信息
+- 项目名称: ${project.name}
+- 客户: ${customer?.customerCompany || '未知'}
+- 企业类型: ${customer?.companyType || ''}，${customer?.companySize || ''}
+- 人数: ${project.peopleCount}人
+- 人均预算: ${project.budgetPerPerson}元
+- 交付日期: ${project.deadline || '未定'}
+- 紧急程度: ${project.urgency || '正常'}
+
+## 需求对话
+${conversation}
+
+## 补充信息（用户手动填写）
+${project.supplementaryInfo || '（无）'}
+
+请综合以上对话、文件内容和补充信息，主动分析推断选品参数（不要猜测，只输出有依据的值）。` }
+        ], { temperature: 0.7, maxTokens: 2048 });
+
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+
+        if (result) {
+            // 保存 AI 分析结果
+            project.aiSuggestion = { rationale: result.rationale || '' };
+
+            // 生成结构化需求文本（用于展示）
+            project.structuredRequirement = result.rationale || '';
+
+            // 初始化并填充选品参数
+            project.selectionParams = project.selectionParams || {};
+            const sp = project.selectionParams;
+            sp.categories = MAJOR_CATEGORIES;
+            if (result.scene) sp.scenePreference = result.scene;
+            if (result.tier) sp.tierPreference = result.tier;
+            if (result.style) sp.stylePreference = result.style;
+            if (result.brandLevelByCategory) sp.brandLevelByCategory = result.brandLevelByCategory;
+            if (result.brandStyleByCategory) sp.brandStyleByCategory = result.brandStyleByCategory;
+            if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
+            if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
+            if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
+            if (result.budget) { sp.budget = result.budget; project.budgetPerPerson = result.budget; }
+            if (result.margin) sp.targetMargin = result.margin;
+            if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
+            sp.proposalCount = 6;
+            sp.selectedSuppliers = [];
+            sp.excludedCategories = [];
+            sp.excludedBrands = [];
+            sp.excludedSuppliers = [];
+            sp.targetMargin = sp.targetMargin || 20;
+            sp.budget = sp.budget || project.budgetPerPerson || 200;
+
+            project.status = 'selecting';
+            project.updatedAt = new Date().toISOString();
+
+            const idx = projects.findIndex(p => p.id === project.id);
+            if (idx >= 0) projects[idx] = project;
+            await saveAllData();
+
+            showSelectionPage(project);
+        } else {
+            throw new Error('AI 返回格式无法解析');
+        }
+    } catch (e) {
+        console.error('AI 分析失败，使用默认参数:', e);
+        // 降级：使用默认选品参数，直接进入选品页
+        const sp = project.selectionParams || {};
+        sp.categories = MAJOR_CATEGORIES;
+        sp.selectedCategories = [...MAJOR_CATEGORIES];
+        sp.scenePreference = sp.scenePreference || [];
+        sp.tierPreference = sp.tierPreference || '';
+        sp.stylePreference = sp.stylePreference || [];
+        sp.brandLevelByCategory = sp.brandLevelByCategory || {};
+        sp.brandStyleByCategory = sp.brandStyleByCategory || {};
+        sp.packageStyleByCategory = sp.packageStyleByCategory || {};
+        sp.categoryRatios = sp.categoryRatios || {};
+        sp.recommendedProductCount = sp.recommendedProductCount || 0;
+        sp.targetMargin = 20;
+        sp.budget = project.budgetPerPerson || 200;
+        sp.proposalCount = 6;
+        sp.selectedSuppliers = [];
+        sp.excludedCategories = [];
+        sp.excludedBrands = [];
+        sp.excludedSuppliers = [];
+        project.selectionParams = sp;
+        project.structuredRequirement = '';
+        project.status = 'selecting';
+        project.updatedAt = new Date().toISOString();
+
+        const idx = projects.findIndex(p => p.id === project.id);
+        if (idx >= 0) projects[idx] = project;
+        await saveAllData();
+
+        showSelectionPage(project);
+    }
 }
 
 function renderRequirementCard(project) {
@@ -1989,7 +2473,7 @@ async function goToSelectionStep(projectId) {
 }
 
 function generateStructuredRequirement(project, chatText) {
-    const sceneText = project.initialScene || '员工福利';
+    const sceneText = '员工福利';
     const customer = getProjectCustomer(project);
     const companyType = customer?.companyType || '';
     const companySize = customer?.companySize || '';
@@ -2011,13 +2495,13 @@ ${sceneText}场景${project.deliveryMode ? '，' + project.deliveryMode : ''}。
 ${project.urgency === '正常' ? '时间充裕，可按正常流程推进。' : project.urgency === '加急' ? '时间较紧，优先现货和短备货周期产品。' : '时间非常紧张，必须现货且快速配送。'}
 
 【品类方向】
-${project.initialTags.length > 0 ? '基于标签偏好：' + project.initialTags.join('、') : '待从对话中提取'}
+待从对话中提取
 
 【风格要求】
 待从对话中提取
 
 【约束条件】
-${project.targetMargin ? '- 方案整体毛利率 ≥ ' + project.targetMargin + '%\n' : ''}${project.fulfillmentDays ? '- 履约周期 ≤ ' + project.fulfillmentDays + '天\n' : ''}- 需从商品库中选品，严格满足约束
+${project.fulfillmentDays ? '- 履约周期 ≤ ' + project.fulfillmentDays + '天\n' : ''}- 需从商品库中选品，严格满足约束
 
 【客户零散描述】
 ${chatText.substring(0, 300) || '（对话中收集）'}${chatText.length > 300 ? '...' : ''}
@@ -2034,24 +2518,56 @@ function showSelectionPage(project) {
     project.selectionParams = project.selectionParams || {
         selectedBrands: project.selectedBrands || [],
         categories: extractCategoriesFromRequirement(project.structuredRequirement || ''),
-        targetMargin: project.targetMargin || 20,
+        targetMargin: 20,
         budget: project.budgetPerPerson || 200,
-        proposalCount: project.proposalCount || 6,
+        proposalCount: project.proposalCount || 3,
         selectedCategories: [],
         minProducts: 0,
         maxProducts: 0,
+        recommendedProductCount: 0,
         scenePreference: [],
         tierPreference: '',
         stylePreference: [],
-        brandLevelPreference: [],
-        brandStylePreference: []
+        brandLevelByCategory: {},
+        brandStyleByCategory: {},
+        packageStyleByCategory: {},
+        categoryRatios: {},
+        selectedSuppliers: [],
+        productTypeRatio: {},
+        brandLevelRatio: {},
+        excludedCategories: [],
+        excludedBrands: [],
+        excludedProductTypes: [],
+        excludedSuppliers: []
     };
     const sp = project.selectionParams;
+    // 向后兼容：旧全局字段迁移为按大类
+    if (sp.brandLevelPreference && !Object.keys(sp.brandLevelByCategory || {}).length) {
+        sp.brandLevelByCategory = {};
+        (sp.selectedCategories || sp.categories || []).forEach(cat => {
+            sp.brandLevelByCategory[cat] = [...sp.brandLevelPreference];
+        });
+        delete sp.brandLevelPreference;
+    }
+    if (sp.brandStylePreference && !Object.keys(sp.brandStyleByCategory || {}).length) {
+        sp.brandStyleByCategory = {};
+        (sp.selectedCategories || sp.categories || []).forEach(cat => {
+            sp.brandStyleByCategory[cat] = [...sp.brandStylePreference];
+        });
+        delete sp.brandStylePreference;
+    }
+    if (sp.packageStylePreference && !Object.keys(sp.packageStyleByCategory || {}).length) {
+        sp.packageStyleByCategory = {};
+        (sp.selectedCategories || sp.categories || []).forEach(cat => {
+            sp.packageStyleByCategory[cat] = [...sp.packageStylePreference];
+        });
+        delete sp.packageStylePreference;
+    }
     // 8大固定大类（与产品库majorCategory字段一致）
     const allCats = MAJOR_CATEGORIES;
     // 需求中识别到的大类用于预勾选
-    const requirementCats = sp.categories?.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
-    sp.categories = requirementCats;
+    const requirementCats = extractCategoriesFromRequirement(project.structuredRequirement || '');
+    if (!sp.categories || sp.categories.length === 0) sp.categories = requirementCats;
     // 选中大类默认=需求识别到的（如果为空则全选）
     if (!sp.selectedCategories || sp.selectedCategories.length === 0) {
         sp.selectedCategories = requirementCats.length > 0 ? [...requirementCats] : [...allCats];
@@ -2060,127 +2576,241 @@ function showSelectionPage(project) {
     if (!sp.minProducts || sp.minProducts <= 0) sp.minProducts = effectiveCatCount;
     if (!sp.maxProducts || sp.maxProducts <= 0) sp.maxProducts = Math.min(effectiveCatCount + 1, effectiveCatCount * 2);
 
+    const tabId = (suffix) => `tab-${suffix}-${project.id}`;
+    // 按大类偏好设置的HTML
+    const brandLevelOpts = ['全国一线品牌','地方品牌','进口品牌','老字号'];
+    const brandStyleOpts = ['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'];
+    const packageStyleOpts = ['精装礼盒','简约实用','环保简装','普通包装'];
+    let perCategoryHTML = '';
+    if (sp.selectedCategories && sp.selectedCategories.length > 0) {
+        perCategoryHTML = sp.selectedCategories.map((cat, catIdx) => {
+            const blByCat = (sp.brandLevelByCategory || {})[cat] || [];
+            const bsByCat = (sp.brandStyleByCategory || {})[cat] || [];
+            const psByCat = (sp.packageStyleByCategory || {})[cat] || [];
+            const ratio = (sp.categoryRatios || {})[cat] || '';
+            const collapsed = catIdx > 0 ? 'hidden' : '';
+            const arrowRotated = catIdx === 0 ? 'rotate-90' : '';
+            return '<div class="mb-3 border rounded p-3"><div class="flex items-center justify-between mb-2 cursor-pointer" onclick="var n=this.nextElementSibling;n.classList.toggle(\'hidden\');this.querySelector(\'.ca\').classList.toggle(\'rotate-90\')"><span class="text-sm font-medium">' + cat + '</span><span class="ca text-xs text-gray-400 ' + arrowRotated + '">▶</span></div><div class="' + collapsed + ' space-y-2"><div><span class="text-xs text-gray-400">品牌级别：</span><div class="flex flex-wrap gap-1 mt-1">' + brandLevelOpts.map(s => { const active = blByCat.includes(s); return '<span class="tag text-xs cursor-pointer ' + (active ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500') + '" onclick="toggleCategoryParam(' + project.id + ',\'brandLevelByCategory\',\'' + cat + '\',\'' + s + '\')">' + s + '</span>'; }).join('') + '</div></div><div><span class="text-xs text-gray-400">品牌调性：</span><div class="flex flex-wrap gap-1 mt-1">' + brandStyleOpts.map(s => { const active = bsByCat.includes(s); return '<span class="tag text-xs cursor-pointer ' + (active ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500') + '" onclick="toggleCategoryParam(' + project.id + ',\'brandStyleByCategory\',\'' + cat + '\',\'' + s + '\')">' + s + '</span>'; }).join('') + '</div></div><div><span class="text-xs text-gray-400">包装形式：</span><div class="flex flex-wrap gap-1 mt-1">' + packageStyleOpts.map(s => { const active = psByCat.includes(s); return '<span class="tag text-xs cursor-pointer ' + (active ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-500') + '" onclick="toggleCategoryParam(' + project.id + ',\'packageStyleByCategory\',\'' + cat + '\',\'' + s + '\')">' + s + '</span>'; }).join('') + '</div></div><div class="flex items-center gap-2"><span class="text-xs text-gray-400">占比：</span><input type="number" value="' + ratio + '" min="0" max="100" class="w-16 border rounded px-1.5 py-0.5 text-xs" onchange="updateCategoryRatio(' + project.id + ',\'' + cat + '\',parseInt(this.value)||0)" placeholder="%"><span class="text-xs text-gray-400">%</span></div></div></div>';
+        }).join('');
+    }
     let html = `
-    <div class="flex items-center gap-4 mb-6">
+    <div class="flex items-center gap-4 mb-4">
         <button onclick="backToRequirement(${project.id})" class="text-gray-500 hover:text-gray-700">
             <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 19l-7-7m0 0l7-7m-7 7h18"/></svg>
         </button>
         <h2 class="text-xl font-bold">${project.name}</h2>
         <span class="tag bg-green-100 text-green-600">选品中</span>
+        <span class="text-xs text-blue-500 cursor-pointer hover:underline ml-auto" onclick="resetSelectionParams(${project.id})">重置参数</span>
     </div>
 
-    <div class="grid grid-cols-3 gap-6">
-        <div class="col-span-1 space-y-4">
-            <div class="bg-white rounded-lg shadow p-4">
-                <h3 class="font-medium mb-3">🤖 AI 选品建议</h3>
-                <div id="ai-suggestion-${project.id}">
-                    ${project.aiSuggestion ? `
-                        <div class="text-xs text-gray-600 bg-blue-50 rounded p-3 max-h-60 overflow-y-auto">${project.aiSuggestion.rationale || ''}</div>
-                    ` : '<div class="text-xs text-gray-400">点击下方按钮获取 AI 选品建议</div>'}
-                </div>
-                <button onclick="getAISelectionSuggestion(${project.id})" class="mt-3 w-full px-4 py-2 bg-purple-600 text-white rounded-lg text-sm hover:bg-purple-700">🎯 获取 AI 选品建议</button>
-            </div>
-            <div class="bg-white rounded-lg shadow p-4">
-                <h3 class="font-medium mb-3">⚙️ 选品参数 <span class="text-xs text-gray-400">(可编辑)</span></h3>
-                <div class="space-y-3 text-sm">
-                    <div>
-                        <label class="text-xs text-gray-500">场景偏好</label>
-                        <div class="flex flex-wrap gap-1 mt-1" id="param-scene-${project.id}">
-                            ${['端午','中秋','春节','三八','夏日','年终','生日','日常'].map(s => {
-                                const active = (sp.scenePreference || []).includes(s);
-                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'scenePreference','${s}')">${s}</span>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">档次偏好</label>
-                        <select id="param-tier-${project.id}" class="w-full border rounded px-2 py-1 text-sm mt-1" onchange="updateSelectionParam(${project.id},'tierPreference',this.value)">
-                            <option value="">不限</option>
-                            ${['亲民','中端','中高端','高端'].map(t => `<option value="${t}" ${sp.tierPreference === t ? 'selected' : ''}>${t}</option>`).join('')}
-                        </select>
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">风格偏好</label>
-                        <div class="flex flex-wrap gap-1 mt-1" id="param-style-${project.id}">
-                            ${['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'].map(s => {
-                                const active = (sp.stylePreference || []).includes(s);
-                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'stylePreference','${s}')">${s}</span>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">品牌级别偏好</label>
-                        <div class="flex flex-wrap gap-1 mt-1" id="param-brandlevel-${project.id}">
-                            ${['全国一线品牌','地方品牌','进口品牌','老字号'].map(s => {
-                                const active = (sp.brandLevelPreference || []).includes(s);
-                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'brandLevelPreference','${s}')">${s}</span>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">品牌调性偏好</label>
-                        <div class="flex flex-wrap gap-1 mt-1" id="param-brandstyle-${project.id}">
-                            ${['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'].map(s => {
-                                const active = (sp.brandStylePreference || []).includes(s);
-                                return `<span class="tag text-xs cursor-pointer ${active ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'brandStylePreference','${s}')">${s}</span>`;
-                            }).join('')}
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        <div class="flex-1">
-                            <label class="text-xs text-gray-500">毛利率 ≥</label>
-                            <input type="number" id="param-margin-${project.id}" value="${sp.targetMargin}" min="0" max="100" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'targetMargin',parseInt(this.value))">
-                        </div>
-                        <div class="flex-1">
-                            <label class="text-xs text-gray-500">人均预算</label>
-                            <input type="number" id="param-budget-${project.id}" value="${sp.budget}" min="10" step="10" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'budget',parseInt(this.value))">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">方案数量</label>
-                        <input type="number" id="param-count-${project.id}" value="${sp.proposalCount}" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'proposalCount',parseInt(this.value))">
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">覆盖大类 <span class="text-gray-400">(${allCats.length}个)</span></label>
-                        <div id="param-cats-${project.id}" class="border rounded p-2 max-h-32 overflow-y-auto space-y-1 mt-1">
-                            ${allCats.map(cat => `
-                                <label class="flex items-center gap-1.5 text-sm cursor-pointer hover:bg-gray-50 rounded px-1">
-                                    <input type="checkbox" value="${cat}" ${sp.selectedCategories.includes(cat) ? 'checked' : ''} onchange="updateSelectionCategories(${project.id})" class="rounded">
-                                    ${cat}
-                                </label>
-                            `).join('')}
-                        </div>
-                    </div>
-                    <div class="flex gap-3">
-                        <div class="flex-1">
-                            <label class="text-xs text-gray-500">最少产品数</label>
-                            <input type="number" id="param-minprod-${project.id}" value="${sp.minProducts}" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'minProducts',parseInt(this.value))">
-                        </div>
-                        <div class="flex-1">
-                            <label class="text-xs text-gray-500">最多产品数</label>
-                            <input type="number" id="param-maxprod-${project.id}" value="${sp.maxProducts}" min="1" max="20" class="w-full border rounded px-2 py-1 text-sm" onchange="updateSelectionParam(${project.id},'maxProducts',parseInt(this.value))">
-                        </div>
-                    </div>
-                    <div>
-                        <label class="text-xs text-gray-500">需求品类 (${allCats.length}个)</label>
-                        <div class="text-xs text-gray-600">${allCats.join('、') || '未识别'}</div>
-                    </div>
-                </div>
-                <button onclick="generateProposalsFromParams(${project.id})" class="mt-4 w-full px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">🤖 生成方案</button>
+    <!-- AI 建议区（可折叠） -->
+    ${project.aiSuggestion ? `
+    <div class="bg-blue-50 rounded-lg p-3 mb-4 text-xs text-gray-700" id="ai-suggestion-${project.id}">
+        <div class="flex items-center justify-between">
+            <span class="font-medium text-blue-800">🤖 AI 选品建议</span>
+            <div class="flex items-center gap-2">
+                <button onclick="reAnalyzeSelectionParams(${project.id})" class="text-xs text-blue-600 hover:text-blue-800 hover:underline">🔄 重新分析</button>
+                <span class="text-gray-400 cursor-pointer" onclick="this.closest('.bg-blue-50').classList.add('hidden')">✕</span>
             </div>
         </div>
-        <div class="col-span-2">
-            <div class="bg-white rounded-lg shadow p-4">
-                <h3 class="font-medium mb-4">📊 方案列表 <span class="text-sm text-gray-400">(${proposalsForProject.length} 个)</span></h3>
-                <div class="grid grid-cols-2 gap-3" id="proposal-grid-${project.id}">
-                    ${proposalsForProject.length === 0 ? '<div class="col-span-2 text-center text-gray-400 py-8">设置参数后点击"生成方案"</div>' : ''}
+        <div class="mt-1">${project.aiSuggestion.requirementSummary || project.aiSuggestion.rationale || ''}</div>
+    </div>` : ''}
+
+    <!-- Tab 导航 -->
+    <div class="flex gap-0 mb-0 bg-white rounded-t-lg shadow">
+        <button id="${tabId('pref')}" class="flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-white rounded-tl-lg" onclick="switchSelectionTab(${project.id},'pref')">🎯 偏好设置</button>
+        <button id="${tabId('filter')}" class="flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50" onclick="switchSelectionTab(${project.id},'filter')">📋 品牌与供应商</button>
+        <button id="${tabId('excl')}" class="flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50 rounded-tr-lg" onclick="switchSelectionTab(${project.id},'excl')">🚫 排除项</button>
+    </div>
+
+    <!-- Tab 内容区 -->
+    <div class="bg-white rounded-b-lg shadow p-5 mb-6">
+        <!-- Tab: 偏好设置 -->
+        <div id="${tabId('pref-content')}" class="grid grid-cols-2 gap-x-8 gap-y-4">
+            <div>
+                <label class="text-xs text-gray-500 block mb-1">场景偏好</label>
+                <div class="flex flex-wrap gap-1" id="param-scene-${project.id}">
+                    ${['端午','中秋','春节','三八','夏日','年终','生日','日常'].map(s => {
+                        const active = (sp.scenePreference || []).includes(s);
+                        return `<span class="tag text-xs cursor-pointer ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'scenePreference','${s}')">${s}</span>`;
+                    }).join('')}
                 </div>
             </div>
+            <div>
+                <label class="text-xs text-gray-500 block mb-1">档次偏好</label>
+                <select id="param-tier-${project.id}" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'tierPreference',this.value)">
+                    <option value="">不限</option>
+                    ${['亲民','中端','中高端','高端'].map(t => `<option value="${t}" ${sp.tierPreference === t ? 'selected' : ''}>${t}</option>`).join('')}
+                </select>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500 block mb-1">风格偏好</label>
+                <div class="flex flex-wrap gap-1" id="param-style-${project.id}">
+                    ${['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'].map(s => {
+                        const active = (sp.stylePreference || []).includes(s);
+                        return `<span class="tag text-xs cursor-pointer ${active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'stylePreference','${s}')">${s}</span>`;
+                    }).join('')}
+                </div>
+            </div>
+            <!-- 按大类偏好设置 -->
+            ${perCategoryHTML ? `<div class="col-span-2 border-t pt-4 mt-2"><label class="text-xs text-gray-500 block mb-3">📂 品类偏好设置</label>${perCategoryHTML}</div>` : ''}
+            <div class="flex gap-4">
+                <div class="flex-1">
+                    <label class="text-xs text-gray-500 block mb-1">毛利率 ≥</label>
+                    <input type="number" id="param-margin-${project.id}" value="${sp.targetMargin}" min="0" max="100" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'targetMargin',parseInt(this.value)||0)">
+                </div>
+                <div class="flex-1">
+                    <label class="text-xs text-gray-500 block mb-1">人均预算</label>
+                    <input type="number" id="param-budget-${project.id}" value="${sp.budget}" min="10" step="10" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'budget',parseInt(this.value)||0)">
+                </div>
+            </div>
+            <div>
+                <label class="text-xs text-gray-500 block mb-1">方案数量</label>
+                <input type="number" id="param-count-${project.id}" value="${sp.proposalCount}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'proposalCount',parseInt(this.value)||0)">
+            </div>
+        </div>
+
+        <!-- Tab: 品牌与供应商 -->
+        <div id="${tabId('filter-content')}" class="hidden">
+            <div class="grid grid-cols-2 gap-x-8 gap-y-4">
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">覆盖大类 (${allCats.length}个)
+                        <span class="text-blue-500 cursor-pointer ml-1" onclick="selectAllCheckboxes('param-cats-${project.id}',true);updateSelectionCategories(${project.id})">全选</span>
+                        <span class="text-gray-400">/</span>
+                        <span class="text-blue-500 cursor-pointer" onclick="selectAllCheckboxes('param-cats-${project.id}',false);updateSelectionCategories(${project.id})">全不选</span>
+                    </label>
+                    <div id="param-cats-${project.id}" class="border rounded p-2 max-h-36 overflow-y-auto space-y-1">
+                        ${allCats.map(cat => `
+                            <label class="flex items-center gap-1.5 text-sm cursor-pointer hover:bg-gray-50 rounded px-1">
+                                <input type="checkbox" value="${cat}" ${sp.selectedCategories.includes(cat) ? 'checked' : ''} onchange="updateSelectionCategories(${project.id})" class="rounded">
+                                ${cat}
+                            </label>
+                        `).join('')}
+                    </div>
+                </div>
+                <div class="flex gap-4">
+                    <div class="flex-1">
+                        <label class="text-xs text-gray-500 block mb-1">最少产品数</label>
+                        <input type="number" id="param-minprod-${project.id}" value="${sp.minProducts}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'minProducts',parseInt(this.value)||0)">
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-xs text-gray-500 block mb-1">最多产品数</label>
+                        <input type="number" id="param-maxprod-${project.id}" value="${sp.maxProducts}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'maxProducts',parseInt(this.value)||0)">
+                    </div>
+                    <div class="flex-1">
+                        <label class="text-xs text-gray-500 block mb-1">推荐产品总数 <span class="text-blue-400">AI</span></label>
+                        <input type="number" id="param-recprod-${project.id}" value="${sp.recommendedProductCount || ''}" min="1" max="50" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'recommendedProductCount',parseInt(this.value)||0)" placeholder="AI建议">
+                    </div>
+                </div>
+                <div class="col-span-2">
+                    <label class="text-xs text-gray-500 block mb-1">供应商筛选
+                        <span class="text-blue-500 cursor-pointer ml-1" onclick="selectAllCheckboxes('param-suppliers-${project.id}',true);updateAllSuppliers(${project.id})">全选</span>
+                        <span class="text-gray-400">/</span>
+                        <span class="text-blue-500 cursor-pointer" onclick="selectAllCheckboxes('param-suppliers-${project.id}',false);updateAllSuppliers(${project.id})">全不选</span>
+                    </label>
+                    <input type="text" id="param-supsearch-${project.id}" placeholder="搜索供应商..." class="w-full border rounded px-2 py-1 text-xs mb-1" oninput="filterSuppliers(${project.id}, this.value)">
+                    <div id="param-suppliers-${project.id}" class="border rounded p-1.5 max-h-44 overflow-y-auto grid grid-cols-3 gap-x-2 gap-y-0.5">
+                        ${supplierList.map(s => {
+                            const checked = (sp.selectedSuppliers||[]).includes(s.id) ? 'checked' : '';
+                            return `<label class="flex items-center gap-1 text-xs py-0.5 px-1 rounded hover:bg-gray-50 cursor-pointer truncate">
+                                <input type="checkbox" value="${s.id}" ${checked} onchange="toggleSupplier(${project.id}, '${s.id.replace(/'/g, "\\'")}', this.checked)">
+                                <span class="truncate">${s.name}</span>
+                                <span class="text-gray-400 shrink-0">${s.productCount}</span>
+                            </label>`;
+                        }).join('')}
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">产品类型占比 <span class="text-gray-400">(留空=不限)</span></label>
+                    <div class="grid grid-cols-3 gap-2">
+                        ${['定制','普通','包销'].map(pt => `
+                            <div class="flex items-center gap-1">
+                                <span class="text-xs w-8">${pt}</span>
+                                <input type="number" value="${sp.productTypeRatio?.[pt] || ''}" min="0" max="100"
+                                    class="w-full border rounded px-1.5 py-1 text-xs"
+                                    onchange="updateProductTypeRatio(${project.id},'${pt}',parseInt(this.value)||0)"
+                                    placeholder="0%">
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">品牌级别占比 <span class="text-gray-400">(留空=不限)</span></label>
+                    <div class="grid grid-cols-3 gap-2">
+                        ${['一线','二线','地方','进口','老字号','国民'].map(bl => `
+                            <div class="flex items-center gap-1">
+                                <span class="text-xs w-8">${bl}</span>
+                                <input type="number" value="${sp.brandLevelRatio?.[bl] || ''}" min="0" max="100"
+                                    class="w-full border rounded px-1.5 py-1 text-xs"
+                                    onchange="updateBrandLevelRatio(${project.id},'${bl}',parseInt(this.value)||0)"
+                                    placeholder="0%">
+                            </div>
+                        `).join('')}
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab: 排除项 -->
+        <div id="${tabId('excl-content')}" class="hidden">
+            <div class="grid grid-cols-2 gap-x-8 gap-y-4">
+                <div class="col-span-2">
+                    <label class="text-xs text-gray-500 block mb-1">排除品类</label>
+                    <div class="flex flex-wrap gap-1" id="param-excats-${project.id}">
+                        ${allCats.map(c => {
+                            const active = (sp.excludedCategories || []).includes(c);
+                            return `<span class="tag text-xs cursor-pointer ${active?'bg-red-100 text-red-600 line-through':'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'excludedCategories','${c}')">${c}</span>`;
+                        }).join('')}
+                    </div>
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">排除品牌 <span class="text-gray-400">(逗号分隔)</span></label>
+                    <input type="text" id="param-exbrand-${project.id}" value="${(sp.excludedBrands||[]).join(',')}"
+                        class="w-full border rounded px-2 py-1.5 text-sm"
+                        onchange="updateSelectionParam(${project.id},'excludedBrands',this.value.split(',').map(s=>s.trim()).filter(Boolean))">
+                </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">排除供应商 <span class="text-gray-400">(逗号分隔)</span></label>
+                    <input type="text" id="param-exsuppliers-${project.id}" value="${(sp.excludedSuppliers||[]).join(',')}"
+                        class="w-full border rounded px-2 py-1.5 text-sm"
+                        onchange="updateSelectionParam(${project.id},'excludedSuppliers',this.value.split(',').map(s=>s.trim()).filter(Boolean))">
+                </div>
+            </div>
+        </div>
+
+        <!-- 生成按钮 -->
+        <button onclick="generateProposalsFromParams(${project.id})" class="mt-5 w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">🤖 生成方案</button>
+    </div>
+
+    <!-- 方案列表 -->
+    <div class="bg-white rounded-lg shadow p-4">
+        <h3 class="font-medium mb-4">📊 方案列表 <span class="text-sm text-gray-400">(${proposalsForProject.length} 个)</span></h3>
+        <div class="grid grid-cols-2 gap-3" id="proposal-grid-${project.id}">
+            ${proposalsForProject.length === 0 ? '<div class="col-span-2 text-center text-gray-400 py-8">设置参数后点击"生成方案"</div>' : ''}
         </div>
     </div>`;
 
     document.getElementById('proposal-detail-content').innerHTML = html;
     if (proposalsForProject.length > 0) renderProposalCards(project.id);
+}
+
+function switchSelectionTab(projectId, tab) {
+    const tabs = ['pref', 'filter', 'excl'];
+    const labels = { pref: '🎯 偏好设置', filter: '📋 品牌与供应商', excl: '🚫 排除项' };
+    tabs.forEach(t => {
+        const btn = document.getElementById(`tab-${t}-${projectId}`);
+        const content = document.getElementById(`tab-${t}-content-${projectId}`);
+        if (!btn || !content) return;
+        if (t === tab) {
+            btn.className = 'flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-white';
+            btn.textContent = labels[t];
+            content.classList.remove('hidden');
+        } else {
+            btn.className = 'flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50';
+            btn.textContent = labels[t];
+            content.classList.add('hidden');
+        }
+    });
 }
 
 function updateSelectionParam(projectId, key, value) {
@@ -2199,6 +2829,17 @@ function updateSelectionCategories(projectId) {
     saveAllData();
 }
 
+function selectAllCheckboxes(containerId, selectAll) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.querySelectorAll('input[type="checkbox"]').forEach(cb => {
+        const label = cb.closest('label');
+        if (!label) return;
+        if (selectAll) { label.style.display = ''; }
+        if (selectAll || label.style.display !== 'none') cb.checked = selectAll;
+    });
+}
+
 function toggleSelectionArray(projectId, key, value) {
     const project = findProject(projectId);
     if (!project || !project.selectionParams) return;
@@ -2209,6 +2850,85 @@ function toggleSelectionArray(projectId, key, value) {
     project.selectionParams[key] = arr;
     saveAllData();
     showSelectionPage(project);
+}
+
+function toggleCategoryParam(projectId, key, category, value) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    const map = project.selectionParams[key] || {};
+    const arr = map[category] || [];
+    const idx = arr.indexOf(value);
+    if (idx >= 0) arr.splice(idx, 1);
+    else arr.push(value);
+    map[category] = arr;
+    project.selectionParams[key] = map;
+    saveAllData();
+    showSelectionPage(project);
+}
+
+function updateCategoryRatio(projectId, category, value) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    const ratios = project.selectionParams.categoryRatios || {};
+    ratios[category] = value;
+    project.selectionParams.categoryRatios = ratios;
+    saveAllData();
+}
+
+function toggleSupplier(projectId, supplierId, checked) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    if (!project.selectionParams.selectedSuppliers) project.selectionParams.selectedSuppliers = [];
+    const arr = project.selectionParams.selectedSuppliers;
+    if (checked) {
+        if (!arr.includes(supplierId)) arr.push(supplierId);
+    } else {
+        const idx = arr.indexOf(supplierId);
+        if (idx >= 0) arr.splice(idx, 1);
+    }
+    saveAllData();
+}
+
+function filterSuppliers(projectId, query) {
+    const container = document.getElementById(`param-suppliers-${projectId}`);
+    if (!container) return;
+    const q = query.toLowerCase().trim();
+    container.querySelectorAll('label').forEach(label => {
+        const text = label.textContent.toLowerCase();
+        label.style.display = q === '' || text.includes(q) ? '' : 'none';
+    });
+}
+
+function updateAllSuppliers(projectId) {
+    const container = document.getElementById(`param-suppliers-${projectId}`);
+    if (!container) return;
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    project.selectionParams.selectedSuppliers = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
+    saveAllData();
+}
+
+function updateBrandLevelRatio(projectId, bl, val) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    if (!project.selectionParams.brandLevelRatio) project.selectionParams.brandLevelRatio = {};
+    if (val > 0) project.selectionParams.brandLevelRatio[bl] = val;
+    else delete project.selectionParams.brandLevelRatio[bl];
+    saveAllData();
+}
+
+function updateProductTypeRatio(projectId, pt, val) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    if (!project.selectionParams.productTypeRatio) project.selectionParams.productTypeRatio = {};
+    if (val > 0) project.selectionParams.productTypeRatio[pt] = val;
+    else delete project.selectionParams.productTypeRatio[pt];
+    saveAllData();
+}
+
+function normalizeBrandLevel(bl) {
+    if (!bl) return '其他';
+    return bl.replace('全国', '').replace('品牌', '').trim();
 }
 
 function removeSelectionBrand(projectId, brandName) {
@@ -2229,6 +2949,35 @@ function addSelectionBrand(projectId) {
     showSelectionPage(project);
 }
 
+function resetSelectionParams(projectId) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    const sp = project.selectionParams;
+    sp.scenePreference = [];
+    sp.tierPreference = '';
+    sp.stylePreference = [];
+    sp.brandLevelByCategory = {};
+    sp.brandStyleByCategory = {};
+    sp.packageStyleByCategory = {};
+    sp.categoryRatios = {};
+    sp.recommendedProductCount = 0;
+    sp.selectedSuppliers = [];
+    sp.productTypeRatio = {};
+    sp.brandLevelRatio = {};
+    sp.excludedCategories = [];
+    sp.excludedBrands = [];
+    sp.excludedProductTypes = [];
+    sp.excludedSuppliers = [];
+    sp.targetMargin = 20;
+    sp.budget = 200;
+    sp.proposalCount = 6;
+    sp.minProducts = 0;
+    sp.maxProducts = 0;
+    sp.selectedCategories = [];
+    saveAllData();
+    showSelectionPage(project);
+}
+
 async function getAISelectionSuggestion(projectId) {
     const project = findProject(projectId);
     if (!project) return;
@@ -2238,23 +2987,47 @@ async function getAISelectionSuggestion(projectId) {
     const allCats = MAJOR_CATEGORIES;
     try {
         const response = await callAI([
-            { role: 'system', content: `你是团购选品顾问。根据客户需求分析，输出结构化的选品参数。只返回JSON，不返回其他内容。
+            { role: 'system', content: `你是团购选品顾问。根据已有的客户需求信息，分析并输出选品参数建议。只返回JSON，不返回其他内容。
 
-JSON格式：
+## 你的工作方式
+- 根据提供的需求文本，主动分析推断最合适的选品参数
+- 客户不一定直接说出参数值，你需要从需求描述中推理
+- 每个推荐都要有依据
+
+## 分析原则
+- **主动推断**：例如"员工福利，不要太寒酸"→档次中高端；"年轻人多"→风格年轻潮流
+- **不确定时填默认值**：budget/margin用预设值，其他用空数组/空字符串
+- **值必须从可选集合中选**：不要编造不在列表中的值
+
+## JSON格式（示例值仅为演示）
 {
-  "scene": ["端午","中秋","春节","三八","夏日","年终","生日","日常"], // 适用场景，从可选值中选
-  "tier": "中高端", // 档次偏好：亲民/中端/中高端/高端，可不选则留空
-  "style": ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"], // 产品风格，从可选值中选
-  "brandLevel": ["全国一线品牌","地方品牌","进口品牌","老字号"], // 品牌级别偏好
-  "brandStyle": ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"], // 品牌调性偏好
-  "budget": 200, // 人均预算建议
-  "margin": 20, // 毛利率建议
-  "categories": ["食品饮料"], // 推荐大类，可选${allCats.join('/')}
-  "rationale": "简要分析理由，2-3句话"
+  "scene": ["端午"],
+  "tier": "中高端",
+  "style": ["简约实用"],
+  "brandLevelByCategory": { "食品饮料": ["全国一线品牌"] },
+  "brandStyleByCategory": { "食品饮料": ["商务稳重"] },
+  "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
+  "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
+  "recommendedProductCount": 8,
+  "budget": 200,
+  "margin": 20,
+  "categories": ["食品饮料", "日化个护"],
+  "rationale": "简要说明分析依据，2-3句话"
 }
 
+## 各字段可选值集合
+- scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
+- tier: "亲民" / "中端" / "中高端" / "高端" / ""
+- style: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- brandLevel选项: ["全国一线品牌","地方品牌","进口品牌","老字号"]
+- brandStyle选项: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
+- categories: ${allCats.map(c => `"${c}"`).join(', ')}
+- categoryRatios: 按大类设置百分比，总和应为100
+- recommendedProductCount: 建议的产品总数（正整数）
+
 注意：不要返回具体品牌名或产品名，只返回属性偏好。` },
-            { role: 'user', content: `## 客户需求\n${project.structuredRequirement || project.requirement || ''}\n\n请分析并输出结构化选品参数。` }
+            { role: 'user', content: `## 客户需求\n${project.structuredRequirement || project.requirement || ''}\n\n请分析并输出结构化选品参数（只从可选值集合中选择）。` }
         ], { temperature: 0.7, maxTokens: 2048 });
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
@@ -2264,8 +3037,11 @@ JSON格式：
             if (result.scene) sp.scenePreference = result.scene;
             if (result.tier) sp.tierPreference = result.tier;
             if (result.style) sp.stylePreference = result.style;
-            if (result.brandLevel) sp.brandLevelPreference = result.brandLevel;
-            if (result.brandStyle) sp.brandStylePreference = result.brandStyle;
+            if (result.brandLevelByCategory) sp.brandLevelByCategory = result.brandLevelByCategory;
+            if (result.brandStyleByCategory) sp.brandStyleByCategory = result.brandStyleByCategory;
+            if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
+            if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
+            if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
             if (result.budget) sp.budget = result.budget;
             if (result.margin) sp.targetMargin = result.margin;
             if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
@@ -2275,6 +3051,93 @@ JSON格式：
     } catch (e) { el.innerHTML = `<div class="text-red-500 text-xs">错误: ${e.message}</div>`; }
 }
 
+async function reAnalyzeSelectionParams(projectId) {
+    const project = findProject(projectId);
+    if (!project || !aiSettings.apiKey) { alert('请先配置 AI API Key'); return; }
+    const el = document.getElementById(`ai-suggestion-${projectId}`);
+    if (!el) return;
+    el.innerHTML = '<div class="animate-pulse text-xs text-gray-400">AI 重新分析中...</div>';
+    const allCats = MAJOR_CATEGORIES;
+    const convo = formatConversationForAI(project.conversation);
+    try {
+        const response = await callAI([
+            { role: 'system', content: `你是团购选品顾问。根据客户需求对话，主动分析并输出选品参数建议。只返回JSON，不返回其他内容。
+
+## 你的工作方式
+- 通读完整对话，基于客户透露的信息，分析推断最合适的选品参数
+- 客户不一定直接说出参数值，你需要从对话细节中推理
+- 例如："员工福利，不要太寒酸"→档次中高端；"互联网公司年轻人多"→风格年轻潮流
+
+## 分析原则
+- **主动推断**：从对话中收集线索，综合分析后给出推荐值
+- **项目名称优先**：项目名是最强的场景信号（如"XX端午福利"→scene=["端午"]）
+- **场景可多选**：对话中提到多个场景时返回多个
+- **不确定时填默认值**：budget用项目预设，margin填20，其他用空数组/空字符串
+- **值必须从可选集合中选**：不要编造不在列表中的值
+
+## JSON格式（示例值仅为演示，请替换为分析结果）
+{
+  "scene": ["端午"],
+  "tier": "中高端",
+  "style": ["简约实用"],
+  "brandLevelByCategory": { "食品饮料": ["全国一线品牌"] },
+  "brandStyleByCategory": { "食品饮料": ["商务稳重"] },
+  "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
+  "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
+  "recommendedProductCount": 8,
+  "budget": 200,
+  "margin": 20,
+  "categories": ["食品饮料", "日化个护"],
+  "rationale": "简要说明分析依据，2-3句话"
+}
+
+## 各字段可选值集合
+- scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
+- tier: "亲民" / "中端" / "中高端" / "高端" / ""
+- style: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- brandLevel选项: ["全国一线品牌","地方品牌","进口品牌","老字号"]
+- brandStyle选项: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
+- categories: ${allCats.map(c => `"${c}"`).join(', ')}
+- categoryRatios: 按大类设置百分比，总和应为100
+- recommendedProductCount: 建议的产品总数（正整数）
+
+## 分析指引
+- scene: 项目名称+对话中提到的时机→匹配场景
+- tier: "品质好一点/拿得出手"→中高端；"实惠/性价比"→亲民
+- style: "互联网/年轻人"→年轻潮流；"国企/政府"→商务稳重
+- brandLevelByCategory: 按大类分别推断品牌级别。"大牌/知名"→全国一线品牌；"本地特色"→地方品牌
+- brandStyleByCategory: 按大类分别推断品牌调性
+- packageStyleByCategory: 按大类分别推断包装。"送礼/福利"→精装礼盒；"实用/自用"→简约实用
+- categoryRatios: 根据对话内容判断各品类占比
+- recommendedProductCount: 根据预算和品类数量建议
+- categories: 从客户提到的具体品类匹配对应大类
+
+只返回JSON，不要任何其他文字。` },
+            { role: 'user', content: `项目名称：${project.name}\n\n## 需求对话\n${convo}\n\n## 补充信息\n${project.supplementaryInfo || '（无）'}\n\n请综合以上对话、文件内容和补充信息，提取选品参数，不要猜测。返回JSON。` }
+        ], { temperature: 0.3, maxTokens: 2048 });
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
+        if (result) {
+            project.aiSuggestion = result;
+            const sp = project.selectionParams;
+            if (result.scene) sp.scenePreference = result.scene;
+            if (result.tier) sp.tierPreference = result.tier;
+            if (result.style) sp.stylePreference = result.style;
+            if (result.brandLevelByCategory) sp.brandLevelByCategory = result.brandLevelByCategory;
+            if (result.brandStyleByCategory) sp.brandStyleByCategory = result.brandStyleByCategory;
+            if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
+            if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
+            if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
+            if (result.budget) sp.budget = result.budget;
+            if (result.margin) sp.targetMargin = result.margin;
+            if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
+            await saveAllData();
+            showSelectionPage(project);
+        }
+    } catch (e) { el.innerHTML = `<div class="text-red-500 text-xs">分析错误: ${e.message}</div>`; }
+}
+
 async function backToRequirement(projectId) {
     const project = findProject(projectId);
     project.status = 'requirement_ready';
@@ -2282,9 +3145,13 @@ async function backToRequirement(projectId) {
     currentProjectId = projectId;
     showPage('page-chat');
     document.getElementById('chat-project-name').textContent = project.name;
+    setupChatPasteHandler();
+    const suppTA = document.getElementById('supplement-textarea');
+    if (suppTA) suppTA.value = project.supplementaryInfo || '';
+    switchChatSidebarTab('summary');
     document.getElementById('chat-messages').innerHTML = '';
     if (project.conversation) project.conversation.forEach(msg => {
-        addChatMessage(msg.role === 'assistant' ? 'ai' : 'user', msg.content);
+        addChatMessage(msg.role === 'assistant' ? 'ai' : 'user', msg.content || '', msg.type, msg.meta);
     });
     renderRequirementCard(project);
     document.getElementById('chat-status').textContent = '需求已生成';
@@ -2298,7 +3165,7 @@ async function generateProposalsFromParams(projectId) {
     project.targetMargin = sp.targetMargin;
     project.budgetPerPerson = sp.budget;
     project.constraints = [{ field: '毛利率', operator: '≥', value: '' + sp.targetMargin }];
-    const count = sp.proposalCount || 6, budget = sp.budget || 200;
+    const count = sp.proposalCount || 3, budget = sp.budget || 200;
     const minProducts = sp.minProducts || 0;
     const maxProducts = sp.maxProducts || 0;
     const allCats = sp.categories.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
@@ -2325,6 +3192,26 @@ async function generateProposalsFromParams(projectId) {
     selectedCats.forEach(cat => {
         products.filter(p => majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) >= minProductPrice && estQuote(p) <= maxProductPrice && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
     });
+    // 硬筛选：供应商
+    if (sp.selectedSuppliers && sp.selectedSuppliers.length > 0) {
+        candidates = candidates.filter(p => sp.selectedSuppliers.includes(p.supplierId));
+    }
+    // 硬筛选：排除供应商
+    if (sp.excludedSuppliers && sp.excludedSuppliers.length > 0) {
+        candidates = candidates.filter(p => !sp.excludedSuppliers.some(s => (p.supplierId || '').includes(s)));
+    }
+    // 否定项：排除品类
+    if (sp.excludedCategories && sp.excludedCategories.length > 0) {
+        candidates = candidates.filter(p => !sp.excludedCategories.some(c => majorCategoryMatch(p.majorCategory, c)));
+    }
+    // 否定项：排除品牌
+    if (sp.excludedBrands && sp.excludedBrands.length > 0) {
+        candidates = candidates.filter(p => !sp.excludedBrands.includes(p.brand));
+    }
+    // 否定项：排除产品类型
+    if (sp.excludedProductTypes && sp.excludedProductTypes.length > 0) {
+        candidates = candidates.filter(p => !sp.excludedProductTypes.includes(p.productType));
+    }
     if (candidates.length < 3) { alert('符合条件的商品太少'); return; }
 
     // 适配打分：给每个候选品按集采权重打分，策略选品时优先高分
@@ -2482,9 +3369,10 @@ function scoreProduct(p, budget, targetMargin, estMargin, expectedMinCount, sele
     const deviation = avgPrice > 0 ? Math.abs(actualQuote - avgPrice) / avgPrice : 1;
     score += Math.round(Math.max(0, 25 - deviation * 30));
 
-    // 2. 品牌风格 20分：按用户偏好动态赋分
+    // 2. 品牌风格 20分：按用户偏好动态赋分（按产品大类匹配）
+    const cat = p.majorCategory || '';
+    const blPref = (sp.brandLevelByCategory || {})[cat] || [];
     const bl = (p.brandLevel || '');
-    const blPref = sp.brandLevelPreference || [];
     if (blPref.length > 0) {
         let blScore = 3;
         const blNorm = bl.replace('全国', '').replace('品牌', '');
@@ -2509,10 +3397,18 @@ function scoreProduct(p, budget, targetMargin, estMargin, expectedMinCount, sele
         const tone = getBrandTone(p.brand);
         if (tone && !tone.includes('大众') && !tone.includes('性价比')) score += 5;
     }
-    const bsPref = sp.brandStylePreference || [];
+    const bsPref = (sp.brandStyleByCategory || {})[cat] || [];
     if (bsPref.length > 0) {
         const tone = getBrandTone(p.brand);
         if (tone && bsPref.some(s => tone.includes(s))) score += 5;
+    }
+
+    // 2.5 包装形式匹配 5分（按产品大类匹配）
+    const pkgPref = (sp.packageStyleByCategory || {})[cat] || [];
+    if (pkgPref.length > 0) {
+        const pPkg = p.packageStyle || '';
+        if (pkgPref.some(s => pPkg.includes(s))) score += 5;
+        else if (pPkg) score += 2;
     }
 
     // 3. 价格毛利 20分
@@ -2604,179 +3500,6 @@ function extractCategoriesFromRequirement(requirement) {
     }
     return found;
 }
-
-// AI 智能选品
-async function aiGenerateProposals(project, candidates, count) {
-    const budget = project.budgetPerPerson || 200;
-    const targetMargin = project.targetMargin || 20;
-    const requiredCategories = extractCategoriesFromRequirement(project.structuredRequirement || '');
-
-    // 从约束中提取毛利率要求
-    const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
-    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : targetMargin;
-    const marginFactor = 1 - effectiveMargin / 100;
-
-    const minBudget = Math.round(budget * 0.95);
-
-    // 构建商品摘要，包含预估供货价
-    const productSummary = candidates.map(p => {
-        let estimatedQuote = p.purchasePrice / marginFactor;
-        // 供货价不超过零售价
-        if (p.retailPrice > 0 && estimatedQuote > p.retailPrice) {
-            estimatedQuote = p.retailPrice;
-        }
-        return {
-            id: p.id,
-            name: p.name || '',
-            brand: p.brand || '',
-            majorCategory: p.majorCategory || '',
-            purchasePrice: p.purchasePrice || 0,
-            retailPrice: p.retailPrice || 0,
-            estimatedQuote: Math.round(estimatedQuote * 100) / 100,
-            supportsDropship: p.supportsDropship || false,
-            leadTime: p.leadTime || ''
-        };
-    });
-
-    // 构建约束描述
-    const constraintsText = (project.constraints || []).map(c => `- ${c.field} ${c.operator} ${c.value}`).join('\n');
-
-    const systemPrompt = `你是团购方案选品专家。根据客户需求从商品库中选择最合适的产品组合。
-
-## 选品原则（必须严格遵守，违反任一条则方案无效）
-1. **预算约束** - 方案预估供货价总和必须在 ${minBudget}元 ~ ${budget}元 之间（这是硬性要求！）
-2. **品类覆盖** - 必须覆盖所有需求品类，每个品类至少1个产品
-3. **毛利率** - 方案毛利率 ≥ ${effectiveMargin}%
-4. **供货价上限** - 每个产品供货价 ≤ 零售价
-
-## 重要提示
-- 仔细计算预估供货价总和，确保在 ${minBudget}-${budget} 元范围内
-- 如果单品太少无法满足预算，增加产品数量
-- 如果单品太贵超出预算，选择更便宜的产品组合
-
-## 返回格式（严格JSON）
-{"proposals":[{"name":"方案名称","theme":"主题","productIds":[1,2,3],"rationale":"选择理由（说明预估总价和如何满足约束）"}]}`;
-
-    const userMessage = `## 项目限定条件
-- 人均预算: ${budget}元
-- 预算范围: ${minBudget}元 ~ ${budget}元（必须在此范围内！）
-- 目标毛利率: ≥ ${effectiveMargin}%
-
-## 字段约束
-${constraintsText || '无'}
-
-## 客户需求
-${project.structuredRequirement || '员工福利采购'}
-
-## 候选商品 (共${productSummary.length}个)
-字段说明：purchasePrice=采购价, retailPrice=零售价, estimatedQuote=预估供货价
-${JSON.stringify(productSummary.slice(0, 150), null, 2)}
-
-## 选品要求
-1. **最重要**：预估供货价(estimatedQuote)总和必须在 ${minBudget}-${budget} 元之间
-2. 覆盖品类：${requiredCategories.join('、') || '从需求提取'}
-3. 供货价 ≤ 零售价
-
-## 差异化要求
-- 每个方案的产品组合要有明显差异
-- 不同方案应体现不同价位档次、不同品牌组合或不同品类侧重
-
-请生成 ${count} 个差异化方案，返回JSON。每个方案的rationale必须说明预估总价。`;
-
-    const messages = [
-        { role: 'system', content: systemPrompt },
-        { role: 'user', content: userMessage }
-    ];
-
-    const response = await callAI(messages, { temperature: 0.7, maxTokens: 4096 });
-
-    // 解析 JSON
-    const jsonMatch = response.match(/\{[\s\S]*"proposals"[\s\S]*\}/);
-    if (!jsonMatch) {
-        throw new Error('AI 返回格式错误');
-    }
-    return JSON.parse(jsonMatch[0]);
-}
-
-// 从 AI 结果构建方案
-async function buildProposalsFromAI(project, aiResult, candidates) {
-    const productMap = new Map(candidates.map(p => [p.id, p]));
-    const budget = project.budgetPerPerson || 200;
-    // 从约束中提取毛利率
-    const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
-    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
-    const targetMargin = effectiveMargin / 100;
-    const marginFactor = 1 - targetMargin;
-    const minBudget = budget * 0.95;
-
-    proposals = proposals.filter(p => p.projectId !== project.id);
-
-    for (let i = 0; i < aiResult.proposals.length; i++) {
-        const ap = aiResult.proposals[i];
-        const selectedProducts = (ap.productIds || []).map(id => productMap.get(id)).filter(Boolean);
-
-        if (selectedProducts.length === 0) continue;
-
-        const proposalProducts = selectedProducts.map(p => {
-            let quotePrice = p.purchasePrice / marginFactor;
-            // 校验：报价不超过零售价
-            const retailPrice = p.retailPrice || 0;
-            if (retailPrice > 0 && quotePrice > retailPrice) {
-                console.warn(`报价超过零售价，已修正: ${p.name} (${quotePrice.toFixed(2)} → ${retailPrice})`);
-                quotePrice = retailPrice;
-            }
-            const actualMargin = ((quotePrice - p.purchasePrice) / quotePrice * 100).toFixed(1);
-            const supplierObj = suppliers.find(s => s.id === p.supplierId || s.name === p.supplierId);
-            const supplierName = supplierObj?.name || p.supplierName || p.supplierId || '-';
-            return {
-                productId: p.id, sku: p.sku, name: p.name,
-                supplierId: p.supplierId, supplier: supplierName,
-                brand: p.brand, brandLevel: p.brandLevel || '',
-                purchasePrice: p.purchasePrice,
-                retailPrice: retailPrice,
-                quotePrice: Math.round(quotePrice * 100) / 100,
-                margin: actualMargin + '%',
-                image: p.mainImage || '',
-                quantity: 1,
-                subtotal: Math.round(quotePrice * 100) / 100
-            };
-        });
-
-        const totalPerPerson = proposalProducts.reduce((s, p) => s + p.quotePrice, 0);
-        const totalCost = proposalProducts.reduce((s, p) => s + p.purchasePrice, 0);
-        const overallMargin = totalPerPerson > 0 ? ((totalPerPerson - totalCost) / totalPerPerson * 100).toFixed(1) : 0;
-        const budgetUtil = budget > 0 ? (totalPerPerson / budget * 100).toFixed(0) : 0;
-
-        // 校验预算利用率
-        if (totalPerPerson < minBudget) {
-            console.warn(`方案${i + 1}总价 ${totalPerPerson.toFixed(2)}元 低于预算95% (${minBudget.toFixed(2)}元)`);
-        }
-
-        proposals.push({
-            id: nextProposalId++,
-            projectId: project.id,
-            index: i + 1,
-            name: ap.name || `方案${i + 1}`,
-            tagline: ap.rationale?.substring(0, 30) || '智能推荐组合',
-            theme: ap.theme || '精选组合',
-            products: proposalProducts,
-            totalPerPerson: Math.round(totalPerPerson * 100) / 100,
-            totalPrice: Math.round(totalPerPerson * project.peopleCount * 100) / 100,
-            totalCost: Math.round(totalCost * 100) / 100,
-            overallMargin: parseFloat(overallMargin),
-            budgetUtilization: parseInt(budgetUtil),
-            maxLeadTime: Math.max(...selectedProducts.map(p => parseInt((p.leadTime || '0').replace(/\D/g, '')) || 0)),
-            canFulfill: true,
-            aiRationale: ap.rationale || '',
-            isManualEdited: false,
-            manualChanges: '',
-            createdAt: new Date().toISOString(),
-            updatedAt: new Date().toISOString()
-        });
-    }
-    await saveAllData();
-}
-
 async function generateProposals(projectId) {
     const project = findProject(projectId);
     if (!project) return;
@@ -2792,7 +3515,7 @@ async function generateProposals(projectId) {
         if (field && value) project.constraints.push({ field, operator, value });
     });
 
-    const count = parseInt(document.getElementById('gen-proposalCount')?.value) || 6;
+    const count = parseInt(document.getElementById('gen-proposalCount')?.value) || 3;
     project.proposalCount = count;
     project.status = 'generating';
     project.updatedAt = new Date().toISOString();
@@ -3330,6 +4053,79 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             }
         }
 
+        // 品牌级别占比约束
+        const blRatio = project.selectionParams?.brandLevelRatio;
+        if (blRatio && Object.keys(blRatio).length > 0 && selectedProducts.length > 0) {
+            const current = {};
+            selectedProducts.forEach(p => {
+                const bl = normalizeBrandLevel(p.brandLevel);
+                current[bl] = (current[bl] || 0) + 1;
+            });
+            const total = selectedProducts.length;
+            for (const [bl, targetPct] of Object.entries(blRatio)) {
+                const targetCount = Math.max(1, Math.round(total * targetPct / 100));
+                const currentCount = current[bl] || 0;
+                if (currentCount < targetCount) {
+                    let deficit = targetCount - currentCount;
+                    for (const cat of cats) {
+                        if (deficit <= 0) break;
+                        const alt = catProducts[cat]?.find(p =>
+                            normalizeBrandLevel(p.brandLevel) === bl &&
+                            !selectedProducts.some(sp => sp.id === p.id)
+                        );
+                        if (alt) {
+                            // 替换同品类中非目标品牌级别的产品
+                            const toReplaceIdx = selectedProducts.findIndex(p =>
+                                majorCategoryMatch(p.majorCategory, cat) &&
+                                normalizeBrandLevel(p.brandLevel) !== bl
+                            );
+                            if (toReplaceIdx >= 0) {
+                                selectedProducts[toReplaceIdx] = alt;
+                                current[bl] = (current[bl] || 0) + 1;
+                                deficit--;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 产品类型占比约束
+        const ptRatio = project.selectionParams?.productTypeRatio;
+        if (ptRatio && Object.keys(ptRatio).length > 0 && selectedProducts.length > 0) {
+            const ptCurrent = {};
+            selectedProducts.forEach(p => {
+                const pt = p.productType || '普通';
+                ptCurrent[pt] = (ptCurrent[pt] || 0) + 1;
+            });
+            const total = selectedProducts.length;
+            for (const [pt, targetPct] of Object.entries(ptRatio)) {
+                const targetCount = Math.max(1, Math.round(total * targetPct / 100));
+                const currentCount = ptCurrent[pt] || 0;
+                if (currentCount < targetCount) {
+                    let deficit = targetCount - currentCount;
+                    for (const cat of cats) {
+                        if (deficit <= 0) break;
+                        const alt = catProducts[cat]?.find(p =>
+                            (p.productType || '普通') === pt &&
+                            !selectedProducts.some(sp => sp.id === p.id)
+                        );
+                        if (alt) {
+                            const toReplaceIdx = selectedProducts.findIndex(p =>
+                                majorCategoryMatch(p.majorCategory, cat) &&
+                                (p.productType || '普通') !== pt
+                            );
+                            if (toReplaceIdx >= 0) {
+                                selectedProducts[toReplaceIdx] = alt;
+                                ptCurrent[pt] = (ptCurrent[pt] || 0) + 1;
+                                deficit--;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
         // 预算预检：策略选品可能严重超预算（如轻奢全选高价品），先重建为最便宜组合
         const preCheckTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
         if (preCheckTotal > maxBudget * 1.5) {
@@ -3820,13 +4616,16 @@ function openProject(projectId) {
         showPage('page-chat');
         document.getElementById('chat-project-name').textContent = project.name;
         document.getElementById('chat-status').textContent = '对话中';
+        setupChatPasteHandler();
+        const suppTA1 = document.getElementById('supplement-textarea');
+        if (suppTA1) suppTA1.value = project.supplementaryInfo || '';
+        switchChatSidebarTab('summary');
         // 恢复对话历史
         document.getElementById('chat-messages').innerHTML = '';
         if (project.conversation && project.conversation.length > 0) {
             project.conversation.forEach(msg => {
-                // 转换 role: 'assistant' -> 'ai', 'user' -> 'user'
                 const displayRole = msg.role === 'assistant' ? 'ai' : msg.role;
-                addChatMessage(displayRole, msg.content);
+                addChatMessage(displayRole, msg.content || '', msg.type, msg.meta);
             });
         }
         updateChatSummary(project);
@@ -3835,11 +4634,15 @@ function openProject(projectId) {
         currentProjectId = projectId;
         showPage('page-chat');
         document.getElementById('chat-project-name').textContent = project.name;
+        setupChatPasteHandler();
+        const suppTA2 = document.getElementById('supplement-textarea');
+        if (suppTA2) suppTA2.value = project.supplementaryInfo || '';
+        switchChatSidebarTab('summary');
         document.getElementById('chat-messages').innerHTML = '';
         if (project.conversation && project.conversation.length > 0) {
             project.conversation.forEach(msg => {
                 const displayRole = msg.role === 'assistant' ? 'ai' : msg.role;
-                addChatMessage(displayRole, msg.content);
+                addChatMessage(displayRole, msg.content || '', msg.type, msg.meta);
             });
         }
         renderRequirementCard(project);
