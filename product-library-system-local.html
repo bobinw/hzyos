@@ -138,6 +138,11 @@
                             批量导入Excel
                             <input type="file" accept=".xlsx,.xls" class="hidden" onchange="handleBulkImport(event)">
                         </label>
+                        <label class="border rounded-lg px-4 py-2 text-sm hover:bg-gray-50 flex items-center gap-1 cursor-pointer bg-green-50 border-green-200 text-green-700 hover:bg-green-100" title="从JSON备份恢复数据库">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15"/></svg>
+                            恢复备份
+                            <input type="file" accept=".json" class="hidden" onchange="restoreFromBackup(event)">
+                        </label>
                         <button onclick="showPage('page-import')" class="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700">+ 新增商品</button>
                     </div>
                 </div>
@@ -1431,7 +1436,7 @@
     <script>
         // ========== IndexedDB 数据库 ==========
         const DB_NAME = 'ProductLibraryDB';
-        const DB_VERSION = 8;
+        const DB_VERSION = 9;
         let db = null;
 
         // 初始化 IndexedDB
@@ -1442,6 +1447,10 @@
                 request.onerror = () => {
                     console.error('IndexedDB 打开失败:', request.error);
                     reject(request.error);
+                };
+                request.onblocked = () => {
+                    console.error('DB升级被阻塞：请关闭其他已打开此系统的标签页，然后刷新');
+                    alert('数据库升级被阻塞\n\n请关闭所有已打开"商品库"或"方案系统"的标签页，然后刷新此页面。');
                 };
 
                 request.onupgradeneeded = (event) => {
@@ -1483,12 +1492,32 @@
                     if (!database.objectStoreNames.contains('productImages')) {
                         database.createObjectStore('productImages', { keyPath: 'productId' });
                     }
+                    // V9: Agent stores（与方案系统共享）
+                    if (!database.objectStoreNames.contains('agentConversations')) {
+                        const convStore = database.createObjectStore('agentConversations', { keyPath: 'id', autoIncrement: true });
+                        convStore.createIndex('projectId', 'projectId', { unique: false });
+                        convStore.createIndex('createdAt', 'createdAt', { unique: false });
+                    }
+                    if (!database.objectStoreNames.contains('agentMemories')) {
+                        const memStore = database.createObjectStore('agentMemories', { keyPath: 'id', autoIncrement: true });
+                        memStore.createIndex('type', 'type', { unique: false });
+                        memStore.createIndex('tags', 'tags', { unique: false, multiEntry: true });
+                    }
+                    if (!database.objectStoreNames.contains('agentRules')) {
+                        const ruleStore = database.createObjectStore('agentRules', { keyPath: 'id', autoIncrement: true });
+                        ruleStore.createIndex('active', 'active', { unique: false });
+                    }
+                    if (!database.objectStoreNames.contains('agentSkills')) {
+                        database.createObjectStore('agentSkills', { keyPath: 'id', autoIncrement: true });
+                    }
 
-                    console.log('IndexedDB 数据库结构创建完成 (V7)');
+                    console.log('IndexedDB 数据库结构创建完成 (V9)');
                 };
 
                 request.onsuccess = async () => {
                     db = request.result;
+                    db.onclose = () => { console.warn('DB连接被强制关闭'); db = null; };
+                    db.onversionchange = () => { db.close(); db = null; console.warn('DB版本变更，连接已关闭'); };
                     console.log('IndexedDB 连接成功');
 
                     // V7 迁移：将现有产品图片提取到 productImages store
@@ -1568,34 +1597,23 @@
                 const transaction = db.transaction([storeName], 'readwrite');
                 const store = transaction.objectStore(storeName);
 
-                let request;
+                transaction.oncomplete = () => resolve();
+                transaction.onerror = () => reject(transaction.error || new Error('事务失败'));
+                transaction.onabort = () => reject(new Error('事务被中止'));
+
                 if (Array.isArray(data)) {
-                    // 先清空再批量添加
-                    const clearRequest = store.clear();
-                    clearRequest.onsuccess = () => {
-                        const addPromises = [];
-                        data.forEach(item => {
-                            // 确保item有id属性
-                            if (item && (item.id !== undefined || item.key !== undefined)) {
-                                try {
-                                    addPromises.push(new Promise((resolveAdd, rejectAdd) => {
-                                        const addReq = store.add(item);
-                                        addReq.onsuccess = () => resolveAdd();
-                                        addReq.onerror = () => rejectAdd(addReq.error);
-                                    }));
-                                } catch (e) {
-                                    console.warn('添加数据失败:', e, item);
-                                }
+                    store.clear();
+                    data.forEach(item => {
+                        if (item && (item.id !== undefined || item.key !== undefined)) {
+                            try {
+                                store.put(item);
+                            } catch (e) {
+                                console.warn('添加数据失败:', e, item);
                             }
-                        });
-                        // 等待所有 add 完成后再 resolve
-                        Promise.all(addPromises).then(() => resolve(addPromises.length)).catch(reject);
-                    };
-                    clearRequest.onerror = () => reject(clearRequest.error);
+                        }
+                    });
                 } else {
-                    request = store.put(data);
-                    request.onsuccess = () => resolve(data);
-                    request.onerror = () => reject(request.error);
+                    store.put(data);
                 }
             });
         }
@@ -1685,10 +1703,11 @@
 
                 const transaction = db.transaction(['settings'], 'readwrite');
                 const store = transaction.objectStore('settings');
-                const request = store.put({ key, value });
+                store.put({ key, value });
 
-                request.onsuccess = () => resolve(value);
-                request.onerror = () => reject(request.error);
+                transaction.oncomplete = () => resolve(value);
+                transaction.onerror = () => reject(transaction.error);
+                transaction.onabort = () => reject(new Error('事务被中止'));
             });
         }
 
@@ -2303,6 +2322,197 @@
                 renderList();
                 alert('已重置为默认示例数据');
             }
+        }
+
+        // 从JSON备份恢复数据
+        async function restoreFromBackup(event) {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            if (!confirm(`确定要从 "${file.name}" 恢复数据库吗？\n\n当前数据将被替换。\n\n文件大小：${(file.size/1024/1024).toFixed(1)}MB`)) {
+                event.target.value = '';
+                return;
+            }
+
+            try {
+                // 显示进度
+                const progressBar = document.createElement('div');
+                progressBar.id = 'restore-progress';
+                progressBar.innerHTML = `
+                    <div class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center">
+                        <div class="bg-white rounded-lg p-6 w-96 shadow-xl">
+                            <h3 class="font-bold mb-2">恢复中...</h3>
+                            <div class="text-sm text-gray-600 mb-2" id="restore-status">读取文件...</div>
+                            <div class="w-full bg-gray-200 rounded-full h-2">
+                                <div id="restore-bar" class="bg-green-500 h-2 rounded-full" style="width:0%"></div>
+                            </div>
+                        </div>
+                    </div>`;
+                document.body.appendChild(progressBar);
+
+                const updateProgress = (pct, msg) => {
+                    const bar = document.getElementById('restore-bar');
+                    const status = document.getElementById('restore-status');
+                    if (bar) bar.style.width = pct + '%';
+                    if (status) status.textContent = msg;
+                };
+
+                // 读取文件
+                const text = await new Promise((res, rej) => {
+                    const reader = new FileReader();
+                    reader.onload = () => res(reader.result);
+                    reader.onerror = () => rej(reader.error);
+                    reader.readAsText(file);
+                });
+
+                updateProgress(30, '解析JSON...');
+                const data = JSON.parse(text);
+                const productList = Array.isArray(data) ? data : (data.products || data.data || []);
+
+                if (productList.length === 0) {
+                    throw new Error('未找到产品数据（JSON 格式不匹配）');
+                }
+
+                updateProgress(40, `导入 ${productList.length} 个产品...`);
+
+                // 确保 DB 已连接
+                if (!db) await initDB();
+
+                // 分批写入（每批500个，避免阻塞）
+                const BATCH = 500;
+                let imported = 0;
+
+                // 分离图片数据并清空旧数据
+                const imageData = [];  // { productId, mainImage, detailImages }
+                const cleanProducts = productList.map(p => {
+                    if (p.mainImage || p.detailImages) {
+                        imageData.push({
+                            productId: p.id,
+                            mainImage: p.mainImage || '',
+                            detailImages: p.detailImages || ''
+                        });
+                    }
+                    const { mainImage, detailImages, ...rest } = p;
+                    return rest;
+                });
+
+                // 先清空旧数据（products + productImages）
+                await new Promise((res, rej) => {
+                    const tx = db.transaction(['products', 'productImages'], 'readwrite');
+                    tx.objectStore('products').clear();
+                    tx.objectStore('productImages').clear();
+                    tx.oncomplete = () => res();
+                    tx.onerror = () => rej(tx.error);
+                });
+
+                // 分批写入产品（不含图片）
+                for (let i = 0; i < cleanProducts.length; i += BATCH) {
+                    const batch = cleanProducts.slice(i, i + BATCH);
+                    await new Promise((res, rej) => {
+                        const tx = db.transaction(['products'], 'readwrite');
+                        const store = tx.objectStore('products');
+                        for (const p of batch) {
+                            if (p.id !== undefined && p.id !== null) {
+                                store.put(p);
+                            }
+                        }
+                        tx.oncomplete = () => {
+                            imported += batch.length;
+                            updateProgress(30 + Math.floor(imported / cleanProducts.length * 30), `产品 ${imported}/${cleanProducts.length}...`);
+                            res();
+                        };
+                        tx.onerror = () => rej(tx.error);
+                    });
+                }
+
+                // 分批写入图片数据
+                updateProgress(60, `写入 ${imageData.length} 组图片...`);
+                const IMG_BATCH = 300;
+                let imgWritten = 0;
+                for (let i = 0; i < imageData.length; i += IMG_BATCH) {
+                    const batch = imageData.slice(i, i + IMG_BATCH);
+                    await new Promise((res, rej) => {
+                        const tx = db.transaction(['productImages'], 'readwrite');
+                        const store = tx.objectStore('productImages');
+                        for (const img of batch) {
+                            store.put(img);
+                        }
+                        tx.oncomplete = () => {
+                            imgWritten += batch.length;
+                            updateProgress(60 + Math.floor(imgWritten / imageData.length * 20), `图片 ${imgWritten}/${imageData.length}...`);
+                            res();
+                        };
+                        tx.onerror = () => rej(tx.error);
+                    });
+                }
+
+                updateProgress(90, '重建供应商列表...');
+
+                // 从产品中提取供应商
+                const supplierMap = new Map();
+                productList.forEach(p => {
+                    const sid = p.supplierId || p.supplierName;
+                    if (sid && !supplierMap.has(sid)) {
+                        supplierMap.set(sid, { id: sid, name: sid, priceType: '集采价', hasTemplate: !!templates[sid] });
+                    }
+                });
+                const newSuppliers = Array.from(supplierMap.values());
+                await new Promise((res, rej) => {
+                    const tx = db.transaction(['suppliers'], 'readwrite');
+                    const store = tx.objectStore('suppliers');
+                    store.clear();
+                    for (const s of newSuppliers) store.put(s);
+                    tx.oncomplete = () => res();
+                    tx.onerror = () => rej(tx.error);
+                });
+
+                updateProgress(92, '重建品牌调性...');
+
+                // 从产品中提取品牌列表并写入 brandTones
+                const toneMap = new Map();
+                productList.forEach(p => {
+                    const b = (p.brand || '').trim();
+                    if (b && !toneMap.has(b)) {
+                        toneMap.set(b, { brand: b });
+                    }
+                });
+                const newTones = Array.from(toneMap.values());
+                await new Promise((res, rej) => {
+                    const tx = db.transaction(['brandTones'], 'readwrite');
+                    const store = tx.objectStore('brandTones');
+                    store.clear();
+                    for (const t of newTones) store.put(t);
+                    tx.oncomplete = () => res();
+                    tx.onerror = () => rej(tx.error);
+                });
+
+                updateProgress(95, '更新内存状态...');
+
+                // 更新内存数据
+                products = productList;
+                suppliers = newSuppliers;
+
+                // 更新 nextProductId
+                const maxId = Math.max(...productList.map(p => p.id || 0), 0);
+                nextProductId = maxId + 1;
+                await saveSettingToDB('nextProductId', nextProductId);
+
+                // 移除进度条
+                document.getElementById('restore-progress')?.remove();
+
+                // 刷新显示
+                renderList();
+                updateStats();
+
+                alert(`恢复完成！\n\n成功导入 ${productList.length} 个产品`);
+
+            } catch (e) {
+                document.getElementById('restore-progress')?.remove();
+                console.error('恢复失败:', e);
+                alert('恢复失败：' + (e.message || e));
+            }
+
+            event.target.value = '';
         }
 
         // ========== 数据导入导出 ==========

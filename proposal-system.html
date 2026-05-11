@@ -48,6 +48,7 @@
                 <a onclick="showPage('page-brands')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-brands">🏷️ 品牌调性</a>
                 <a onclick="showPage('page-templates')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-templates">📄 方案模板</a>
                 <a onclick="showPage('page-ai-settings')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-ai-settings">⚙️ AI设置</a>
+                <a onclick="showPage('page-agent')" class="block px-4 py-2 rounded-lg cursor-pointer hover:bg-gray-100 text-sm" id="nav-agent">🧠 AI Agent</a>
             </nav>
             <div class="p-4 border-t text-xs text-gray-400">
                 商品库数据共享
@@ -309,6 +310,18 @@
                 </div>
             </div>
 
+            <!-- AI Agent 管理页面 -->
+            <div id="page-agent" class="page p-6">
+                <h2 class="text-xl font-bold mb-6">AI Agent 管理</h2>
+                <div class="flex gap-0 mb-0 bg-white rounded-t-lg shadow">
+                    <button onclick="switchAgentTab('memories')" class="agent-tab flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-white rounded-tl-lg" id="agent-tab-memories">📝 记忆</button>
+                    <button onclick="switchAgentTab('rules')" class="agent-tab flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50" id="agent-tab-rules">📋 规则</button>
+                    <button onclick="switchAgentTab('skills')" class="agent-tab flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50" id="agent-tab-skills">🔧 技能</button>
+                    <button onclick="switchAgentTab('archive')" class="agent-tab flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50 rounded-tr-lg" id="agent-tab-archive">📚 对话存档</button>
+                </div>
+                <div id="agent-tab-content" class="bg-white rounded-b-lg shadow p-4 min-h-[400px]"></div>
+            </div>
+
         </div>
     </div>
 
@@ -352,7 +365,7 @@
 <script>
 // ========== IndexedDB 数据库（与商品库共享） ==========
 const DB_NAME = 'ProductLibraryDB';
-const DB_VERSION = 8;
+const DB_VERSION = 9;
 let db = null;
 
 // ========== 数据变量 ==========
@@ -420,6 +433,12 @@ let brandTones = {};  // { "品牌名": "调性标签" }
 let brandList = [];   // 从商品库提取的品牌列表
 let supplierList = []; // 从商品库提取的供应商列表 [{id, name, productCount}]
 
+// Agent 数据
+let agentConversations = [];
+let agentMemories = [];
+let agentRules = [];
+let agentSkills = [];
+
 // ========== 数据库操作 ==========
 function initDB() {
     return new Promise((resolve, reject) => {
@@ -445,6 +464,24 @@ function initDB() {
             if (!database.objectStoreNames.contains('customers')) database.createObjectStore('customers', { keyPath: 'id' });
             if (!database.objectStoreNames.contains('brandTones')) database.createObjectStore('brandTones', { keyPath: 'brand' });
             if (!database.objectStoreNames.contains('productImages')) database.createObjectStore('productImages', { keyPath: 'productId' });
+            // Agent stores (V9)
+            if (!database.objectStoreNames.contains('agentConversations')) {
+                const convStore = database.createObjectStore('agentConversations', { keyPath: 'id', autoIncrement: true });
+                convStore.createIndex('projectId', 'projectId', { unique: false });
+                convStore.createIndex('createdAt', 'createdAt', { unique: false });
+            }
+            if (!database.objectStoreNames.contains('agentMemories')) {
+                const memStore = database.createObjectStore('agentMemories', { keyPath: 'id', autoIncrement: true });
+                memStore.createIndex('type', 'type', { unique: false });
+                memStore.createIndex('tags', 'tags', { unique: false, multiEntry: true });
+            }
+            if (!database.objectStoreNames.contains('agentRules')) {
+                const ruleStore = database.createObjectStore('agentRules', { keyPath: 'id', autoIncrement: true });
+                ruleStore.createIndex('active', 'active', { unique: false });
+            }
+            if (!database.objectStoreNames.contains('agentSkills')) {
+                database.createObjectStore('agentSkills', { keyPath: 'id', autoIncrement: true });
+            }
             console.log('方案系统DB结构创建完成 (V' + DB_VERSION + ')');
         };
     });
@@ -523,6 +560,17 @@ async function saveAllData() {
     }
 }
 
+async function saveAgentData() {
+    try {
+        await Promise.all([
+            saveToDB('agentConversations', agentConversations),
+            saveToDB('agentMemories', agentMemories),
+            saveToDB('agentRules', agentRules),
+            saveToDB('agentSkills', agentSkills)
+        ]);
+    } catch (e) { console.error('Agent数据保存失败:', e); }
+}
+
 // ========== 辅助函数 ==========
 function showPage(pageId) {
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
@@ -531,7 +579,11 @@ function showPage(pageId) {
     else { console.warn('Page not found:', pageId); return; }
     // 更新导航高亮
     document.querySelectorAll('nav a').forEach(a => a.classList.remove('bg-blue-50', 'text-blue-600'));
-    const navMap = { 'page-projects': 'nav-projects', 'page-customers': 'nav-customers', 'page-brands': 'nav-brands', 'page-templates': 'nav-templates', 'page-ai-settings': 'nav-ai-settings' };
+    const navMap = { 'page-projects': 'nav-projects', 'page-customers': 'nav-customers', 'page-brands': 'nav-brands', 'page-templates': 'nav-templates', 'page-ai-settings': 'nav-ai-settings', 'page-agent': 'nav-agent' };
+    // Agent页面：初始化默认Tab
+    if (pageId === 'page-agent') {
+        setTimeout(() => switchAgentTab('memories'), 50);
+    }
     if (navMap[pageId]) {
         const nav = document.getElementById(navMap[pageId]);
         if (nav) nav.classList.add('bg-blue-50', 'text-blue-600');
@@ -622,6 +674,14 @@ async function init() {
     const brandSet = new Set();
     products.forEach(p => { if (p.brand && p.brand.trim()) brandSet.add(p.brand.trim()); });
     brandList = Array.from(brandSet).sort();
+    // 加载 Agent 数据
+    agentConversations = await loadFromDB('agentConversations') || [];
+    agentMemories = await loadFromDB('agentMemories') || [];
+    agentRules = await loadFromDB('agentRules') || [];
+    agentSkills = await loadFromDB('agentSkills') || [];
+    // 首次运行：初始化种子数据（在项目/客户数据加载完成后再执行）
+    if (agentRules.length === 0) { await seedAgentRules(); }
+    if (agentSkills.length === 0) { await seedAgentSkills(); }
     // 从商品库提取供应商列表（supplierId 即供应商名）
     const supplierMap = new Map();
     products.forEach(p => {
@@ -637,6 +697,7 @@ async function init() {
     supplierList = Array.from(supplierMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     // 迁移客户数据
     await migrateCustomers();
+    console.log('方案系统初始化完成：' + projects.length + '个项目，' + customers.length + '个客户，' + products.length + '个商品，' + agentConversations.length + '条存档，' + agentMemories.length + '条记忆');
     renderProjectList();
 }
 
@@ -1796,8 +1857,8 @@ async function startChatSession(project) {
     if (suppTextarea) suppTextarea.value = project.supplementaryInfo || '';
     switchChatSidebarTab('summary');
 
-    // 初始化对话历史
-    project.conversation = [];
+    // 初始化对话历史（保留旧对话，除非用户明确重置）
+    project.conversation = project.conversation || [];
     currentProjectId = project.id;
 
     // 检查是否有 API Key
@@ -1814,7 +1875,28 @@ async function startChatSession(project) {
 
     try {
         const customer = getProjectCustomer(project);
+        // 获取 Agent 上下文
+        const agCtx = await agentBuildContext(project, 'chat');
+        // 商品库完整统计
+        let catStatsText = '';
+        MAJOR_CATEGORIES.forEach(cat => {
+            const catProducts = products.filter(p => p.majorCategory === cat);
+            if (catProducts.length === 0) return;
+            const subCats = [...new Set(catProducts.map(p => p.category).filter(Boolean))].slice(0, 10);
+            const brands = [...new Set(catProducts.map(p => p.brand).filter(Boolean))].slice(0, 6);
+            const prices = catProducts.map(p => p.purchasePrice).filter(p => p > 0);
+            const priceStr = prices.length > 0 ? `（${Math.min(...prices)}-${Math.max(...prices)}元）` : '';
+            catStatsText += `- ${cat}：${catProducts.length}款${priceStr}，品牌如${brands.join('、')}，子类如${subCats.join('、')}\n`;
+        });
         const systemPrompt = `你是团购需求顾问，帮助用户梳理福利采购需求。
+
+## 商品库真实数据（禁止说"数据不完整"，必须直接引用）
+${catStatsText}
+共 ${products.length} 款商品，${brandList.length} 个品牌，${supplierList.length} 个供应商。
+⚠️ 当用户问"有什么品类"时，直接列出以上所有大类及其商品数。
+⚠️ 当用户想看具体商品时，用工具查询：
+[TOOL:searchProducts] {"keyword":"关键词","category":"大类","maxPrice":价格上限,"limit":5}
+把工具调用放在回复末尾独占一行。
 
 ## 当前项目信息
 - 项目名称: ${project.name}
@@ -1826,12 +1908,13 @@ async function startChatSession(project) {
 - 人均预算: ${project.budgetPerPerson}元
 - 交付日期: ${project.deadline || '未定'}
 - 场景: 员工福利
-- 紧急程度: ${project.urgency || '正常'}
+- 紧急程度: ${project.urgency || '正常'}${agCtx.addon}
 
 ## 你的任务
 1. 首先用1-2句话确认项目基本情况
 2. 然后开始自然地了解详细需求
 3. 重点收集：用户画像、品类偏好、品牌偏好、包装要求、物流要求、风格偏好
+4. 当用户问商品相关问题时，基于商品库概况回答——不要编造
 
 ## 对话风格
 - 简洁友好，每次只问1-2个问题
@@ -1849,6 +1932,9 @@ async function startChatSession(project) {
         // 保存第一条 AI 消息
         project.conversation.push({ role: 'assistant', content: reply });
         await saveAllData();
+
+        // Agent：初始化对话后更新记忆
+        agentPerTurnUpdate(project).catch(e => console.warn('初始化Agent更新失败:', e.message));
 
     } catch (e) {
         loadingEl.remove();
@@ -2075,6 +2161,55 @@ function saveSupplementaryInfo() {
     saveAllData();
 }
 
+function executeAgentTool(toolName, params) {
+    if (toolName === 'getCategoryStats') {
+        const stats = MAJOR_CATEGORIES.map(cat => {
+            const catProducts = products.filter(p => p.majorCategory === cat);
+            const prices = catProducts.map(p => p.purchasePrice).filter(p => p > 0);
+            const brands = [...new Set(catProducts.map(p => p.brand).filter(Boolean))];
+            return {
+                category: cat,
+                productCount: catProducts.length,
+                brandCount: brands.length,
+                minPrice: prices.length > 0 ? Math.min(...prices) : 0,
+                maxPrice: prices.length > 0 ? Math.max(...prices) : 0,
+                topBrands: brands.slice(0, 5)
+            };
+        });
+        return JSON.stringify(stats, null, 2);
+    }
+    if (toolName === 'searchProducts') {
+        const { keyword, category, brand, minPrice, maxPrice, brandLevel, limit = 10 } = params;
+        let results = products;
+        if (category) results = results.filter(p => p.majorCategory === category);
+        if (brand) results = results.filter(p => (p.brand || '').includes(brand));
+        if (brandLevel) results = results.filter(p => (p.brandLevel || '').includes(brandLevel));
+        if (minPrice !== undefined) results = results.filter(p => p.purchasePrice >= minPrice);
+        if (maxPrice !== undefined) results = results.filter(p => p.purchasePrice <= maxPrice);
+        if (keyword) {
+            const kw = keyword.toLowerCase();
+            results = results.filter(p =>
+                (p.productName || '').toLowerCase().includes(kw) ||
+                (p.brand || '').toLowerCase().includes(kw) ||
+                (p.category || '').toLowerCase().includes(kw) ||
+                (p.majorCategory || '').toLowerCase().includes(kw)
+            );
+        }
+        results = results.slice(0, limit);
+        const summary = results.map(p => ({
+            name: p.productName || '未命名',
+            brand: p.brand || '',
+            category: p.majorCategory || p.category || '',
+            purchasePrice: p.purchasePrice || 0,
+            retailPrice: p.retailPrice || 0,
+            brandLevel: p.brandLevel || '',
+            supplier: p.supplierId || p.supplierName || ''
+        }));
+        return JSON.stringify({ count: results.length, products: summary }, null, 2);
+    }
+    return JSON.stringify({ error: '未知工具: ' + toolName });
+}
+
 async function sendChatMessage() {
     const input = document.getElementById('chat-input');
     const msg = input.value.trim();
@@ -2105,7 +2240,51 @@ async function sendChatMessage() {
 
         // 构建 system prompt
         const customer = getProjectCustomer(project);
+        // 商品库概要（人类可读格式）
+        let catStatsText = '';
+        MAJOR_CATEGORIES.forEach(cat => {
+            const catProducts = products.filter(p => p.majorCategory === cat);
+            if (catProducts.length === 0) return;
+            const subCats = [...new Set(catProducts.map(p => p.category).filter(Boolean))].slice(0, 10);
+            const brands = [...new Set(catProducts.map(p => p.brand).filter(Boolean))].slice(0, 6);
+            const prices = catProducts.map(p => p.purchasePrice).filter(p => p > 0);
+            const priceStr = prices.length > 0 ? `（${Math.min(...prices)}-${Math.max(...prices)}元）` : '';
+            catStatsText += `- ${cat}：${catProducts.length}款${priceStr}，品牌如${brands.join('、')}，子类如${subCats.join('、')}\n`;
+        });
         const systemPrompt = `你是团购需求顾问，帮助用户梳理福利采购需求。
+
+## 商品库真实数据（禁止说"数据不完整"，必须直接引用）
+${catStatsText}
+共 ${products.length} 款商品，${brandList.length} 个品牌。
+⚠️ 当用户问"有什么品类"时，直接列出以上所有大类及其商品数。
+⚠️ 当用户想看具体商品时，用工具查询：
+[TOOL:searchProducts] {"keyword":"关键词","category":"大类","maxPrice":价格上限,"limit":5}`;
+
+        // 意图检测：用户是否在问商品相关问题
+        const productQueryPattern = /(有没有|有哪些|查一下|搜一下|找|多少钱|什么价|推荐.*商品|列出|看看.*产品)/;
+        // 短关键词模式：独立的名词/品类/品牌（非问句、非对话填充词）
+        const shortKwPattern = /^[一-龥a-zA-Z0-9\s]{1,15}$/;
+        const isConversationalFiller = /^(好|嗯|是|对|可以|行|ok|yes|no|有|没|不知道|不清楚|看看|再说|稍等|等一下|继续|然后|还有|下一个|换一个)$/i;
+        const isQuestion = /[？?\s]|吗|呢|吧|什么|怎么|如何|哪里|哪个|谁|什么|能不能|可不可以/;
+        const shouldPreSearch = productQueryPattern.test(msg) ||
+            (shortKwPattern.test(msg) && !isConversationalFiller.test(msg) && !isQuestion.test(msg));
+        if (shouldPreSearch) {
+            // 提取关键词和品类
+            const catMatch = MAJOR_CATEGORIES.find(c => msg.includes(c));
+            const priceMatch = msg.match(/(\d+)\s*元?[以之]?[下上内]/);
+            const maxPrice = priceMatch ? parseInt(priceMatch[1]) : undefined;
+            // 清洗噪声词，提取真正的搜索关键词
+            const noisePattern = /你看看|你看|看看|商品库|里|有什么|有哪些|有没有|查一下|搜一下|找一下|帮我|请|一下|产品|商品|哪些|哪个|什么|怎么|如何|的|了|\d+元[以之]?[下上内]?/g;
+            let keyword = msg.replace(noisePattern, '').replace(/类/g, '').trim();
+            // 清理后仍太长或为纯噪声 → 用品类名作为关键词
+            if (keyword.length > 10 || !keyword || /^[的了吗呢啊呀]$/.test(keyword)) keyword = catMatch || '';
+            if (!keyword) keyword = msg.trim().substring(0, 10);
+            console.log('Agent预执行工具: searchProducts', { keyword, category: catMatch, maxPrice });
+            const preResult = executeAgentTool('searchProducts', { keyword, category: catMatch, maxPrice, limit: 8 });
+            conversationHistory.push({ role: 'user', content: `[系统预查询结果]\n${preResult}\n\n请基于以上真实数据回答用户："${msg}"` });
+        }
+
+        const systemPromptFull = systemPrompt + `
 
 ## 当前项目信息
 - 项目名称: ${project.name}
@@ -2117,30 +2296,50 @@ async function sendChatMessage() {
 
 ## 你的任务
 1. 通过自然对话了解客户的详细需求
-2. 重点收集以下信息（但不要机械地问，要自然地引导）:
-   - 用户画像（年龄层、性别比例）
-   - 品类偏好（食品、日化、家电、家纺、文创等）
-   - 品牌偏好（大牌、地方特产、无偏好）
-   - 包装要求（精装礼盒、简约实用）
-   - 物流要求（集采配送、一件代发）
-   - 风格偏好（面子型/看起来值钱，里子型/实用划算）
+2. 重点收集：用户画像、品类偏好、品牌偏好、包装要求、物流要求、风格偏好
+3. 用户问商品相关问题时，基于预加载数据或工具查询结果回答
 
 ## 对话风格
 - 简洁友好，每次只问1-2个问题
-- 根据用户回答自然追问，不要机械地照着清单问
+- 自然引导，不要机械地照着清单问
 - 如果信息已经足够，提示用户可以"生成需求文档"
-- 用中文回复，可以适当使用**加粗**强调关键信息
-
-## 商品库品类
-当前商品库支持的大类: 食品、美妆、运动
-子类包括: 礼盒、茶叶、洁面、洗发水、沐浴露、面霜、面膜等`;
+- 用中文回复，可以适当使用**加粗**强调关键信息`;
 
         const messages = [
-            { role: 'system', content: systemPrompt },
+            { role: 'system', content: systemPromptFull },
             ...conversationHistory
         ];
 
-        const reply = await callAI(messages, { temperature: 0.7 });
+        let reply = await callAI(messages, { temperature: 0.7 });
+
+        // 工具调用循环（最多3轮）
+        let totalToolCalls = 0;
+        for (let toolRound = 0; toolRound < 3; toolRound++) {
+            const toolMatch = reply.match(/\[TOOL:(\w+)\]\s*(\{[\s\S]*?\})/);
+            if (!toolMatch) break;
+            const toolName = toolMatch[1];
+            let toolParams = {};
+            try { toolParams = JSON.parse(toolMatch[2]); } catch(e) { console.warn('工具参数解析失败:', e); }
+            console.log('Agent工具调用:', toolName, toolParams);
+            const toolResult = executeAgentTool(toolName, toolParams);
+            messages.push({ role: 'assistant', content: reply });
+            messages.push({ role: 'user', content: `[工具 ${toolName} 返回结果]\n${toolResult}\n\n请基于以上数据继续回答用户。` });
+            reply = await callAI(messages, { temperature: 0.7 });
+            totalToolCalls++;
+        }
+
+        // 假搜索检测：AI说了"查/搜"但没有调用工具 → 强制执行搜索
+        if (totalToolCalls === 0 && /(?:我查|让我查|帮.*查|搜一下|搜索|查一下|查查|查询)/.test(reply) && !/\[TOOL:/.test(reply)) {
+            console.log('检测到AI假搜索，强制执行工具查询');
+            const catMatch = MAJOR_CATEGORIES.find(c => msg.includes(c));
+            const noisePattern = /你看看|你看|看看|商品库|里|有什么|有哪些|有没有|查一下|搜一下|找一下|帮我|请|一下|产品|商品|哪些|哪个|什么|怎么|如何|的|了|\d+元[以之]?[下上内]?/g;
+            let kw = msg.replace(noisePattern, '').replace(/类/g, '').trim();
+            if (kw.length > 10 || !kw || /^[的了吗呢啊呀]$/.test(kw)) kw = catMatch || msg.trim().substring(0, 10);
+            const forcedResult = executeAgentTool('searchProducts', { keyword: kw, category: catMatch, limit: 8 });
+            messages.push({ role: 'assistant', content: reply });
+            messages.push({ role: 'user', content: `[系统自动查询结果]\n${forcedResult}\n\n请基于以上真实数据回答用户。` });
+            reply = await callAI(messages, { temperature: 0.7 });
+        }
 
         // 移除思考中状态
         thinkingEl.remove();
@@ -2156,6 +2355,9 @@ async function sendChatMessage() {
 
         // 更新摘要
         updateChatSummary(project);
+
+        // Agent：每轮对话后增量更新记忆（不阻塞 UI）
+        agentPerTurnUpdate(project).catch(e => console.warn('逐轮更新Agent失败:', e.message));
 
     } catch (e) {
         thinkingEl.remove();
@@ -2280,7 +2482,7 @@ async function finishChat() {
 - **主动分析推断**：客户不一定直接说出参数值，你需要从对话细节中推理。例如：客户说"员工福利，不要太寒酸"→推断档次为中端/中高端；客户说"年轻人多"→推断风格偏年轻潮流
 - **项目名称优先**：项目名是最强的场景信号（如"XX端午福利"→场景=["端午"]）
 - **场景可多选**：如果对话中提到多个场景，返回多个
-- **不确定时填默认值**：实在无法推断的字段，budget用项目预设值，margin填20，其他用空数组/空字符串
+- **不确定时填默认值**：实在无法推断的字段用空数组/空字符串
 - **值必须从可选集合中选**：不要编造不在列表中的值
 
 ## JSON格式（示例值仅为演示，请替换为分析结果）
@@ -2293,8 +2495,6 @@ async function finishChat() {
   "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
   "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
   "recommendedProductCount": 8,
-  "budget": 200,
-  "margin": 20,
   "categories": ["食品饮料", "日化个护"],
   "rationale": "简要说明你的分析依据，2-3句话"
 }
@@ -2319,8 +2519,6 @@ async function finishChat() {
 - packageStyleByCategory: 按大类分别推断包装要求。"送礼/福利/有面子"→精装礼盒；"实用/自用"→简约实用；"环保理念"→环保简装
 - categoryRatios: 根据对话内容判断各品类占比，如"主要食品为主，搭配一些日化"→食品占60，日化占40
 - recommendedProductCount: 根据预算和品类数量建议，一般每品类2-4个产品
-- budget: 对话中提到的具体数字优先，否则用项目预设
-- margin: 对话中提到的利润要求优先，否则默认20
 - categories: 从客户提到的具体品类匹配对应大类` },
             { role: 'user', content: `## 项目信息
 - 项目名称: ${project.name}
@@ -2362,8 +2560,6 @@ ${project.supplementaryInfo || '（无）'}
             if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
             if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
             if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
-            if (result.budget) { sp.budget = result.budget; project.budgetPerPerson = result.budget; }
-            if (result.margin) sp.targetMargin = result.margin;
             if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
             sp.proposalCount = 6;
             sp.selectedSuppliers = [];
@@ -2379,6 +2575,10 @@ ${project.supplementaryInfo || '（无）'}
             const idx = projects.findIndex(p => p.id === project.id);
             if (idx >= 0) projects[idx] = project;
             await saveAllData();
+
+            // Agent: 存档对话 + 自动提取经验
+            const convId = await agentArchiveConversation(project.id);
+            if (convId) agentAutoExtractMemories(convId).catch(e => console.warn('自动提取记忆失败（后台）:', e));
 
             showSelectionPage(project);
         } else {
@@ -2748,6 +2948,23 @@ function showSelectionPage(project) {
                         `).join('')}
                     </div>
                 </div>
+                <div class="col-span-2 border-t pt-4">
+                    <label class="text-xs text-gray-500 block mb-1">🏷 AI 推荐品牌
+                        <span class="text-blue-500 cursor-pointer ml-1" onclick="autoRecommendBrands(${project.id})">🔄 重新推荐</span>
+                    </label>
+                    <div id="selected-brands-${project.id}" class="flex flex-wrap gap-1 mb-1">
+                        ${(sp.selectedBrands||[]).map(b => `<span class="tag bg-purple-100 text-purple-700 cursor-pointer hover:bg-purple-200" onclick="removeSelectionBrand(${project.id},'${b.replace(/'/g,"\\'")}')">${b} ✕</span>`).join(' ')}
+                        ${(!sp.selectedBrands || sp.selectedBrands.length === 0) ? '<span class="text-xs text-gray-400">点击"🔄 重新推荐"让 AI 推荐品牌</span>' : ''}
+                    </div>
+                    <div class="flex items-center gap-1">
+                        <select id="add-brand-select-${project.id}" class="border rounded px-1.5 py-0.5 text-xs flex-1">
+                            <option value="">+ 手动添加品牌</option>
+                            ${brandList.filter(b => !(sp.selectedBrands||[]).includes(b)).map(b => `<option value="${b}">${b}</option>`).join('')}
+                        </select>
+                        <button onclick="addSelectionBrand(${project.id})" class="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded">添加</button>
+                    </div>
+                    ${sp.brandRationale ? `<div class="text-xs text-gray-500 mt-1">💡 ${sp.brandRationale}</div>` : ''}
+                </div>
             </div>
         </div>
 
@@ -2792,6 +3009,11 @@ function showSelectionPage(project) {
 
     document.getElementById('proposal-detail-content').innerHTML = html;
     if (proposalsForProject.length > 0) renderProposalCards(project.id);
+
+    // 自动触发 AI 品牌推荐（无品牌时）
+    if ((!sp.selectedBrands || sp.selectedBrands.length === 0) && project.structuredRequirement) {
+        setTimeout(() => autoRecommendBrands(project.id), 500);
+    }
 }
 
 function switchSelectionTab(projectId, tab) {
@@ -2949,6 +3171,28 @@ function addSelectionBrand(projectId) {
     showSelectionPage(project);
 }
 
+function refreshBrandSelect(projectId) {
+    const project = findProject(projectId);
+    if (!project) return;
+    const sp = project.selectionParams || {};
+    const selected = sp.selectedBrands || [];
+    const select = document.getElementById(`add-brand-select-${projectId}`);
+    if (!select) return;
+    const available = brandList.filter(b => !selected.includes(b));
+    select.innerHTML = '<option value="">+ 添加品牌</option>' + available.map(b => `<option value="${b}">${b}</option>`).join('');
+}
+
+async function autoRecommendBrands(projectId) {
+    const project = findProject(projectId);
+    if (!project || !project.structuredRequirement) return;
+    const sp = project.selectionParams || {};
+    if (sp.selectedBrands && sp.selectedBrands.length > 0) return; // 已有品牌，不重复推荐
+    // 显示加载状态
+    const container = document.getElementById(`selected-brands-${projectId}`);
+    if (container) container.innerHTML = '<span class="text-xs text-gray-400 animate-pulse">AI 推荐品牌中...</span>';
+    await aiSelectBrands(projectId);
+}
+
 function resetSelectionParams(projectId) {
     const project = findProject(projectId);
     if (!project || !project.selectionParams) return;
@@ -2996,7 +3240,7 @@ async function getAISelectionSuggestion(projectId) {
 
 ## 分析原则
 - **主动推断**：例如"员工福利，不要太寒酸"→档次中高端；"年轻人多"→风格年轻潮流
-- **不确定时填默认值**：budget/margin用预设值，其他用空数组/空字符串
+- **不确定时填默认值**：无法推断的字段用空数组/空字符串
 - **值必须从可选集合中选**：不要编造不在列表中的值
 
 ## JSON格式（示例值仅为演示）
@@ -3009,8 +3253,6 @@ async function getAISelectionSuggestion(projectId) {
   "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
   "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
   "recommendedProductCount": 8,
-  "budget": 200,
-  "margin": 20,
   "categories": ["食品饮料", "日化个护"],
   "rationale": "简要说明分析依据，2-3句话"
 }
@@ -3027,7 +3269,7 @@ async function getAISelectionSuggestion(projectId) {
 - recommendedProductCount: 建议的产品总数（正整数）
 
 注意：不要返回具体品牌名或产品名，只返回属性偏好。` },
-            { role: 'user', content: `## 客户需求\n${project.structuredRequirement || project.requirement || ''}\n\n请分析并输出结构化选品参数（只从可选值集合中选择）。` }
+            { role: 'user', content: `## 客户需求\n${project.structuredRequirement || project.requirement || ''}\n\n请分析并输出结构化选品参数（只从可选值集合中选择）。${(await agentBuildContext(project, 'selection')).addon}` }
         ], { temperature: 0.7, maxTokens: 2048 });
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
@@ -3042,8 +3284,6 @@ async function getAISelectionSuggestion(projectId) {
             if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
             if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
             if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
-            if (result.budget) sp.budget = result.budget;
-            if (result.margin) sp.targetMargin = result.margin;
             if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
             await saveAllData();
             showSelectionPage(project);
@@ -3072,7 +3312,7 @@ async function reAnalyzeSelectionParams(projectId) {
 - **主动推断**：从对话中收集线索，综合分析后给出推荐值
 - **项目名称优先**：项目名是最强的场景信号（如"XX端午福利"→scene=["端午"]）
 - **场景可多选**：对话中提到多个场景时返回多个
-- **不确定时填默认值**：budget用项目预设，margin填20，其他用空数组/空字符串
+- **不确定时填默认值**：无法推断的字段用空数组/空字符串
 - **值必须从可选集合中选**：不要编造不在列表中的值
 
 ## JSON格式（示例值仅为演示，请替换为分析结果）
@@ -3085,8 +3325,6 @@ async function reAnalyzeSelectionParams(projectId) {
   "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
   "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
   "recommendedProductCount": 8,
-  "budget": 200,
-  "margin": 20,
   "categories": ["食品饮料", "日化个护"],
   "rationale": "简要说明分析依据，2-3句话"
 }
@@ -3129,8 +3367,6 @@ async function reAnalyzeSelectionParams(projectId) {
             if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
             if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
             if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
-            if (result.budget) sp.budget = result.budget;
-            if (result.margin) sp.targetMargin = result.margin;
             if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
             await saveAllData();
             showSelectionPage(project);
@@ -3165,6 +3401,13 @@ async function generateProposalsFromParams(projectId) {
     project.targetMargin = sp.targetMargin;
     project.budgetPerPerson = sp.budget;
     project.constraints = [{ field: '毛利率', operator: '≥', value: '' + sp.targetMargin }];
+    // Agent 规则：应用约束
+    const agentRules = agentGetRules({ scene: sp.scenePreference, categories: sp.selectedCategories });
+    agentRules.filter(r => r.type === 'constraint').forEach(r => {
+        if (r.expression.includes('排除供应商') || r.expression.includes('避免')) {
+            project.constraints.push({ field: 'agentRule', operator: r.name, value: r.expression });
+        }
+    });
     const count = sp.proposalCount || 3, budget = sp.budget || 200;
     const minProducts = sp.minProducts || 0;
     const maxProducts = sp.maxProducts || 0;
@@ -3212,7 +3455,11 @@ async function generateProposalsFromParams(projectId) {
     if (sp.excludedProductTypes && sp.excludedProductTypes.length > 0) {
         candidates = candidates.filter(p => !sp.excludedProductTypes.includes(p.productType));
     }
-    if (candidates.length < 3) { alert('符合条件的商品太少'); return; }
+    // 品牌筛选：如果指定了品牌，只保留这些品牌的产品
+    if (sp.selectedBrands && sp.selectedBrands.length > 0) {
+        candidates = candidates.filter(p => sp.selectedBrands.includes(p.brand));
+    }
+    if (candidates.length < 3) { alert(`符合条件的商品太少（${candidates.length}个），请检查品牌筛选或价格条件`); return; }
 
     // 适配打分：给每个候选品按集采权重打分，策略选品时优先高分
     candidates.forEach(p => {
@@ -3267,13 +3514,17 @@ async function aiSelectBrands(projectId) {
         };
     });
 
+    // Agent 品牌规则
+    const brandRules = agentGetRules({ scene: project.selectionParams?.scenePreference, categories: requiredCategories });
+    const brandRulesText = agentFormatRulesForPrompt(brandRules);
+
     const systemPrompt = `你是团购方案选品专家。根据客户需求选择最合适的品牌组合。
 
 ## 选品牌原则（必须严格遵守）
 1. **必须覆盖所有需求品类** - 如果需求要求"食品+日化"，必须选择食品品牌和日化品牌
 2. 每个品类至少选择 2-3 个品牌
 3. 品牌调性要符合客户定位（如国企偏好老字号/一线品牌）
-4. 品牌之间要有差异化，覆盖不同价位
+4. 品牌之间要有差异化，覆盖不同价位${brandRulesText ? '\n\n## 经验规则（请遵守）\n' + brandRulesText : ''}
 
 ## 返回格式（严格JSON）
 {"brands":["品牌1","品牌2"],"categoryCoverage":{"食品":["品牌A","品牌B"],"日化":["品牌C"]},"rationale":"选择理由"}`;
@@ -3305,24 +3556,27 @@ ${JSON.stringify(brandInfoList, null, 2)}
 
         const result = JSON.parse(jsonMatch[0]);
 
-        // 保存选中的品牌
-        project.selectedBrands = result.brands;
+        // 保存到 selectionParams
+        project.selectionParams = project.selectionParams || {};
+        project.selectionParams.selectedBrands = result.brands;
+        project.selectionParams.brandRationale = result.rationale;
         project.brandRationale = result.rationale;
         await saveAllData();
 
-        // 更新显示
-        document.getElementById(`selected-brands-${projectId}`).innerHTML = `
-            <div class="text-sm text-gray-600 mb-2">已选中 ${result.brands.length} 个品牌：</div>
-            <div class="flex flex-wrap gap-2">
-                ${result.brands.map(b => `<span class="tag bg-purple-100 text-purple-700">${b}</span>`).join('')}
-            </div>
-            <div class="text-xs text-gray-500 mt-2">${result.rationale || ''}</div>`;
+        // 更新显示：品牌标签可删除
+        const container = document.getElementById(`selected-brands-${projectId}`);
+        if (container) {
+            container.innerHTML = (result.brands || []).map(b =>
+                `<span class="tag bg-purple-100 text-purple-700 cursor-pointer hover:bg-purple-200" onclick="removeSelectionBrand(${projectId},'${b.replace(/'/g,"\\'")}')">${b} ✕</span>`
+            ).join(' ') + (result.rationale ? `<div class="text-xs text-gray-500 mt-1">${result.rationale}</div>` : '');
+            // 更新品牌下拉
+            refreshBrandSelect(projectId);
+        }
 
     } catch (e) {
         console.error('AI 选品牌失败:', e);
-        document.getElementById(`selected-brands-${projectId}`).innerHTML = `
-            <div class="text-red-500 text-sm">AI 选品牌失败: ${e.message}</div>
-            <div class="text-gray-400 text-sm mt-1">请检查 API Key 或重试</div>`;
+        const container = document.getElementById(`selected-brands-${projectId}`);
+        if (container) container.innerHTML = `<div class="text-red-500 text-xs">AI 选品牌失败: ${e.message}</div>`;
     }
 }
 
@@ -5353,6 +5607,561 @@ async function testAIConnection() {
         resultEl.className = 'text-sm text-red-500';
     }
 }
+
+// ======================== AI Agent 系统 ========================
+
+async function seedAgentRules() {
+    const defaults = [
+        { name: '食品优选本地品牌', description: '食品类优先推荐本地/地方品牌，避免跨省运输成本', type: 'preference', expression: '食品饮料和生鲜特产大类优先选择地方品牌和本地供应商', scope: 'category', scopeValue: '食品饮料', active: true, priority: 5, createdAt: new Date().toISOString() },
+        { name: '推荐6-8款产品', description: '每个方案推荐6-8款产品，避免太少或太多', type: 'guideline', expression: '每个方案推荐6-8款产品，品类分布均匀', scope: 'global', scopeValue: null, active: true, priority: 3, createdAt: new Date().toISOString() },
+        { name: '夏季慎选巧克力', description: '夏季（5-9月）避免推荐巧克力类易融商品', type: 'constraint', expression: '夏季（5-9月）避免推荐巧克力、糖果类易融商品', scope: 'scene', scopeValue: '夏日', active: true, priority: 8, createdAt: new Date().toISOString() },
+        { name: '国企优先老字号', description: '国企/政府客户优先推荐老字号品牌', type: 'preference', expression: '国企/政府/事业单位客户优先推荐老字号、传统品牌，体现稳重可靠', scope: 'global', scopeValue: null, active: true, priority: 6, createdAt: new Date().toISOString() }
+    ];
+    agentRules = defaults;
+    await saveAgentData();
+}
+
+async function seedAgentSkills() {
+    const defaults = [
+        { id: 1, name: 'analyze-conversation', description: '分析对话内容，提取客户画像和需求洞察', type: 'ai', enabled: true, config: { template: '根据以下客户对话，提取：1)客户行业与规模 2)核心需求 3)预算敏感度 4)决策关注点 5)潜在痛点。返回JSON格式。' }, runCount: 0, createdAt: new Date().toISOString() },
+        { id: 2, name: 'compare-proposals', description: '对比两个方案，分析优劣并给出推荐', type: 'ai', enabled: true, config: { template: '对比以下两个方案，从产品组合、价格、毛利、适配度四个维度分析，给出推荐结论。返回JSON格式。' }, runCount: 0, createdAt: new Date().toISOString() },
+        { id: 3, name: 'generate-report', description: '基于方案数据生成分析报告摘要', type: 'ai', enabled: true, config: { template: '根据方案数据生成一份200字以内的项目分析摘要，包含方案亮点、风险提示和优化建议。' }, runCount: 0, createdAt: new Date().toISOString() }
+    ];
+    agentSkills = defaults;
+    await saveAgentData();
+}
+
+function agentExtractKeywords(text) {
+    if (!text) return [];
+    const text_ = text.toLowerCase();
+    const kws = [];
+    // 场景关键词
+    ['端午','中秋','春节','三八','夏日','年终','生日','日常','福利','礼品','团购','员工','客户','促销'].forEach(k => { if (text_.includes(k)) kws.push(k); });
+    // 品类关键词
+    ['食品','饮料','生鲜','日化','家居','家电','运动','户外','定制','卡券'].forEach(k => { if (text_.includes(k)) kws.push(k); });
+    // 品牌关键词
+    ['一线','品牌','老字号','进口','国产','地方','高端','实惠','品质'].forEach(k => { if (text_.includes(k)) kws.push(k); });
+    return [...new Set(kws)];
+}
+
+function agentMatchScore(item, context) {
+    let score = 0;
+    if (!context) return 1;
+    const scene = context.scene || (Array.isArray(context.scenePreference) ? context.scenePreference : []);
+    const cats = context.categories || context.selectedCategories || [];
+    const tier = context.tier || context.tierPreference || '';
+    // 场景匹配
+    const itemScene = item.extractedParams?.scene || item.scene || [];
+    if (Array.isArray(scene) && scene.length > 0 && itemScene.some(s => scene.includes(s))) score += 3;
+    else if (scene === itemScene) score += 3;
+    // 大类匹配
+    const itemCats = item.extractedParams?.categories || item.categories || [];
+    const matchCats = cats.filter(c => itemCats.includes(c)).length;
+    score += matchCats * 2;
+    // 档次匹配
+    if (tier && (item.extractedParams?.tier || item.tier) === tier) score += 2;
+    // 关键词重叠
+    const ctxKws = context.keywords || [];
+    const itemKws = item.extractedParams?.keywords || item.tags || [];
+    const kwOverlap = ctxKws.filter(k => itemKws.includes(k)).length;
+    score += kwOverlap;
+    return score;
+}
+
+async function agentSearchMemory(query, filters = {}) {
+    const context = {
+        scene: filters.scene || [],
+        categories: filters.categories || [],
+        tier: filters.tier || '',
+        keywords: agentExtractKeywords(query || '')
+    };
+    const limit = filters.limit || 5;
+    // 搜索对话存档
+    let relevantConvs = agentConversations.filter(c => {
+        if (filters.projectId && c.projectId !== filters.projectId) return false;
+        return true;
+    }).map(c => ({ ...c, _score: agentMatchScore(c, context) }));
+    // 搜索记忆
+    let relevantMemories = agentMemories.filter(m => {
+        if (filters.type && m.type !== filters.type) return false;
+        return true;
+    }).map(m => ({ ...m, _score: agentMatchScore(m, context) }));
+    // 排序 + 截断
+    relevantConvs.sort((a, b) => b._score - a._score || new Date(b.createdAt) - new Date(a.createdAt));
+    relevantMemories.sort((a, b) => b._score - a._score || b.importance - a.importance);
+    return {
+        conversations: relevantConvs.slice(0, limit),
+        memories: relevantMemories.slice(0, limit)
+    };
+}
+
+function agentGetRules(context = {}) {
+    const scene = Array.isArray(context.scene) ? context.scene : (context.scene ? [context.scene] : []);
+    const categories = context.categories || context.selectedCategories || [];
+    return agentRules.filter(r => {
+        if (!r.active) return false;
+        if (r.scope === 'global') return true;
+        if (r.scope === 'scene' && r.scopeValue && scene.some(s => s === r.scopeValue || s.includes(r.scopeValue))) return true;
+        if (r.scope === 'category' && r.scopeValue && categories.includes(r.scopeValue)) return true;
+        return false;
+    }).sort((a, b) => b.priority - a.priority);
+}
+
+function agentFormatRulesForPrompt(rules) {
+    if (!rules || rules.length === 0) return '';
+    return rules.map(r => `- [${r.type === 'constraint' ? '必须遵守' : r.type === 'preference' ? '优先考虑' : '建议参考'}] ${r.expression}`).join('\n');
+}
+
+function agentFormatMemoriesForPrompt(memories) {
+    if (!memories || memories.length === 0) return '';
+    return memories.map(m => `- [${m.type}] ${m.title}: ${(m.content || '').substring(0, 200)}`).join('\n');
+}
+
+async function agentBuildContext(project, contextType) {
+    if (!project) return { addon: '', memories: [], rules: [], pastConversations: [] };
+    const sp = project.selectionParams || {};
+    const sceneFromName = (name) => {
+        const map = { '端午': '端午', '中秋': '中秋', '春节': '春节', '三八': '三八', '夏日': '夏日', '年终': '年终', '生日': '生日' };
+        for (const [k, v] of Object.entries(map)) { if ((name || '').includes(k)) return [v]; }
+        return [];
+    };
+    const context = {
+        scene: (sp.scenePreference && sp.scenePreference.length > 0) ? sp.scenePreference : sceneFromName(project.name || ''),
+        categories: sp.selectedCategories || [],
+        tier: sp.tierPreference || '',
+        keywords: agentExtractKeywords((project.structuredRequirement || '') + ' ' + (project.name || '') + ' ' + ((project.conversation || []).map(m => m.content || '').join(' ')))
+    };
+    const rules = agentGetRules(context);
+    const results = await agentSearchMemory(project.structuredRequirement || project.name || '', { scene: context.scene, categories: context.categories, limit: 5 });
+    let addon = '';
+    if (rules.length > 0 && contextType !== 'chat') {
+        addon += `\n\n## 经验规则（请遵守）\n${agentFormatRulesForPrompt(rules)}\n`;
+    }
+    if (contextType === 'chat' && results.memories.length > 0) {
+        addon += `\n\n## 历史经验参考\n你也可以参考以下过往项目的经验:\n${agentFormatMemoriesForPrompt(results.memories)}\n`;
+    }
+    if ((contextType === 'selection' || contextType === 'brands') && results.conversations.length > 0) {
+        addon += `\n\n## 相似项目参考\n以下过往项目的情况类似，可供参考:\n`;
+        results.conversations.forEach(c => { addon += `- ${c.projectName || '未命名'}: ${c.summary || '无摘要'}\n`; });
+    }
+    return { addon, memories: results.memories, rules, pastConversations: results.conversations };
+}
+
+// 每轮对话后增量更新：upsert 对话记录 + 异步提取记忆
+async function agentPerTurnUpdate(project) {
+    if (!project || !project.conversation || project.conversation.length < 2) return;
+    const customer = getProjectCustomer(project);
+
+    // 1. Upsert 对话记录（仅更新 messages，不生成摘要）
+    let conv = agentConversations.find(c => c.projectId === project.id);
+    if (conv) {
+        conv.messages = JSON.parse(JSON.stringify(project.conversation));
+        conv.extractedParams = {
+            scene: project.selectionParams?.scenePreference || [],
+            tier: project.selectionParams?.tierPreference || '',
+            style: project.selectionParams?.stylePreference || [],
+            categories: project.selectionParams?.selectedCategories || [],
+            budget: project.budgetPerPerson || 0,
+            peopleCount: project.peopleCount || 0,
+            keywords: agentExtractKeywords((project.structuredRequirement || '') + ' ' + (project.conversation || []).map(m => m.content || '').join(' '))
+        };
+    } else {
+        conv = {
+            projectId: project.id,
+            projectName: project.name,
+            customerId: project.customerId || null,
+            customerCompany: customer?.customerCompany || '',
+            messages: JSON.parse(JSON.stringify(project.conversation)),
+            summary: '',
+            extractedParams: {
+                scene: project.selectionParams?.scenePreference || [],
+                tier: project.selectionParams?.tierPreference || '',
+                style: project.selectionParams?.stylePreference || [],
+                categories: project.selectionParams?.selectedCategories || [],
+                budget: project.budgetPerPerson || 0,
+                peopleCount: project.peopleCount || 0,
+                keywords: agentExtractKeywords((project.structuredRequirement || '') + ' ' + (project.conversation || []).map(m => m.content || '').join(' '))
+            },
+            rating: null,
+            createdAt: new Date().toISOString()
+        };
+        agentConversations.push(conv);
+    }
+    await saveAgentData();
+
+    // 2. 异步提取记忆（fire-and-forget，不阻塞 UI）
+    if (project.conversation.length >= 4) { // 至少 2 轮对话后才提取
+        agentExtractMemoriesIncremental(conv).catch(e => console.warn('增量提取记忆失败:', e.message));
+    }
+}
+
+async function agentExtractMemoriesIncremental(conv) {
+    if (!conv || conv.messages.length < 4) return;
+    // 只分析最后 6 条消息（最近 3 轮），减少 token 消耗
+    const recentMessages = conv.messages.slice(-6);
+    const convoText = formatConversationForAI(recentMessages);
+    try {
+        const response = await callAI([
+            { role: 'system', content: '从以下对话片段中提取0-1条值得记住的经验。只返回JSON: {"title":"标题","content":"具体内容","tags":["标签"]}。如果没有值得记住的内容，返回{"skip":true}。' },
+            { role: 'user', content: `项目：${conv.projectName}\n${convoText}` }
+        ], { temperature: 0.5, maxTokens: 256 });
+        const jsonMatch = response.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) return;
+        const item = JSON.parse(jsonMatch[0]);
+        if (item.skip || !item.title) return;
+        // 去重检查
+        const exists = agentMemories.find(m => m.title === item.title && m.content === item.content);
+        if (exists) return;
+        agentMemories.push({
+            type: 'insight',
+            title: item.title,
+            content: item.content,
+            source: 'auto',
+            sourceProjectId: conv.projectId,
+            tags: item.tags || [],
+            scene: (conv.extractedParams.scene || [])[0] || null,
+            category: (conv.extractedParams.categories || [])[0] || null,
+            importance: 3,
+            createdAt: new Date().toISOString()
+        });
+        await saveAgentData();
+    } catch (e) { console.warn('增量提取记忆失败:', e.message); }
+}
+
+async function agentArchiveConversation(projectId) {
+    const project = findProject(projectId);
+    if (!project || !project.conversation || project.conversation.length === 0) return null;
+    const customer = getProjectCustomer(project);
+    // 查找已有记录（仅按 projectId），更新 summary
+    let record = agentConversations.find(c => c.projectId === projectId);
+    if (!record) {
+        record = {
+            projectId: project.id,
+            projectName: project.name,
+            customerId: project.customerId || null,
+            customerCompany: customer?.customerCompany || '',
+            messages: [],
+            summary: '',
+            extractedParams: {},
+            rating: null,
+            createdAt: new Date().toISOString()
+        };
+        agentConversations.push(record);
+    }
+    // 更新 messages 和 extractedParams
+    record.messages = JSON.parse(JSON.stringify(project.conversation));
+    record.extractedParams = {
+        scene: project.selectionParams?.scenePreference || [],
+        tier: project.selectionParams?.tierPreference || '',
+        style: project.selectionParams?.stylePreference || [],
+        categories: project.selectionParams?.selectedCategories || [],
+        budget: project.budgetPerPerson || 0,
+        peopleCount: project.peopleCount || 0,
+        keywords: agentExtractKeywords((project.structuredRequirement || '') + ' ' + (project.conversation || []).map(m => m.content || '').join(' '))
+    };
+    // AI 生成摘要
+    try {
+        const convoText = formatConversationForAI(project.conversation);
+        const summaryResp = await callAI([
+            { role: 'system', content: '用一句话总结以下客户对话的核心需求（不超过50字）。只返回摘要文本。' },
+            { role: 'user', content: `项目：${project.name}\n对话：${convoText}` }
+        ], { temperature: 0.3, maxTokens: 128 });
+        record.summary = (summaryResp || '').replace(/^["']|["']$/g, '').trim();
+    } catch (e) { if (!record.summary) record.summary = project.name + ' 需求对话存档'; }
+    await saveAgentData();
+    return record.id;
+}
+
+async function agentAutoExtractMemories(conversationId) {
+    const conv = agentConversations.find(c => c.id === conversationId);
+    if (!conv || conv.messages.length < 2) return;
+    try {
+        const convoText = formatConversationForAI(conv.messages);
+        const response = await callAI([
+            { role: 'system', content: `从以下客户对话中提取1-3条有价值的经验教训（insight或lesson）。返回JSON数组：[{"type":"insight或lesson","title":"标题","content":"具体内容","tags":["标签1"]}]。如果没有特别的经验，返回空数组[]。` },
+            { role: 'user', content: `项目：${conv.projectName}\n场景：${(conv.extractedParams.scene||[]).join(',')}\n对话：${convoText}` }
+        ], { temperature: 0.5, maxTokens: 512 });
+        const jsonMatch = response.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+            const items = JSON.parse(jsonMatch[0]);
+            items.forEach(item => {
+                agentMemories.push({
+                    type: item.type || 'insight',
+                    title: item.title || '',
+                    content: item.content || '',
+                    source: 'auto',
+                    sourceProjectId: conv.projectId,
+                    tags: item.tags || [],
+                    scene: (conv.extractedParams.scene || [])[0] || null,
+                    category: (conv.extractedParams.categories || [])[0] || null,
+                    importance: 3,
+                    createdAt: new Date().toISOString()
+                });
+            });
+            if (items.length > 0) await saveAgentData();
+        }
+    } catch (e) { console.warn('自动提取记忆失败:', e.message); }
+}
+
+async function agentRunSkill(skillName, params = {}) {
+    const skill = agentSkills.find(s => s.name === skillName && s.enabled);
+    if (!skill) throw new Error(`技能 "${skillName}" 未找到或已禁用`);
+    if (skill.type === 'ai') {
+        if (!aiSettings.apiKey) throw new Error('请先配置 AI API Key');
+        let prompt = skill.config.template;
+        Object.entries(params).forEach(([k, v]) => { prompt = prompt.replace(new RegExp('\\{\\{' + k + '\\}\\}', 'g'), typeof v === 'string' ? v : JSON.stringify(v)); });
+        const response = await callAI([{ role: 'user', content: prompt }], { temperature: 0.7, maxTokens: 2048 });
+        skill.runCount = (skill.runCount || 0) + 1;
+        await saveAgentData();
+        return response;
+    }
+    throw new Error(`不支持的技能类型: ${skill.type}`);
+}
+
+// ======================== Agent UI ========================
+
+function switchAgentTab(tab) {
+    const tabs = ['memories','rules','skills','archive'];
+    tabs.forEach((t, i) => {
+        const btn = document.getElementById('agent-tab-' + t);
+        if (!btn) return;
+        const isFirst = i === 0, isLast = i === tabs.length - 1;
+        const roundClass = isFirst ? 'rounded-tl-lg' : isLast ? 'rounded-tr-lg' : '';
+        if (t === tab) { btn.className = 'agent-tab flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-white ' + roundClass; }
+        else { btn.className = 'agent-tab flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50 ' + roundClass; }
+    });
+    const content = document.getElementById('agent-tab-content');
+    if (!content) return;
+    if (tab === 'memories') renderAgentMemories(content);
+    else if (tab === 'rules') renderAgentRules(content);
+    else if (tab === 'skills') renderAgentSkills(content);
+    else if (tab === 'archive') renderAgentArchive(content);
+}
+
+function renderAgentMemories(el) {
+    const filterType = el.getAttribute('data-filter-type') || '';
+    let list = agentMemories;
+    if (filterType) list = list.filter(m => m.type === filterType);
+    list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
+    const typeLabel = t => ({ insight: '💡 洞察', pattern: '📊 模式', lesson: '📖 教训', tip: '💬 提示' }[t] || t);
+    el.innerHTML = `<div class="flex items-center gap-4 mb-4">
+        <input type="text" placeholder="搜索记忆..." class="border rounded px-3 py-1.5 text-sm flex-1" oninput="var f=document.getElementById('agent-tab-content');f.setAttribute('data-filter-type',document.querySelector('#agent-filter-type')?.value||'');renderAgentMemories(f)">
+        <select id="agent-filter-type" class="border rounded px-2 py-1.5 text-sm" onchange="var f=document.getElementById('agent-tab-content');f.setAttribute('data-filter-type',this.value);renderAgentMemories(f)">
+            <option value="">全部类型</option>
+            <option value="insight">洞察</option>
+            <option value="pattern">模式</option>
+            <option value="lesson">教训</option>
+            <option value="tip">提示</option>
+        </select>
+        <button onclick="showAgentAddMemory()" class="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">+ 添加</button>
+    </div>
+    ${list.length === 0 ? '<div class="text-center text-gray-400 py-12">暂无记忆。完成项目后将自动提取，也可手动添加。</div>' : list.map(m => `
+        <div class="border rounded p-3 mb-2 hover:bg-gray-50">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <span class="text-xs px-1.5 py-0.5 rounded ${m.source === 'auto' ? 'bg-blue-100 text-blue-600' : 'bg-green-100 text-green-600'}">${m.source === 'auto' ? '自动' : '手动'}</span>
+                    <span class="text-xs text-gray-400 ml-2">${typeLabel(m.type)}</span>
+                    <span class="font-medium ml-2">${m.title}</span>
+                </div>
+                <div class="flex gap-2">
+                    <span class="star-${m.id} text-xs cursor-pointer ${(m.importance||3) >= 4 ? 'text-yellow-500' : 'text-gray-300'}" onclick="var mem=agentMemories.find(x=>x.id===${m.id});if(mem){mem.importance=(mem.importance||3)>=4?3:5;saveAgentData();renderAgentMemories(document.getElementById('agent-tab-content'))}" title="重要程度">★</span>
+                    <button onclick="deleteAgentMemory(${m.id})" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                </div>
+            </div>
+            <div class="text-sm text-gray-600 mt-1">${(m.content||'').substring(0, 200)}</div>
+            <div class="flex flex-wrap gap-1 mt-2">${(m.tags||[]).map(t => `<span class="text-xs bg-gray-100 text-gray-500 px-1.5 py-0.5 rounded">${t}</span>`).join('')}</div>
+        </div>`).join('')}`;
+}
+
+function deleteAgentMemory(id) {
+    if (!confirm('确定删除此记忆？')) return;
+    agentMemories = agentMemories.filter(m => m.id !== id);
+    saveAgentData();
+    renderAgentMemories(document.getElementById('agent-tab-content'));
+}
+
+function showAgentAddMemory() {
+    const el = document.getElementById('agent-tab-content');
+    el.innerHTML = `<div class="space-y-3">
+        <h3 class="font-medium">添加记忆</h3>
+        <input type="text" id="new-mem-title" placeholder="标题" class="w-full border rounded px-3 py-1.5 text-sm">
+        <textarea id="new-mem-content" placeholder="内容" rows="3" class="w-full border rounded px-3 py-1.5 text-sm"></textarea>
+        <div class="flex gap-2">
+            <select id="new-mem-type" class="border rounded px-2 py-1.5 text-sm">
+                <option value="insight">洞察</option><option value="lesson">教训</option><option value="tip">提示</option><option value="pattern">模式</option>
+            </select>
+            <input type="text" id="new-mem-tags" placeholder="标签（逗号分隔）" class="border rounded px-3 py-1.5 text-sm flex-1">
+        </div>
+        <div class="flex gap-2">
+            <button onclick="saveNewMemory()" class="px-4 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700">保存</button>
+            <button onclick="renderAgentMemories(document.getElementById('agent-tab-content'))" class="px-4 py-1.5 border rounded text-sm hover:bg-gray-50">取消</button>
+        </div>
+    </div>`;
+}
+
+async function saveNewMemory() {
+    const title = document.getElementById('new-mem-title').value.trim();
+    const content = document.getElementById('new-mem-content').value.trim();
+    if (!title) { alert('请输入标题'); return; }
+    agentMemories.push({
+        type: document.getElementById('new-mem-type').value,
+        title, content,
+        source: 'manual',
+        tags: (document.getElementById('new-mem-tags').value || '').split(',').map(s => s.trim()).filter(Boolean),
+        importance: 3,
+        createdAt: new Date().toISOString()
+    });
+    await saveAgentData();
+    renderAgentMemories(document.getElementById('agent-tab-content'));
+}
+
+function renderAgentRules(el) {
+    const typeLabel = t => ({ preference: '优先', constraint: '约束', guideline: '建议' }[t] || t);
+    el.innerHTML = `<div class="flex items-center gap-4 mb-4">
+        <span class="text-sm text-gray-500">共 ${agentRules.length} 条规则</span>
+        <button onclick="showAgentAddRule()" class="px-3 py-1.5 bg-blue-600 text-white rounded text-sm hover:bg-blue-700 ml-auto">+ 添加</button>
+    </div>
+    ${agentRules.length === 0 ? '<div class="text-center text-gray-400 py-12">暂无规则。系统会预置默认规则，也可手动添加。</div>' : agentRules.sort((a,b)=>b.priority-a.priority).map(r => `
+        <div class="border rounded p-3 mb-2 hover:bg-gray-50 ${r.active ? '' : 'opacity-50'}">
+            <div class="flex items-start justify-between">
+                <div class="flex-1">
+                    <span class="text-xs px-1.5 py-0.5 rounded ${r.type==='constraint'?'bg-red-100 text-red-600':r.type==='preference'?'bg-purple-100 text-purple-600':'bg-gray-100 text-gray-600'}">${typeLabel(r.type)}</span>
+                    <span class="text-xs text-gray-400 ml-2">${r.scope==='global'?'全局':(r.scopeValue||r.scope)}</span>
+                    <span class="font-medium ml-2">${r.name}</span>
+                    <span class="text-xs text-gray-400">(优先级:${r.priority})</span>
+                </div>
+                <div class="flex gap-2 items-center">
+                    <button onclick="toggleAgentRule(${agentRules.indexOf(r)})" class="text-xs ${r.active ? 'text-green-600' : 'text-gray-400'}">${r.active ? '启用' : '禁用'}</button>
+                    <button onclick="deleteAgentRule(${agentRules.indexOf(r)})" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                </div>
+            </div>
+            <div class="text-sm text-gray-600 mt-1">${r.expression}</div>
+        </div>`).join('')}`;
+}
+
+function toggleAgentRule(idx) {
+    agentRules[idx].active = !agentRules[idx].active;
+    saveAgentData();
+    renderAgentRules(document.getElementById('agent-tab-content'));
+}
+
+function deleteAgentRule(idx) {
+    if (!confirm('确定删除规则 "' + agentRules[idx].name + '"？')) return;
+    agentRules.splice(idx, 1);
+    saveAgentData();
+    renderAgentRules(document.getElementById('agent-tab-content'));
+}
+
+function showAgentAddRule() {
+    const el = document.getElementById('agent-tab-content');
+    el.innerHTML = `<div class="space-y-3">
+        <h3 class="font-medium">添加规则</h3>
+        <input type="text" id="new-rule-name" placeholder="规则名称" class="w-full border rounded px-3 py-1.5 text-sm">
+        <input type="text" id="new-rule-expr" placeholder="规则描述（如：食品类优先推荐本地品牌）" class="w-full border rounded px-3 py-1.5 text-sm">
+        <div class="flex gap-2">
+            <select id="new-rule-type" class="border rounded px-2 py-1.5 text-sm"><option value="preference">优先</option><option value="constraint">约束</option><option value="guideline">建议</option></select>
+            <select id="new-rule-scope" class="border rounded px-2 py-1.5 text-sm"><option value="global">全局</option><option value="scene">场景</option><option value="category">大类</option></select>
+            <input type="number" id="new-rule-priority" value="5" min="1" max="10" class="w-16 border rounded px-2 py-1.5 text-sm" title="优先级1-10">
+        </div>
+        <div class="flex gap-2">
+            <button onclick="saveNewRule()" class="px-4 py-1.5 bg-green-600 text-white rounded text-sm hover:bg-green-700">保存</button>
+            <button onclick="renderAgentRules(document.getElementById('agent-tab-content'))" class="px-4 py-1.5 border rounded text-sm hover:bg-gray-50">取消</button>
+        </div>
+    </div>`;
+}
+
+async function saveNewRule() {
+    const name = document.getElementById('new-rule-name').value.trim();
+    if (!name) { alert('请输入规则名称'); return; }
+    agentRules.push({
+        name,
+        description: name,
+        type: document.getElementById('new-rule-type').value,
+        expression: document.getElementById('new-rule-expr').value.trim() || name,
+        scope: document.getElementById('new-rule-scope').value,
+        scopeValue: null,
+        active: true,
+        priority: parseInt(document.getElementById('new-rule-priority').value) || 5,
+        createdAt: new Date().toISOString()
+    });
+    await saveAgentData();
+    renderAgentRules(document.getElementById('agent-tab-content'));
+}
+
+function renderAgentSkills(el) {
+    el.innerHTML = `<div class="flex items-center gap-4 mb-4">
+        <span class="text-sm text-gray-500">共 ${agentSkills.length} 个技能</span>
+    </div>
+    <div class="grid grid-cols-2 gap-3">
+        ${agentSkills.map(s => `
+            <div class="border rounded p-4 hover:bg-gray-50">
+                <div class="flex items-center justify-between mb-2">
+                    <span class="font-medium">${s.name}</span>
+                    <label class="text-xs"><input type="checkbox" ${s.enabled ? 'checked' : ''} onchange="var sk=agentSkills.find(x=>x.id===${s.id});if(sk){sk.enabled=this.checked;saveAgentData();}"> 启用</label>
+                </div>
+                <div class="text-sm text-gray-500 mb-3">${s.description}</div>
+                <div class="flex items-center justify-between">
+                    <span class="text-xs text-gray-400">类型: ${s.type} | 运行: ${s.runCount||0}次</span>
+                    <button onclick="runAgentSkill('${s.name}')" class="text-xs px-3 py-1 bg-blue-600 text-white rounded hover:bg-blue-700" ${s.enabled?'':'disabled'}>执行</button>
+                </div>
+            </div>
+        `).join('')}
+    </div>`;
+}
+
+async function runAgentSkill(skillName) {
+    try {
+        const result = await agentRunSkill(skillName);
+        alert('执行结果:\n\n' + (result || '').substring(0, 1000));
+        renderAgentSkills(document.getElementById('agent-tab-content'));
+    } catch(e) { alert('执行失败: ' + e.message); }
+}
+
+function renderAgentArchive(el) {
+    const list = [...agentConversations].sort((a,b) => new Date(b.createdAt) - new Date(a.createdAt));
+    el.innerHTML = `<div class="flex items-center gap-4 mb-4">
+        <input type="text" placeholder="搜索存档..." class="border rounded px-3 py-1.5 text-sm flex-1" oninput="var v=this.value.toLowerCase();document.querySelectorAll('.archive-item').forEach(d=>{d.style.display=v===''||(d.textContent||'').toLowerCase().includes(v)?'':'none'})">
+        <span class="text-sm text-gray-400">共 ${list.length} 条</span>
+    </div>
+    ${list.length === 0 ? '<div class="text-center text-gray-400 py-12">暂无存档。完成AI需求对话后自动出现在这里。</div>' : list.map(c => `
+        <div class="archive-item border rounded p-3 mb-2 hover:bg-gray-50">
+            <div class="flex items-center justify-between">
+                <div class="flex-1">
+                    <span class="font-medium">${c.projectName || '未命名项目'}</span>
+                    <span class="text-xs text-gray-400 ml-2">${new Date(c.createdAt).toLocaleDateString()}</span>
+                    <span class="text-xs text-gray-400 ml-2">${(c.extractedParams?.scene||[]).join(',') || '无场景'}</span>
+                    <span class="text-xs text-gray-400 ml-2">${c.customerCompany || ''}</span>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="viewArchivedConversation(${c.id})" class="text-xs text-blue-600 hover:underline">查看对话</button>
+                    <button onclick="deleteArchivedConversation(${c.id})" class="text-xs text-red-400 hover:text-red-600">删除</button>
+                </div>
+            </div>
+            <div class="text-sm text-gray-600 mt-1">${c.summary || '无摘要'}</div>
+            <div class="text-xs text-gray-400 mt-1">${c.messages.length} 条消息 | 品类: ${(c.extractedParams?.categories||[]).join(',') || '未知'}</div>
+        </div>
+    `).join('')}`;
+}
+
+function viewArchivedConversation(convId) {
+    const conv = agentConversations.find(c => c.id === convId);
+    if (!conv) return;
+    let text = `项目: ${conv.projectName}\n客户: ${conv.customerCompany}\n日期: ${new Date(conv.createdAt).toLocaleString()}\n摘要: ${conv.summary}\n\n=== 对话内容 ===\n\n`;
+    conv.messages.forEach(m => {
+        text += `[${m.role === 'assistant' ? 'AI' : '用户'}] ${m.content || ''}\n\n`;
+    });
+    const w = window.open('', '_blank', 'width=600,height=500');
+    w.document.write('<pre style="font-family:monospace;font-size:12px;white-space:pre-wrap;padding:20px">' + text.replace(/</g,'&lt;') + '</pre>');
+}
+
+function deleteArchivedConversation(convId) {
+    if (!confirm('确定删除此对话存档？')) return;
+    agentConversations = agentConversations.filter(c => c.id !== convId);
+    saveAgentData();
+    renderAgentArchive(document.getElementById('agent-tab-content'));
+}
+
+// ======================== Agent UI End ========================
 
 // ========== 启动 ==========
 async function boot() {
