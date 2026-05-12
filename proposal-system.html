@@ -20,6 +20,7 @@
         .chat-bubble { max-width: 80%; padding: 12px 16px; border-radius: 12px; margin-bottom: 8px; line-height: 1.6; }
         .chat-ai { background: #f0f4ff; border-top-left-radius: 4px; }
         .chat-user { background: #e8f5e9; margin-left: auto; border-top-right-radius: 4px; }
+        .chat-system { background: #f5f3ff; border: 1px solid #e0d8f0; max-width: 90%; font-size: 12px; }
         .proposal-card { transition: all 0.2s; }
         .proposal-card:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(0,0,0,0.1); }
         .status-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
@@ -154,6 +155,7 @@
                                     <input type="text" id="chat-input" class="flex-1 border rounded-lg px-4 py-2 text-sm" placeholder="输入回复..." onkeydown="if(event.key==='Enter')sendChatMessage()">
                                     <button onclick="sendChatMessage()" class="px-6 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">发送</button>
                                 </div>
+                                <div class="text-xs text-gray-400 mt-1">/search 关键词 | /brands [品牌名|level:级别|style:调性] | /stats</div>
                                 <input type="file" id="chat-file-input" accept=".xlsx,.xls,.csv,.txt" style="display:none" multiple onchange="handleChatFileSelected(event)">
                             </div>
                         </div>
@@ -1894,10 +1896,6 @@ async function startChatSession(project) {
 ${catStatsText}
 共 ${products.length} 款商品，${brandList.length} 个品牌，${supplierList.length} 个供应商。
 ⚠️ 当用户问"有什么品类"时，直接列出以上所有大类及其商品数。
-⚠️ 当用户想看具体商品时，用工具查询：
-[TOOL:searchProducts] {"keyword":"关键词","category":"大类","maxPrice":价格上限,"limit":5}
-把工具调用放在回复末尾独占一行。
-
 ## 当前项目信息
 - 项目名称: ${project.name}
 - 客户: ${customer?.customerCompany || '未知'}
@@ -1970,6 +1968,13 @@ function showImageFullscreen(base64) {
 function addChatMessage(role, content, type, meta) {
     type = type || 'text';
     const div = document.createElement('div');
+    if (role === 'system') {
+        div.className = 'chat-bubble chat-system';
+        div.innerHTML = `<div class="text-xs text-gray-400 mb-1">🔍 查询结果</div><div class="text-sm whitespace-pre-wrap" style="font-size:12px;">${(content || '').replace(/\n/g, '<br>')}</div>`;
+        document.getElementById('chat-messages').appendChild(div);
+        div.scrollIntoView({ behavior: 'smooth' });
+        return;
+    }
     const roleLabel = role === 'ai' ? '🤖 AI顾问' : '👤 我';
     const roleColor = role === 'ai' ? 'text-blue-500' : 'text-green-500';
 
@@ -2161,6 +2166,321 @@ function saveSupplementaryInfo() {
     saveAllData();
 }
 
+async function handleSlashCommand(msg, project) {
+    const parts = msg.slice(1).trim().split(/\s+/);
+    const cmd = parts[0].toLowerCase();
+    const rest = parts.slice(1).join(' ');
+
+    if (cmd === 'search' || cmd === 's') {
+        // 支持 /search keyword limit:N 语法
+        let limit = 20;
+        let searchRest = rest;
+        const limitMatch = rest.match(/\s+limit:(\d+)/i);
+        if (limitMatch) {
+            limit = parseInt(limitMatch[1]);
+            searchRest = rest.replace(limitMatch[0], '').trim();
+        }
+        const catMatch = MAJOR_CATEGORIES.find(c => searchRest.includes(c));
+        const actualLimit = Math.min(limit, 100);
+        const result = executeAgentTool('searchProducts', { keyword: searchRest, category: catMatch || undefined, limit: actualLimit + 1 });
+        try {
+            const data = JSON.parse(result);
+            if (!data.products || data.products.length === 0) {
+                return `🔍 搜索 "${searchRest}"：未找到匹配商品`;
+            }
+            const total = data.count;
+            const shown = data.products.length;
+            let text = `🔍 搜索 "${searchRest}"：共 ${total} 款，显示前 ${Math.min(shown, actualLimit)} 款\n\n`;
+            data.products.slice(0, actualLimit).forEach((p, i) => {
+                text += `${i + 1}. **${p.name}** | ${p.brand} | ${p.category}\n`;
+                text += `   供货价 ¥${p.purchasePrice} | 零售价 ¥${p.retailPrice || '—'}\n`;
+            });
+            if (total > actualLimit) text += `\n...还有 ${total - actualLimit} 款。用 /search ${searchRest} limit:${total} 查看全部`;
+            return text;
+        } catch (e) { return `搜索出错: ${e.message}`; }
+    }
+
+    if (cmd === 'stats' || cmd === 'cat') {
+        const result = executeAgentTool('getCategoryStats', {});
+        try {
+            const data = JSON.parse(result);
+            let text = `📊 商品库品类统计\n\n`;
+            data.forEach(c => {
+                if (c.productCount === 0) return;
+                text += `**${c.category}**：${c.productCount}款（¥${c.minPrice}-¥${c.maxPrice}），${c.brandCount}个品牌\n`;
+            });
+            text += `\n共 ${data.reduce((s, c) => s + c.productCount, 0)} 款商品`;
+            return text;
+        } catch (e) { return `统计出错: ${e.message}`; }
+    }
+
+    if (cmd === 'brands' || cmd === 'b') {
+        // 解析 flag：-p 品牌名 | -s 调性 | -l 级别 | -c 品类
+        const parts = rest.split(/\s+/);
+        let flag = '', value = '';
+        if (parts[0] && parts[0].startsWith('-')) {
+            flag = parts[0];
+            value = parts.slice(1).join(' ');
+        } else {
+            value = rest; // 无flag时作为品牌名搜索
+            flag = '-p';
+        }
+
+        // -p 查品牌的产品（模糊匹配）
+        if (flag === '-p') {
+            if (!value) return `用法：/brands -p <品牌名>`;
+            const matched = products.filter(p => p.brand && p.brand.toLowerCase().includes(value.toLowerCase()));
+            if (matched.length === 0) return `🏷 未找到品牌 "${value}"`;
+            const cats = [...new Set(matched.map(p => p.majorCategory).filter(Boolean))];
+            const levels = [...new Set(matched.map(p => p.brandLevel).filter(Boolean))];
+            let text = `🏷 **${value}** → 匹配：\n`;
+            text += `品类: ${cats.join('、')} | 级别: ${levels.length > 0 ? levels.join('、') : '未标注'}\n共 ${matched.length} 款\n\n`;
+            matched.slice(0, 20).forEach((p, i) => {
+                text += `${i + 1}. **${p.name || '未命名'}** | ${p.brand} | ${p.majorCategory || p.category}\n   供货价 ¥${p.purchasePrice} | 零售价 ¥${p.retailPrice || '—'}\n`;
+            });
+            if (matched.length > 20) text += `\n...还有 ${matched.length - 20} 款`;
+            return text;
+        }
+
+        // -s 按调性筛选（模糊匹配）
+        if (flag === '-s') {
+            if (!value) return `用法：/brands -s <调性>`;
+            const brandMap = new Map();
+            products.forEach(p => {
+                if (!p.brand) return;
+                if (!brandMap.has(p.brand)) brandMap.set(p.brand, { count: 0, cats: new Set(), levels: new Set() });
+                const e = brandMap.get(p.brand); e.count++; e.cats.add(p.majorCategory);
+                if (p.brandLevel) e.levels.add(p.brandLevel);
+            });
+            const v = value.toLowerCase();
+            const matched = [...brandMap.entries()].filter(([brand]) => getBrandTone(brand).toLowerCase().includes(v));
+            if (matched.length === 0) {
+                const tones = [...new Set([...Object.values(BRAND_TONE_MAP), ...Object.values(brandTones || {})])].sort();
+                return `🏷 调性"${value}"：未找到\n可用的品牌调性：${tones.join('、')}`;
+            }
+            let text = `🏷 调性"${value}"的品牌（${matched.length}个）：\n\n`;
+            matched.sort((a, b) => b[1].count - a[1].count).forEach(([brand, info], i) => {
+                text += `${i + 1}. **${brand}**（${getBrandTone(brand)}）— ${info.count}款 | ${[...info.cats].slice(0, 3).join('、')}\n`;
+            });
+            return text;
+        }
+
+        // -l 按级别筛选（模糊匹配）
+        if (flag === '-l') {
+            if (!value) return `用法：/brands -l <级别>`;
+            const brandMap = new Map();
+            products.forEach(p => {
+                if (!p.brand) return;
+                if (!brandMap.has(p.brand)) brandMap.set(p.brand, { count: 0, cats: new Set(), levels: new Set() });
+                const e = brandMap.get(p.brand); e.count++; e.cats.add(p.majorCategory);
+                if (p.brandLevel) e.levels.add(p.brandLevel);
+            });
+            const v = value.toLowerCase();
+            const matched = [...brandMap.entries()].filter(([brand, info]) => [...info.levels].some(l => l.toLowerCase().includes(v)));
+            if (matched.length === 0) {
+                const allLevels = [...new Set(products.map(p => p.brandLevel).filter(Boolean))].sort();
+                return `🏷 级别"${value}"：未找到\n可用的品牌级别：${allLevels.join('、')}`;
+            }
+            let text = `🏷 级别"${value}"的品牌（${matched.length}个）：\n\n`;
+            matched.sort((a, b) => b[1].count - a[1].count).forEach(([brand, info], i) => {
+                text += `${i + 1}. **${brand}**（${getBrandTone(brand)}）— ${info.count}款 | ${[...info.cats].slice(0, 3).join('、')}\n`;
+            });
+            return text;
+        }
+
+        // -c 按品类筛选
+        if (flag === '-c') {
+            if (!value) return `用法：/brands -c <品类>`;
+            const catMatch = MAJOR_CATEGORIES.find(c => c.toLowerCase().includes(value.toLowerCase()));
+            if (!catMatch) return `🏷 品类"${value}"：未找到匹配大类（可用：${MAJOR_CATEGORIES.join('、')}）`;
+            const brandMap = new Map();
+            products.filter(p => p.majorCategory === catMatch).forEach(p => {
+                if (!p.brand) return;
+                if (!brandMap.has(p.brand)) brandMap.set(p.brand, { count: 0 });
+                brandMap.get(p.brand).count++;
+            });
+            let text = `🏷 品类"${catMatch}"的品牌（${brandMap.size}个）：\n\n`;
+            [...brandMap.entries()].sort((a, b) => b[1].count - a[1].count).forEach(([brand, info], i) => {
+                text += `${i + 1}. **${brand}**（${getBrandTone(brand)}）— ${info.count}款\n`;
+            });
+            return text;
+        }
+
+        // 无参数：列出全部品牌
+        const brandMap = new Map();
+        products.forEach(p => {
+            if (!p.brand) return;
+            if (!brandMap.has(p.brand)) brandMap.set(p.brand, { count: 0, cats: new Set() });
+            const e = brandMap.get(p.brand); e.count++; e.cats.add(p.majorCategory);
+        });
+        let text = `🏷 全部品牌（${brandMap.size}个）：\n\n`;
+        [...brandMap.entries()].sort((a, b) => b[1].count - a[1].count).slice(0, 30).forEach(([brand, info], i) => {
+            text += `${i + 1}. **${brand}**（${getBrandTone(brand)}）— ${info.count}款\n`;
+        });
+        if (brandMap.size > 30) text += `\n...还有 ${brandMap.size - 30} 个品牌`;
+        text += `\n\n用法：/brands -p 品牌名 | -s 调性 | -l 级别 | -c 品类`;
+        return text;
+    }
+
+    // 自然语言：AI 翻译为指令，回退本地解析
+    const fullText = (cmd + ' ' + rest).trim();
+    return await naturalLanguageQuery(fullText);
+}
+
+async function naturalLanguageQuery(nlText) {
+    // 尝试 AI 翻译
+    try {
+        // 提取商品可用字段名
+        const sampleFields = products.length > 0 ? Object.keys(products[0]).filter(k => !k.startsWith('_') && k !== 'id').join('、') : 'name brand category purchasePrice retailPrice';
+        const messages = [
+            { role: 'system', content: `你是查询意图解析器。分三步处理用户自然语言：
+
+## 第一步：判断意图 → 确定 mode
+- 问"有哪些品牌/什么品牌/品牌列表/XX调性(如老字号)的品牌" → mode:"brands"
+- 问"有哪些供应商/什么供应商/谁供货/哪些供应商有XX产品" → mode:"suppliers"
+- 问"有哪些品类/什么品类/品类分布/统计概况" → mode:"categories"
+- 问具体商品（品牌有什么产品、有没有XX、XX多少钱/什么价、搜索XX） → mode:"products"
+
+## 第二步：提取筛选条件（任意字段组合，以下为常用字段）
+- keyword: 搜索关键词（同时搜商品名/品类名/品牌名）
+- category: 大类（${MAJOR_CATEGORIES.join('/')}）
+- brand: 品牌名 | supplier: 供应商名 | productType: 定制/普通/包销
+- brandLevel: 品牌级别（全国一线/地方品牌/进口等）
+- tone: 品牌调性（老字号/新锐/国潮/国际大牌/高端轻奢/大众性价比等）
+- packageStyle: 包装风格（精装礼盒/简约实用/环保简装等）
+- size/sku: 规格/条码（模糊匹配）
+- stockType/stockStatus: 库存类型/状态 | supportsDropship: 是否支持代发(true/false)
+- minPrice/maxPrice: 供货价区间 | minRetailPrice/maxRetailPrice: 零售价区间
+- filters: {"字段名":"值"} 其余字段用此方式，可用字段: ${sampleFields}
+- 提示："XX价位/XX元/XX元左右/XX-XX元"区分供货价(进价/供货)vs零售价(售价/零售)，"包装/礼盒"→packageStyle，"规格"→size，"新锐/年轻品牌"→tone非brandLevel
+
+## 第三步：返回JSON
+只返回: {"cmd":"query","params":{...}}` },
+            { role: 'user', content: nlText }
+        ];
+        const reply = await callAI(messages, { temperature: 0.1, max_tokens: 300 });
+        console.log('NL→CMD 原始回复:', reply);
+        const jsonMatch = reply.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const parsed = JSON.parse(jsonMatch[0]);
+            console.log('NL→CMD 解析结果:', parsed);
+            if (parsed.cmd) {
+                // 旧命令名 → query 映射
+                const cmd = parsed.cmd;
+                let execCmd = cmd, execParams = parsed.params || {};
+                if (cmd === 'searchProducts') { execCmd = 'query'; execParams.mode = 'products'; }
+                else if (cmd === 'listBrands') { execCmd = 'query'; execParams.mode = 'brands'; }
+                else if (cmd === 'getBrandProducts') { execCmd = 'query'; execParams.mode = 'products'; if (!execParams.brand && execParams.brandName) execParams.brand = execParams.brandName; }
+                else if (cmd === 'getCategoryStats') { execCmd = 'query'; execParams.mode = 'categories'; }
+                const result = executeAgentTool(execCmd, execParams);
+                console.log('NL→CMD 工具结果:', result.substring(0, 200));
+                return formatNLResult(execCmd, execParams, result, nlText);
+            }
+        }
+    } catch (e) {
+        console.warn('AI命令解析失败，回退本地:', e.message);
+    }
+    // 回退：本地关键词提取 + 价格/品类过滤
+    return localFallbackQuery(nlText);
+}
+
+function localFallbackQuery(fullText) {
+    const cleanText = fullText.replace(/(商品库|里面|里|有什么|有哪些|都有什么|都有哪些|推荐|看看|查一下|查查|吗|呢|啊|的|零售价|供货价|价格|价位|产品|商品)/g, '').trim();
+    const priceMatch = fullText.match(/(\d+)\s*元?/);
+    const maxPrice = priceMatch ? parseInt(priceMatch[1]) : undefined;
+    const catMatch = MAJOR_CATEGORIES.find(c => fullText.includes(c));
+    const result = executeAgentTool('searchProducts', { keyword: cleanText || undefined, category: catMatch, maxPrice, limit: 21 });
+    try {
+        const data = JSON.parse(result);
+        if (!data.products || data.products.length === 0) {
+            return `🔍 "${fullText}"：未找到匹配商品\n\n可用指令:\n/search <关键词>\n/brands -p <品牌> | -s <调性> | -l <级别> | -c <品类>\n/stats`;
+        }
+        let text = `🔍 ${catMatch || ''}${maxPrice ? ' ≤'+maxPrice+'元' : ''}：共 ${data.count} 款\n\n`;
+        data.products.slice(0, 20).forEach((p, i) => {
+            text += `${i + 1}. **${p.name}** | ${p.brand} | ${p.category}\n   供货价 ¥${p.purchasePrice} | 零售价 ¥${p.retailPrice || '—'}\n`;
+        });
+        if (data.count > 20) text += `\n...还有 ${data.count - 20} 款。`;
+        return text;
+    } catch (e) { return `搜索出错: ${e.message}`; }
+}
+
+function formatNLResult(cmd, params, rawResult, originalQuery) {
+    try {
+        const data = JSON.parse(rawResult);
+        const mode = data.mode || 'products';
+
+        if (mode === 'brands') {
+            if (!data.brands || data.brands.length === 0) return `🏷 未找到匹配品牌`;
+            const labels = [];
+            if (params.tone) labels.push('调性:'+params.tone);
+            if (params.brandLevel) labels.push('级别:'+params.brandLevel);
+            if (params.category) labels.push(params.category);
+            if (params.supplier) labels.push('供应商:'+params.supplier);
+            if (params.productType) labels.push(params.productType);
+            let text = `🏷 ${labels.join(' ')}品牌（${data.total}个）：\n\n`;
+            data.brands.sort((a, b) => b.productCount - a.productCount).slice(0, 30).forEach((b, i) => {
+                text += `${i + 1}. **${b.brand}**（${b.tone}）— ${b.productCount}款 | ${(b.categories||[]).join('、')}\n`;
+            });
+            if (data.total > 30) text += `\n...还有 ${data.total - 30} 个品牌`;
+            return text;
+        }
+
+        if (mode === 'suppliers') {
+            if (!data.suppliers || data.suppliers.length === 0) return `📦 未找到匹配供应商`;
+            const labels = [];
+            if (params.productType) labels.push(params.productType);
+            if (params.category) labels.push(params.category);
+            let text = `📦 ${labels.join(' ')}供应商（${data.total}个）：\n\n`;
+            data.suppliers.sort((a, b) => b.productCount - a.productCount).slice(0, 30).forEach((s, i) => {
+                text += `${i + 1}. **${s.supplier}** — ${s.productCount}款（${s.brandCount}个品牌）\n`;
+                text += `   品牌: ${(s.brands||[]).join('、')} | 类型: ${(s.productTypes||[]).join('、')}\n`;
+            });
+            if (data.total > 30) text += `\n...还有 ${data.total - 30} 个供应商`;
+            return text;
+        }
+
+        if (mode === 'categories') {
+            if (!data.categories || data.categories.length === 0) return `📊 未找到匹配品类`;
+            let text = `📊 品类统计（${data.total}个）：\n\n`;
+            data.categories.forEach(c => {
+                text += `**${c.category}**：${c.productCount}款（¥${c.minPrice}-¥${c.maxPrice}），${c.brandCount}个品牌\n`;
+            });
+            const total = data.categories.reduce((s, c) => s + c.productCount, 0);
+            text += `\n共 ${total} 款商品`;
+            return text;
+        }
+
+        // mode === 'products'
+        if (!data.products || data.products.length === 0) return `🔍 "${originalQuery}"：未找到匹配`;
+        const labels = [];
+        if (params.keyword) labels.push(`"${params.keyword}"`);
+        if (params.category) labels.push(params.category);
+        if (params.brand) labels.push(params.brand);
+        if (params.supplier) labels.push('供应商:'+params.supplier);
+        if (params.productType) labels.push(params.productType);
+        if (params.stockType) labels.push(params.stockType);
+        if (params.packageStyle) labels.push('包装:'+params.packageStyle);
+        if (params.size) labels.push('规格:'+params.size);
+        if (params.brandLevel) labels.push(params.brandLevel);
+        if (params.tone) labels.push(params.tone);
+        if (params.maxPrice) labels.push('供货≤'+params.maxPrice);
+        if (params.minPrice) labels.push('供货≥'+params.minPrice);
+        if (params.maxRetailPrice) labels.push('零售≤'+params.maxRetailPrice);
+        if (params.minRetailPrice) labels.push('零售≥'+params.minRetailPrice);
+        let text = `🔍 ${labels.join(' ')}：共 ${data.count} 款\n\n`;
+        data.products.slice(0, 20).forEach((p, i) => {
+            const supplier = p.supplier ? ` | ${p.supplier}` : '';
+            const pt = p.productType && p.productType !== '普通' ? ` [${p.productType}]` : '';
+            const pid = p.productId ? ` (ID:${p.productId})` : '';
+            text += `${i + 1}. **${p.name}**${pt}${pid}\n   ${p.brand} | ${p.category}${supplier}\n   供货价 ¥${p.purchasePrice} | 零售价 ¥${p.retailPrice || '—'}\n`;
+        });
+        if (data.count > 20) text += `\n...还有 ${data.count - 20} 款。`;
+        return text;
+    } catch (e) {
+        return `结果解析出错: ${e.message}`;
+    }
+}
+
 function executeAgentTool(toolName, params) {
     if (toolName === 'getCategoryStats') {
         const stats = MAJOR_CATEGORIES.map(cat => {
@@ -2179,33 +2499,189 @@ function executeAgentTool(toolName, params) {
         return JSON.stringify(stats, null, 2);
     }
     if (toolName === 'searchProducts') {
-        const { keyword, category, brand, minPrice, maxPrice, brandLevel, limit = 10 } = params;
+        const { keyword, category, brand, minPrice, maxPrice, minRetailPrice, maxRetailPrice, brandLevel, limit = 10 } = params;
         let results = products;
         if (category) results = results.filter(p => p.majorCategory === category);
         if (brand) results = results.filter(p => (p.brand || '').includes(brand));
         if (brandLevel) results = results.filter(p => (p.brandLevel || '').includes(brandLevel));
         if (minPrice !== undefined) results = results.filter(p => p.purchasePrice >= minPrice);
         if (maxPrice !== undefined) results = results.filter(p => p.purchasePrice <= maxPrice);
+        if (minRetailPrice !== undefined) results = results.filter(p => (p.retailPrice || 0) >= minRetailPrice);
+        if (maxRetailPrice !== undefined) results = results.filter(p => (p.retailPrice || 0) <= maxRetailPrice);
         if (keyword) {
             const kw = keyword.toLowerCase();
             results = results.filter(p =>
-                (p.productName || '').toLowerCase().includes(kw) ||
+                (p.name || '').toLowerCase().includes(kw) ||
                 (p.brand || '').toLowerCase().includes(kw) ||
                 (p.category || '').toLowerCase().includes(kw) ||
                 (p.majorCategory || '').toLowerCase().includes(kw)
             );
         }
+        const totalCount = results.length;
         results = results.slice(0, limit);
         const summary = results.map(p => ({
-            name: p.productName || '未命名',
+            name: p.name || '未命名',
             brand: p.brand || '',
             category: p.majorCategory || p.category || '',
             purchasePrice: p.purchasePrice || 0,
             retailPrice: p.retailPrice || 0,
             brandLevel: p.brandLevel || '',
-            supplier: p.supplierId || p.supplierName || ''
+            supplier: p.supplierId || p.supplierName || '',
+            productType: p.productType || '普通',
+            productId: p.productId || p.id || ''
         }));
-        return JSON.stringify({ count: results.length, products: summary }, null, 2);
+        return JSON.stringify({ count: totalCount, products: summary }, null, 2);
+    }
+    if (toolName === 'listBrands') {
+        const { category, tone, level } = params || {};
+        const brandMap = new Map();
+        products.forEach(p => {
+            if (!p.brand) return;
+            if (!brandMap.has(p.brand)) brandMap.set(p.brand, { count: 0, cats: new Set(), levels: new Set() });
+            const e = brandMap.get(p.brand); e.count++; e.cats.add(p.majorCategory);
+            if (p.brandLevel) e.levels.add(p.brandLevel);
+        });
+        let filtered = [...brandMap.entries()];
+        if (category) filtered = filtered.filter(([brand, info]) => [...info.cats].some(c => c.toLowerCase().includes(category.toLowerCase())));
+        if (tone) filtered = filtered.filter(([brand]) => getBrandTone(brand).toLowerCase().includes(tone.toLowerCase()));
+        if (level) filtered = filtered.filter(([brand, info]) => [...info.levels].some(l => l.toLowerCase().includes(level.toLowerCase())));
+        const result = filtered.map(([brand, info]) => ({
+            brand,
+            tone: getBrandTone(brand),
+            productCount: info.count,
+            categories: [...info.cats],
+            levels: [...info.levels]
+        }));
+        return JSON.stringify(result, null, 2);
+    }
+    if (toolName === 'getBrandProducts') {
+        const { brandName, minPrice, maxPrice, minRetailPrice, maxRetailPrice, brandLevel } = params || {};
+        if (!brandName) return JSON.stringify({ count: 0, products: [] });
+        let results = products.filter(p => p.brand && p.brand.toLowerCase().includes(brandName.toLowerCase()));
+        if (minPrice !== undefined) results = results.filter(p => p.purchasePrice >= minPrice);
+        if (maxPrice !== undefined) results = results.filter(p => p.purchasePrice <= maxPrice);
+        if (minRetailPrice !== undefined) results = results.filter(p => (p.retailPrice || 0) >= minRetailPrice);
+        if (maxRetailPrice !== undefined) results = results.filter(p => (p.retailPrice || 0) <= maxRetailPrice);
+        if (brandLevel) results = results.filter(p => (p.brandLevel || '').includes(brandLevel));
+        const totalCount = results.length;
+        results = results.slice(0, 20);
+        const summary = results.map(p => ({
+            name: p.name || '未命名',
+            brand: p.brand || '',
+            category: p.majorCategory || p.category || '',
+            purchasePrice: p.purchasePrice || 0,
+            retailPrice: p.retailPrice || 0,
+            brandLevel: p.brandLevel || '',
+            supplier: p.supplierId || p.supplierName || '',
+            productType: p.productType || '普通',
+            productId: p.productId || p.id || ''
+        }));
+        return JSON.stringify({ count: totalCount, products: summary }, null, 2);
+    }
+    if (toolName === 'query') {
+        const { keyword, category, brand, supplier, productType, stockType, stockStatus, supportsDropship, brandLevel, tone, packageStyle, size, sku, minPrice, maxPrice, minRetailPrice, maxRetailPrice, filters, mode = 'products', limit = 20 } = params || {};
+        // 统一筛选
+        let results = products;
+        if (category) results = results.filter(p => p.majorCategory === category);
+        if (brand) results = results.filter(p => (p.brand || '').toLowerCase().includes(brand.toLowerCase()));
+        if (supplier) results = results.filter(p => (p.supplierId || p.supplierName || '').toLowerCase().includes(supplier.toLowerCase()));
+        if (productType) results = results.filter(p => (p.productType || '普通') === productType);
+        if (stockType) results = results.filter(p => (p.stockType || '').toLowerCase().includes(stockType.toLowerCase()));
+        if (stockStatus) results = results.filter(p => (p.stockStatus || '').toLowerCase().includes(stockStatus.toLowerCase()));
+        if (supportsDropship !== undefined) results = results.filter(p => p.supportsDropship === supportsDropship);
+        if (packageStyle) results = results.filter(p => (p.packageStyle || '').toLowerCase().includes(packageStyle.toLowerCase()));
+        if (size) results = results.filter(p => (p.size || p.spec || '').toLowerCase().includes(size.toLowerCase()));
+        if (sku) results = results.filter(p => (p.sku || p.barcode || '').toLowerCase().includes(sku.toLowerCase()));
+        if (brandLevel) results = results.filter(p => (p.brandLevel || '').toLowerCase().includes(brandLevel.toLowerCase()));
+        if (tone) results = results.filter(p => getBrandTone(p.brand).toLowerCase().includes(tone.toLowerCase()));
+        if (minPrice !== undefined) results = results.filter(p => p.purchasePrice >= minPrice);
+        if (maxPrice !== undefined) results = results.filter(p => p.purchasePrice <= maxPrice);
+        if (minRetailPrice !== undefined) results = results.filter(p => (p.retailPrice || 0) >= minRetailPrice);
+        if (maxRetailPrice !== undefined) results = results.filter(p => (p.retailPrice || 0) <= maxRetailPrice);
+        // 通用：任意字段过滤 {field: "value"}，支持模糊匹配
+        if (filters) {
+            Object.entries(filters).forEach(([field, value]) => {
+                if (value === undefined || value === null || value === '') return;
+                const v = String(value).toLowerCase();
+                results = results.filter(p => {
+                    const fv = p[field];
+                    if (fv === undefined || fv === null) return false;
+                    return String(fv).toLowerCase().includes(v);
+                });
+            });
+        }
+        if (keyword) {
+            const kw = keyword.toLowerCase();
+            results = results.filter(p =>
+                (p.name || '').toLowerCase().includes(kw) ||
+                (p.brand || '').toLowerCase().includes(kw) ||
+                (p.category || '').toLowerCase().includes(kw) ||
+                (p.majorCategory || '').toLowerCase().includes(kw)
+            );
+        }
+
+        if (mode === 'brands') {
+            const brandMap = new Map();
+            results.forEach(p => {
+                if (!p.brand) return;
+                if (!brandMap.has(p.brand)) brandMap.set(p.brand, { count: 0, cats: new Set(), levels: new Set() });
+                const e = brandMap.get(p.brand); e.count++; e.cats.add(p.majorCategory);
+                if (p.brandLevel) e.levels.add(p.brandLevel);
+            });
+            const brands = [...brandMap.entries()].map(([b, info]) => ({
+                brand: b, tone: getBrandTone(b), productCount: info.count,
+                categories: [...info.cats], levels: [...info.levels]
+            }));
+            return JSON.stringify({ mode: 'brands', total: brands.length, brands }, null, 2);
+        }
+
+        if (mode === 'categories') {
+            const catMap = new Map();
+            results.forEach(p => {
+                const cat = p.majorCategory || '未分类';
+                if (!catMap.has(cat)) catMap.set(cat, { count: 0, brands: new Set(), prices: [] });
+                const e = catMap.get(cat); e.count++; e.brands.add(p.brand);
+                if (p.purchasePrice > 0) e.prices.push(p.purchasePrice);
+            });
+            const cats = [...catMap.entries()].map(([cat, info]) => ({
+                category: cat, productCount: info.count, brandCount: info.brands.size,
+                minPrice: info.prices.length > 0 ? Math.min(...info.prices) : 0,
+                maxPrice: info.prices.length > 0 ? Math.max(...info.prices) : 0
+            }));
+            return JSON.stringify({ mode: 'categories', total: cats.length, categories: cats }, null, 2);
+        }
+
+        if (mode === 'suppliers') {
+            const supplierMap = new Map();
+            results.forEach(p => {
+                const name = p.supplierId || p.supplierName || '未知';
+                if (!supplierMap.has(name)) supplierMap.set(name, { count: 0, brands: new Set(), cats: new Set(), productTypes: new Set() });
+                const e = supplierMap.get(name); e.count++; e.brands.add(p.brand);
+                e.cats.add(p.majorCategory);
+                if (p.productType) e.productTypes.add(p.productType);
+            });
+            const suppliers = [...supplierMap.entries()].map(([name, info]) => ({
+                supplier: name, productCount: info.count, brandCount: info.brands.size,
+                brands: [...info.brands].slice(0, 10), categories: [...info.cats],
+                productTypes: [...info.productTypes]
+            }));
+            return JSON.stringify({ mode: 'suppliers', total: suppliers.length, suppliers }, null, 2);
+        }
+
+        // mode === 'products' (默认)
+        const totalCount = results.length;
+        results = results.slice(0, limit);
+        const summary = results.map(p => ({
+            name: p.name || '未命名', brand: p.brand || '',
+            category: p.majorCategory || p.category || '',
+            purchasePrice: p.purchasePrice || 0, retailPrice: p.retailPrice || 0,
+            brandLevel: p.brandLevel || '',
+            supplier: p.supplierId || p.supplierName || '',
+            productType: p.productType || '普通',
+            productId: p.productId || p.id || '',
+            sku: p.sku || ''
+        }));
+        return JSON.stringify({ mode: 'products', count: totalCount, products: summary }, null, 2);
     }
     return JSON.stringify({ error: '未知工具: ' + toolName });
 }
@@ -2219,6 +2695,20 @@ async function sendChatMessage() {
 
     const project = findProject(currentProjectId);
     if (!project) return;
+
+    // 斜杠指令：/search 直接查询商品库
+    if (msg.startsWith('/')) {
+        const result = await handleSlashCommand(msg, project);
+        if (result) {
+            addChatMessage('system', result);
+            project.conversation = project.conversation || [];
+            project.conversation.push({ role: 'user', content: msg });
+            project.conversation.push({ role: 'assistant', content: result });
+            await saveAllData();
+            updateChatSummary(project);
+        }
+        return;
+    }
 
     // 显示思考中状态
     const thinkingEl = document.createElement('div');
@@ -2257,32 +2747,7 @@ async function sendChatMessage() {
 ${catStatsText}
 共 ${products.length} 款商品，${brandList.length} 个品牌。
 ⚠️ 当用户问"有什么品类"时，直接列出以上所有大类及其商品数。
-⚠️ 当用户想看具体商品时，用工具查询：
-[TOOL:searchProducts] {"keyword":"关键词","category":"大类","maxPrice":价格上限,"limit":5}`;
-
-        // 意图检测：用户是否在问商品相关问题
-        const productQueryPattern = /(有没有|有哪些|查一下|搜一下|找|多少钱|什么价|推荐.*商品|列出|看看.*产品)/;
-        // 短关键词模式：独立的名词/品类/品牌（非问句、非对话填充词）
-        const shortKwPattern = /^[一-龥a-zA-Z0-9\s]{1,15}$/;
-        const isConversationalFiller = /^(好|嗯|是|对|可以|行|ok|yes|no|有|没|不知道|不清楚|看看|再说|稍等|等一下|继续|然后|还有|下一个|换一个)$/i;
-        const isQuestion = /[？?\s]|吗|呢|吧|什么|怎么|如何|哪里|哪个|谁|什么|能不能|可不可以/;
-        const shouldPreSearch = productQueryPattern.test(msg) ||
-            (shortKwPattern.test(msg) && !isConversationalFiller.test(msg) && !isQuestion.test(msg));
-        if (shouldPreSearch) {
-            // 提取关键词和品类
-            const catMatch = MAJOR_CATEGORIES.find(c => msg.includes(c));
-            const priceMatch = msg.match(/(\d+)\s*元?[以之]?[下上内]/);
-            const maxPrice = priceMatch ? parseInt(priceMatch[1]) : undefined;
-            // 清洗噪声词，提取真正的搜索关键词
-            const noisePattern = /你看看|你看|看看|商品库|里|有什么|有哪些|有没有|查一下|搜一下|找一下|帮我|请|一下|产品|商品|哪些|哪个|什么|怎么|如何|的|了|\d+元[以之]?[下上内]?/g;
-            let keyword = msg.replace(noisePattern, '').replace(/类/g, '').trim();
-            // 清理后仍太长或为纯噪声 → 用品类名作为关键词
-            if (keyword.length > 10 || !keyword || /^[的了吗呢啊呀]$/.test(keyword)) keyword = catMatch || '';
-            if (!keyword) keyword = msg.trim().substring(0, 10);
-            console.log('Agent预执行工具: searchProducts', { keyword, category: catMatch, maxPrice });
-            const preResult = executeAgentTool('searchProducts', { keyword, category: catMatch, maxPrice, limit: 8 });
-            conversationHistory.push({ role: 'user', content: `[系统预查询结果]\n${preResult}\n\n请基于以上真实数据回答用户："${msg}"` });
-        }
+`;
 
         const systemPromptFull = systemPrompt + `
 
@@ -2297,7 +2762,7 @@ ${catStatsText}
 ## 你的任务
 1. 通过自然对话了解客户的详细需求
 2. 重点收集：用户画像、品类偏好、品牌偏好、包装要求、物流要求、风格偏好
-3. 用户问商品相关问题时，基于预加载数据或工具查询结果回答
+3. 用户问商品相关问题时，基于预加载数据或用户通过指令查询的结果回答
 
 ## 对话风格
 - 简洁友好，每次只问1-2个问题
@@ -2311,35 +2776,6 @@ ${catStatsText}
         ];
 
         let reply = await callAI(messages, { temperature: 0.7 });
-
-        // 工具调用循环（最多3轮）
-        let totalToolCalls = 0;
-        for (let toolRound = 0; toolRound < 3; toolRound++) {
-            const toolMatch = reply.match(/\[TOOL:(\w+)\]\s*(\{[\s\S]*?\})/);
-            if (!toolMatch) break;
-            const toolName = toolMatch[1];
-            let toolParams = {};
-            try { toolParams = JSON.parse(toolMatch[2]); } catch(e) { console.warn('工具参数解析失败:', e); }
-            console.log('Agent工具调用:', toolName, toolParams);
-            const toolResult = executeAgentTool(toolName, toolParams);
-            messages.push({ role: 'assistant', content: reply });
-            messages.push({ role: 'user', content: `[工具 ${toolName} 返回结果]\n${toolResult}\n\n请基于以上数据继续回答用户。` });
-            reply = await callAI(messages, { temperature: 0.7 });
-            totalToolCalls++;
-        }
-
-        // 假搜索检测：AI说了"查/搜"但没有调用工具 → 强制执行搜索
-        if (totalToolCalls === 0 && /(?:我查|让我查|帮.*查|搜一下|搜索|查一下|查查|查询)/.test(reply) && !/\[TOOL:/.test(reply)) {
-            console.log('检测到AI假搜索，强制执行工具查询');
-            const catMatch = MAJOR_CATEGORIES.find(c => msg.includes(c));
-            const noisePattern = /你看看|你看|看看|商品库|里|有什么|有哪些|有没有|查一下|搜一下|找一下|帮我|请|一下|产品|商品|哪些|哪个|什么|怎么|如何|的|了|\d+元[以之]?[下上内]?/g;
-            let kw = msg.replace(noisePattern, '').replace(/类/g, '').trim();
-            if (kw.length > 10 || !kw || /^[的了吗呢啊呀]$/.test(kw)) kw = catMatch || msg.trim().substring(0, 10);
-            const forcedResult = executeAgentTool('searchProducts', { keyword: kw, category: catMatch, limit: 8 });
-            messages.push({ role: 'assistant', content: reply });
-            messages.push({ role: 'user', content: `[系统自动查询结果]\n${forcedResult}\n\n请基于以上真实数据回答用户。` });
-            reply = await callAI(messages, { temperature: 0.7 });
-        }
 
         // 移除思考中状态
         thinkingEl.remove();
