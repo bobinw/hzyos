@@ -1,0 +1,2366 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>商品库数据修复工具</title>
+<style>
+:root {
+    --bg: #f3f4f6; --card: #fff; --text: #1a1a1a; --text2: #6b7280;
+    --border: #e5e7eb; --primary: #2563eb; --primary-h: #1d4ed8;
+    --danger: #ef4444; --warning: #f59e0b; --success: #22c55e;
+    --brand-active: #eff6ff; --brand-hover: #f9fafb;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; background: var(--bg); color: var(--text); height: 100vh; overflow: hidden; }
+#app { display: grid; grid-template-rows: 52px 1fr; height: 100vh; }
+
+/* Top Bar */
+#topbar { background: var(--card); border-bottom: 1px solid var(--border); display: flex; align-items: center; padding: 0 16px; gap: 12px; z-index: 10; }
+#topbar h1 { font-size: 16px; white-space: nowrap; }
+#topbar .spacer { flex: 1; }
+#topbar .status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text2); }
+#topbar .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; }
+#topbar .dot.on { background: var(--success); }
+
+/* Main */
+#main { display: grid; grid-template-columns: 300px 1fr; overflow: hidden; }
+
+/* Left Panel */
+#left { background: var(--card); border-right: 1px solid var(--border); display: flex; flex-direction: column; overflow: hidden; }
+#left-header { padding: 10px 12px; border-bottom: 1px solid var(--border); }
+#left-header input { width: 100%; padding: 6px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 13px; outline: none; }
+#left-header input:focus { border-color: var(--primary); }
+#left-filters { padding: 8px 12px; border-bottom: 1px solid var(--border); display: flex; flex-wrap: wrap; gap: 6px; }
+.filter-chip { font-size: 11px; padding: 3px 8px; border-radius: 999px; border: 1px solid var(--border); cursor: pointer; white-space: nowrap; user-select: none; transition: all 0.15s; background: #fff; }
+.filter-chip.active { background: var(--primary); color: #fff; border-color: var(--primary); }
+.filter-chip:hover:not(.active) { background: var(--brand-hover); }
+#left-stats { padding: 6px 12px; font-size: 11px; color: var(--text2); border-bottom: 1px solid var(--border); }
+#brand-list { flex: 1; overflow-y: auto; }
+.brand-entry { display: flex; align-items: center; padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f3f4f6; transition: background 0.1s; gap: 8px; }
+.brand-entry:hover { background: var(--brand-hover); }
+.brand-entry.active { background: var(--brand-active); border-left: 3px solid var(--primary); padding-left: 9px; }
+.brand-entry .sev { font-size: 14px; flex-shrink: 0; width: 20px; text-align: center; }
+.brand-entry .info { flex: 1; min-width: 0; }
+.brand-entry .name { font-size: 13px; font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.brand-entry .meta { font-size: 11px; color: var(--text2); display: flex; gap: 6px; align-items: center; }
+.brand-entry .count { font-size: 11px; color: var(--text2); flex-shrink: 0; }
+.brand-entry .dirty-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--primary); flex-shrink: 0; display: none; }
+.brand-entry.dirty .dirty-dot { display: block; }
+
+/* Right Panel */
+#right { display: flex; flex-direction: column; overflow: hidden; background: var(--bg); }
+#right-empty { flex: 1; display: flex; align-items: center; justify-content: center; color: var(--text2); font-size: 14px; }
+#right-content { flex: 1; display: flex; flex-direction: column; overflow: hidden; }
+#brand-header { background: var(--card); padding: 12px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#brand-header .brand-name { font-size: 18px; font-weight: 600; }
+#brand-header .nav-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: pointer; font-size: 13px; }
+#brand-header .nav-btn:hover { background: var(--brand-hover); }
+#brand-header .nav-btn:disabled { opacity: 0.3; cursor: default; }
+
+#brand-fields { background: var(--card); padding: 10px 16px; border-bottom: 1px solid var(--border); display: flex; align-items: center; gap: 10px; flex-wrap: wrap; flex-shrink: 0; }
+#brand-fields label { font-size: 12px; color: var(--text2); white-space: nowrap; }
+#brand-fields select { padding: 4px 8px; border: 1px solid var(--border); border-radius: 4px; font-size: 13px; }
+#brand-fields .btn-sm { font-size: 11px; padding: 3px 8px; }
+
+#brand-search-btns { background: var(--card); padding: 6px 16px; border-bottom: 1px solid var(--border); display: flex; gap: 6px; flex-shrink: 0; }
+#brand-search-btns .search-btn { font-size: 11px; padding: 3px 10px; border: 1px solid var(--border); border-radius: 999px; background: #fff; cursor: pointer; color: var(--primary); }
+#brand-search-btns .search-btn:hover { background: var(--brand-active); }
+
+#suggestion-bar { background: #fffbeb; padding: 8px 16px; border-bottom: 1px solid #fde68a; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+#suggestion-bar.hidden { display: none; }
+
+#product-area { flex: 1; overflow: auto; padding: 8px 16px; }
+#product-table { width: 100%; border-collapse: collapse; font-size: 13px; background: var(--card); border-radius: 6px; overflow: hidden; }
+#product-table th { background: #f9fafb; padding: 8px 10px; text-align: left; font-weight: 600; font-size: 12px; border-bottom: 2px solid var(--border); position: sticky; top: 0; z-index: 1; }
+#product-table td { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; }
+#product-table tr:hover td { background: #fafbff; }
+#product-table .editable { cursor: pointer; border-radius: 3px; min-width: 60px; }
+#product-table .editable:hover { background: #eef2ff; }
+#product-table .editable.editing { padding: 0; }
+#product-table .editable select, #product-table .editable input { width: 100%; padding: 4px 6px; border: 2px solid var(--primary); border-radius: 3px; font-size: 13px; outline: none; }
+#product-table .col-name { max-width: 260px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#product-table .cell-issue { color: var(--danger); font-weight: 500; }
+#product-table .col-cb { width: 30px; text-align: center; }
+#product-table .col-del { width: 30px; text-align: center; }
+.del-btn { background: none; border: none; cursor: pointer; font-size: 14px; padding: 2px 4px; border-radius: 4px; opacity: 0.4; transition: all 0.15s; }
+.del-btn:hover { opacity: 1; background: #fee2e2; color: var(--danger); }
+#btn-delete-sel { color: var(--danger); border-color: var(--danger); }
+#btn-delete-sel:hover { background: #fee2e2; }
+
+#brand-footer { background: var(--card); padding: 10px 16px; border-top: 1px solid var(--border); display: flex; gap: 8px; flex-shrink: 0; }
+
+/* Buttons */
+.btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 14px; border: none; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; transition: all 0.15s; white-space: nowrap; }
+.btn:disabled { opacity: 0.4; cursor: not-allowed; }
+.btn-primary { background: var(--primary); color: #fff; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-h); }
+.btn-outline { background: #fff; color: var(--text); border: 1px solid var(--border); }
+.btn-outline:hover:not(:disabled) { background: #f9fafb; }
+.btn-danger { background: #fff; color: var(--danger); border: 1px solid var(--danger); }
+.btn-danger:hover:not(:disabled) { background: #fef2f2; }
+
+/* Modal */
+#modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 1000; display: flex; align-items: center; justify-content: center; }
+#modal-overlay.hidden { display: none; }
+#modal-box { background: var(--card); border-radius: 10px; max-width: 700px; width: 90%; max-height: 80vh; overflow-y: auto; box-shadow: 0 20px 60px rgba(0,0,0,0.2); }
+#modal-box h3 { padding: 16px 20px; border-bottom: 1px solid var(--border); font-size: 16px; margin:0; }
+#modal-box table { width: 100%; border-collapse: collapse; font-size: 13px; }
+#modal-box td { padding: 6px 16px; border-bottom: 1px solid #f3f4f6; vertical-align: top; }
+#modal-box td:first-child { width: 120px; color: var(--text2); font-weight: 500; white-space: nowrap; }
+#modal-box td:last-child { word-break: break-all; }
+#modal-close { position: absolute; top: 12px; right: 16px; background: none; border: none; font-size: 22px; cursor: pointer; color: var(--text2); }
+.col-name { cursor: pointer; }
+.col-name:hover { color: var(--primary); text-decoration: underline; }
+.btn-sm { font-size: 11px; padding: 3px 8px; }
+.toast { position: fixed; bottom: 20px; right: 20px; background: #1f2937; color: #fff; padding: 10px 16px; border-radius: 6px; font-size: 13px; z-index: 999; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+.toast.show { opacity: 1; }
+
+/* Column Config Panel */
+#brand-header { position: relative; }
+#col-config-btn { padding: 4px 10px; border: 1px solid var(--border); border-radius: 4px; background: #fff; cursor: pointer; font-size: 14px; line-height: 1; margin-left: auto; }
+#col-config-btn:hover { background: var(--brand-hover); }
+#col-config-panel { position: absolute; top: calc(100% + 2px); right: 8px; background: var(--card); border: 1px solid var(--border); border-radius: 8px; box-shadow: 0 10px 30px rgba(0,0,0,0.12); z-index: 500; width: 280px; max-height: 420px; display: flex; flex-direction: column; }
+#col-config-panel.hidden { display: none; }
+#col-config-panel .cc-header { padding: 8px 12px; border-bottom: 1px solid var(--border); font-size: 12px; font-weight: 600; display: flex; justify-content: space-between; align-items: center; }
+#col-config-panel .cc-list { flex: 1; overflow-y: auto; padding: 4px 0; }
+#col-config-panel .cc-item { display: flex; align-items: center; gap: 8px; padding: 5px 12px; font-size: 13px; cursor: default; border-bottom: 1px solid #f9fafb; user-select: none; }
+#col-config-panel .cc-item:hover { background: var(--brand-hover); }
+#col-config-panel .cc-item.drag-over { border-top: 2px solid var(--primary); }
+#col-config-panel .cc-item.core .cc-label { color: var(--text2); }
+#col-config-panel .cc-item input[type=checkbox] { margin: 0; flex-shrink: 0; }
+#col-config-panel .cc-label { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+#col-config-panel .cc-drag { color: #d1d5db; font-size: 12px; cursor: grab; flex-shrink: 0; padding: 0 2px; }
+#col-config-panel .cc-drag:hover { color: var(--text2); }
+
+/* Field CRUD */
+.field-crud-form { display: flex; flex-direction: column; gap: 12px; }
+.field-crud-form label { font-size: 13px; font-weight: 500; }
+.field-crud-form input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; font-size: 14px; }
+.field-crud-form input:focus { border-color: var(--primary); outline: none; }
+#delete-field-list { max-height: 200px; overflow-y: auto; border: 1px solid var(--border); border-radius: 6px; }
+#delete-field-list .df-item { padding: 8px 12px; cursor: pointer; border-bottom: 1px solid #f3f4f6; font-size: 13px; }
+#delete-field-list .df-item:hover { background: #fee2e2; }
+</style>
+</head>
+<body>
+<div id="app">
+<div id="topbar">
+    <h1>商品库数据修复工具</h1>
+    <button class="btn btn-outline btn-sm" id="mode-toggle" onclick="switchMode()">按供应商</button>
+    <span class="spacer"></span>
+    <span class="status" style="cursor:pointer;" onclick="connectDB()" title="点击重新连接"><span class="dot" id="db-dot"></span><span id="db-label">正在连接...</span></span>
+    <button class="btn btn-outline btn-sm" id="btn-backup" onclick="downloadBackup()" disabled>下载备份</button>
+    <button class="btn btn-outline btn-sm" id="btn-save-all" onclick="(async()=>await saveAllToDB())()" disabled>保存全部</button>
+    <button class="btn btn-outline btn-sm" id="btn-undo-all" onclick="undoAll()" disabled>撤销全部</button>
+    <span style="color:var(--border);margin:0 2px;">|</span>
+    <button class="btn btn-outline btn-sm" id="btn-add-field" onclick="showAddFieldModal()" title="新增字段到当前组所有产品">+ 字段</button>
+    <button class="btn btn-outline btn-sm" id="btn-del-field" onclick="showDeleteFieldPanel()" title="从整个商品库删除字段">− 字段</button>
+    <button class="btn btn-outline btn-sm" id="btn-rename-field" onclick="showRenameFieldModal()" title="重命名整个商品库的字段">✎ 字段</button>
+</div>
+<div id="main">
+    <div id="left">
+        <div id="left-header"><input type="text" id="brand-search" placeholder="搜索品牌..." oninput="renderBrandList()"></div>
+        <div id="left-filters" id="filter-chips"></div>
+        <div id="left-stats"></div>
+        <div id="brand-list"></div>
+    </div>
+    <div id="right">
+        <div id="right-empty">选择左侧品牌开始编辑</div>
+        <div id="right-content" style="display:none;">
+            <div id="brand-header">
+                <button class="nav-btn" id="btn-prev" onclick="navigateBrand(-1)">◀</button>
+                <span class="brand-name" id="detail-brand-name"></span>
+                <span style="font-size:13px;color:var(--text2);" id="detail-product-count"></span>
+                <span class="spacer"></span>
+                <span id="detail-issues" style="font-size:12px;"></span>
+                <button class="nav-btn" id="btn-next" onclick="navigateBrand(1)">▶</button>
+                <button id="col-config-btn" onclick="toggleColumnConfig()" title="列配置">⚙</button>
+                <div id="col-config-panel" class="hidden">
+                    <div class="cc-header"><span>表格列配置</span><button class="btn-sm btn-outline" onclick="resetColumnConfig()">恢复默认</button></div>
+                    <div class="cc-list" id="col-config-list"></div>
+                </div>
+            </div>
+            <div id="brand-fields">
+                <label>品牌级别:</label>
+                <select id="field-brandLevel"><option value="">—</option></select>
+                <button class="btn-sm btn-outline" onclick="applyBrandField('brandLevel','all')">全部</button>
+                <button class="btn-sm btn-outline" onclick="applyBrandField('brandLevel','sel')">选中</button>
+                <label style="margin-left:8px;">品牌调性:</label>
+                <select id="field-brandStyle"><option value="">—</option></select>
+                <button class="btn-sm btn-outline" onclick="applyBrandField('brandStyle','all')">全部</button>
+                <button class="btn-sm btn-outline" onclick="applyBrandField('brandStyle','sel')">选中</button>
+                <label style="margin-left:8px;">价格定位:</label>
+                <select id="field-priceRange"><option value="">—</option></select>
+                <button class="btn-sm btn-outline" onclick="applyBrandField('priceRange','all')">全部</button>
+                <button class="btn-sm btn-outline" onclick="applyBrandField('priceRange','sel')">选中</button> <label style="margin-left:8px;">区域:</label> <select id="field-region"><option value="">—</option></select> <button class="btn-sm btn-outline" onclick="applyBrandField('region','all')">全部</button> <button class="btn-sm btn-outline" onclick="applyBrandField('region','sel')">选中</button>
+            </div>
+            <div id="brand-search-btns">
+                <span style="font-size:11px;color:var(--text2);">AI查询品牌:</span>
+                <button class="search-btn" onclick="aiBrandQuery()">了解品牌背景</button>
+                <button class="search-btn" id="btn-ai-detect-cat" onclick="aiDetectCategory()">AI检测品类</button>
+                <button class="btn-sm btn-outline" onclick="reidentifyBrand()" style="margin-left:auto;">重新识别品牌名</button>
+            </div>
+            <div id="suggestion-bar" class="hidden">
+                <span id="suggestion-text"></span>
+                <button class="btn-sm btn-primary" id="btn-accept-suggestion" onclick="acceptSuggestions()" disabled>接受建议并保存</button>
+            </div>
+            <div id="batch-bar" style="background:#fef3c7;padding:6px 16px;border-bottom:1px solid #fcd34d;display:none;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;">
+                <span style="font-size:12px;font-weight:500;">批量修改选中:</span>
+                <input id="batch-brand" placeholder="品牌名" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;width:100px;">
+                <select id="batch-major" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">大类—</option></select>
+                <select id="batch-cat" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">品类—</option></select>
+                <select id="batch-scene" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">场景—</option></select>
+                <select id="batch-level" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">级别—</option></select>
+                <select id="batch-style" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">调性—</option></select>
+                <select id="batch-price" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">价格—</option></select> <select id="batch-region" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">区域—</option></select>
+                <button class="btn-sm btn-primary" onclick="batchApply()">应用</button>
+                <button class="btn-sm btn-outline" id="btn-delete-sel" onclick="(async()=>await deleteSelected())()" style="margin-left:4px;">🗑 删除选中</button>
+                <span id="batch-count" style="font-size:11px;color:var(--text2);"></span>
+            </div>
+            <div id="product-area"><table id="product-table"></table></div>
+            <div id="brand-footer">
+                <button class="btn btn-primary btn-sm" id="btn-save-brand" onclick="(async()=>await saveBrand())()">保存此品牌</button>
+                <button class="btn btn-danger btn-sm" id="btn-undo-brand" onclick="undoBrand()">撤销此品牌</button>
+            </div>
+        </div>
+    </div>
+</div>
+</div>
+<div class="toast" id="toast"></div>
+<div id="modal-overlay" class="hidden" onclick="if(event.target===this)closeModal()">
+    <div id="modal-box" style="position:relative;">
+        <button id="modal-close" onclick="closeModal()">&times;</button>
+        <h3 id="modal-title"></h3>
+        <div id="modal-body"></div>
+    </div>
+</div>
+
+<script>
+// ========== 10大类体系 ==========
+const STANDARD_MAJORS = [
+    '食品饮料', '粮油调味', '生鲜特产', '家庭日用', '美妆个护',
+    '运动户外', '家居家电', '卡券文娱', '健康养护', '办公节庆'
+];
+const OBSOLETE_MAJORS = { '日化个护': true, '企业定制': true };
+
+const SUBCATEGORY_TO_MAJOR = {
+    // 食品饮料
+    '坚果': '食品饮料', '饼干糕点': '食品饮料', '粽子': '食品饮料', '月饼': '食品饮料',
+    '蜜饯果干': '食品饮料', '零食': '食品饮料', '糖果': '食品饮料', '巧克力': '食品饮料',
+    '膨化食品': '食品饮料', '方便食品': '食品饮料',
+    '乳制品': '食品饮料', '牛奶': '食品饮料', '酸奶': '食品饮料', '奶酪': '食品饮料',
+    '饮料': '食品饮料', '冲调': '食品饮料',
+    // 粮油调味（从食品饮料拆分）
+    '粮油调味': '粮油调味', '调味品': '粮油调味', '大米': '粮油调味',
+    '食用油': '粮油调味', '杂粮': '粮油调味', '面粉': '粮油调味',
+    '面条': '粮油调味', '酱料': '粮油调味', '调味酱': '粮油调味',
+    '醋': '粮油调味', '酱油': '粮油调味', '调味汁': '粮油调味',
+    '调味粉': '粮油调味', '调味油': '粮油调味', '蚝油': '粮油调味',
+    '料酒': '粮油调味', '糖': '粮油调味', '盐': '粮油调味',
+    // 生鲜特产
+    '肉制品': '生鲜特产', '海产': '生鲜特产', '水产': '生鲜特产',
+    '蛋类': '生鲜特产', '禽肉': '生鲜特产',
+    '传统食品': '生鲜特产', '地方特产': '生鲜特产',
+    '鲜果': '生鲜特产', '生鲜水果': '生鲜特产',
+    // 家庭日用（从日化个护拆分）
+    '清洁用品': '家庭日用', '纸品': '家庭日用', '日杂': '家庭日用',
+    '洗护': '家庭日用', '沐浴用品': '家庭日用', '口腔护理': '家庭日用',
+    // 美妆个护（从日化个护拆分）
+    '护肤': '美妆个护', '面膜': '美妆个护', '护肤套装': '美妆个护',
+    '彩妆': '美妆个护', '唇部': '美妆个护', '底妆': '美妆个护', '定妆': '美妆个护',
+    '眼妆': '美妆个护', '口红': '美妆个护', '香水': '美妆个护',
+    '美发造型': '美妆个护', '洁面': '美妆个护',
+    // 健康养护
+    '茶叶': '健康养护', '茗茶': '健康养护',
+    '滋补保健': '健康养护', '燕窝': '健康养护', '花胶': '健康养护',
+    '干货菌菇': '健康养护', '中药材': '健康养护',
+    // 家居家电
+    '被子': '家居家电', '床上套件': '家居家电', '枕头': '家居家电',
+    '毯子': '家居家电', '夏凉用品': '家居家电',
+    '厨房小电': '家居家电', '厨房电器': '家居家电',
+    '生活电器': '家居家电', '个护电器': '家居家电',
+    '杯具': '家居家电', '保温杯': '家居家电', '保温壶': '家居家电',
+    // 运动户外
+    '健身器材': '运动户外', '跑步': '运动户外', '球类运动': '运动户外',
+    '运动杯': '运动户外', '户外': '运动户外',
+    // 办公节庆（企业定制更名）
+    '书写工具': '办公节庆', '文具': '办公节庆', '本册': '办公节庆',
+    '日历': '办公节庆', '节庆用品': '办公节庆',
+    // 卡券文娱
+    '兑换册': '卡券文娱', '提货券': '卡券文娱', '礼品卡': '卡券文娱',
+};
+
+// 品牌→大类强制修正
+const BRAND_TO_MAJOR = {
+    '花西子': '美妆个护', '完美日记': '美妆个护', '左颜右色': '美妆个护',
+    '片仔癀': '美妆个护', '薇诺娜': '美妆个护', '蜜丝婷': '美妆个护',
+    '笛爱儿': '美妆个护', '我的美丽日志': '美妆个护', '美颜社': '美妆个护',
+    '半亩花田': '美妆个护', '浅香': '美妆个护', '诗裴丝': '美妆个护',
+    '蜜斯莉': '美妆个护', '长发小寨': '美妆个护', '欧贝斯': '美妆个护',
+    '风影': '家庭日用', '屈臣氏': '美妆个护',
+    '绽家': '家庭日用', '花卉诗': '家庭日用', '水卫士': '家庭日用',
+    '植护': '家庭日用', '拜耳': '家庭日用', '蔬果园': '家庭日用',
+    '水星': '家居家电', '水星家纺': '家居家电', '慕思家纺': '家居家电',
+    '啄木鸟': '家居家电', '公牛': '家居家电', '豹牌BP': '家居家电', '豹牌BP03': '家居家电',
+    '小熊': '家居家电', '科爱元素': '家居家电', '艾贝丽Abereve': '家居家电', '爱仕达': '家居家电',
+    '鲁花': '粮油调味', '金龙鱼': '粮油调味', '福临门': '粮油调味',
+    '刀唛': '粮油调味', '狮球唛': '粮油调味', '十月稻田': '粮油调味',
+    '北大荒': '粮油调味', '太粮': '粮油调味', '中粮': '粮油调味',
+    '润心': '粮油调味', '北纬47度': '食品饮料', '北纬': '食品饮料',
+    '塞翁福': '粮油调味', '裕道府': '粮油调味', '邻家饭香': '粮油调味',
+    '兢农': '粮油调味', '南太行': '粮油调味', '福花': '粮油调味', '盐蒸橙': '食品饮料',
+    '天地粮人': '粮油调味', '孟乍隆': '粮油调味', '品利': '粮油调味',
+    '贝蒂斯': '粮油调味', '香满园': '粮油调味', '陇间柒月': '粮油调味',
+    '谷米多': '粮油调味', '新大羌': '粮油调味', '泰那兰': '粮油调味',
+    '唐域': '食品饮料', '玉米力': '食品饮料', '齐云山': '粮油调味',
+    '锋味派': '食品饮料', '周黑鸭': '食品饮料', '百事': '食品饮料',
+    '无穷': '食品饮料', '劲仔': '食品饮料', '旺旺': '食品饮料',
+    '卫龙': '食品饮料', '自然派': '食品饮料', '穗格氏': '食品饮料',
+    '轻上': '食品饮料', '欧扎克': '食品饮料', '西麦': '食品饮料',
+    '南方黑芝麻': '食品饮料', '良品铺子': '食品饮料', '三只松鼠': '食品饮料',
+    '百草味': '食品饮料', '洽洽': '食品饮料', '法丽兹': '食品饮料',
+    '鲜记': '食品饮料', '姚生记': '食品饮料', '姚朵朵': '食品饮料',
+    '嗑西西': '食品饮料', '甘源': '食品饮料', '阿明': '食品饮料',
+    '黄飞红': '食品饮料', '如水': '食品饮料', '有零有食': '食品饮料',
+    '雪海梅乡': '食品饮料', '亿家馨': '食品饮料', '久久丫': '食品饮料',
+    '王小卤': '食品饮料', '紫燕百味鸡': '食品饮料', '紫燕': '食品饮料',
+    '棒棒娃': '食品饮料', '乡乡嘴': '食品饮料', '麻辣王子': '食品饮料',
+    '金晔': '食品饮料', '葵珍': '食品饮料', '上好佳': '食品饮料',
+    '徐福记': '食品饮料', '盐津铺子': '食品饮料',
+    '费列罗': '食品饮料', '瑞士莲': '食品饮料', '雀巢奇巧': '食品饮料',
+    '亿滋': '食品饮料', '乐达': '食品饮料', '嘉顿': '食品饮料',
+    '刻凡': '食品饮料', '拉面说儿': '食品饮料', '榴芒一刻': '食品饮料',
+    '元气森林': '食品饮料', '佳果源': '食品饮料', '瑞幸': '食品饮料',
+    '猫屎咖啡': '食品饮料', '光合植造': '食品饮料', '林源春': '食品饮料',
+    '椰子知道': '食品饮料', '松鲜鲜': '粮油调味', '海天': '粮油调味',
+    '金沙河': '粮油调味', '桂格': '食品饮料', '燕之坊': '食品饮料',
+    '沃隆': '食品饮料', '三胖蛋': '食品饮料', '鲜品屋': '食品饮料',
+    '甜冠': '食品饮料', '中食匠': '食品饮料', '谷之优品': '食品饮料',
+    '恩纳尔': '食品饮料', '臻味坚果': '食品饮料', '黑小知': '食品饮料',
+    '匠心川冠': '食品饮料', '云上布拉': '食品饮料', '好膳道': '食品饮料',
+    '王老吉': '食品饮料', '汇味园': '食品饮料',
+    '五芳斋': '食品饮料', '广州酒家': '食品饮料', '诸老大': '食品饮料',
+    '真真老老': '食品饮料', '陶陶居': '食品饮料', '稻香村': '食品饮料',
+    '华美': '食品饮料', '锦华': '食品饮料', '重冠': '食品饮料',
+    '十月初五': '食品饮料', '御庄园': '食品饮料', '澳门永辉': '食品饮料',
+    '澳门英记': '食品饮料', '知味观': '食品饮料', '冠华': '食品饮料',
+    '杏花楼': '食品饮料', '潘祥记': '食品饮料', '嘉士利': '食品饮料',
+    '皇冠': '食品饮料', '元朗': '食品饮料', '放怀楼': '食品饮料',
+    '鼎湖山': '食品饮料', '读酥世家': '食品饮料', '贝师傅': '食品饮料',
+    '轩妈': '食品饮料', '咀香园': '食品饮料', '道滘粽': '食品饮料',
+    'Hibake晓粽': '食品饮料', '立家': '食品饮料', '紫光园': '食品饮料',
+    '扬航': '食品饮料', '德荣恒': '食品饮料', '雅觅': '食品饮料',
+    '迪士尼': '食品饮料', '味滋源': '食品饮料', '臻采': '食品饮料',
+    'ADOL': '食品饮料', '莎布蕾': '食品饮料', '椒巴客': '食品饮料',
+    '歌帝梵': '食品饮料', '三稳福记': '食品饮料',
+    '德亚': '食品饮料', '卓牧': '食品饮料', '光明': '食品饮料',
+    '简爱': '食品饮料', '纽仕兰': '食品饮料', '左江': '食品饮料',
+    '隔壁刘奶奶': '食品饮料', '永辉': '食品饮料', '好想你': '食品饮料',
+    '怡口莲': '食品饮料', '乐事': '食品饮料', '胡姬花': '粮油调味',
+    '江中': '健康养护', '华祥苑': '健康养护', '谢裕大': '健康养护',
+    '狮峰': '健康养护', '老侯爷': '健康养护', '启泰': '健康养护',
+    '国济堂': '健康养护', '良橘堂': '健康养护', '新宝堂': '健康养护',
+    '寿全斋': '健康养护', '蔡府': '健康养护', '觅宫燕': '健康养护',
+    '田知府': '健康养护', '圃也': '健康养护', '新京堂': '健康养护',
+    '福东海': '健康养护', '官栈': '健康养护', '悦栈': '健康养护',
+    '云鼎茶': '健康养护', '勐乐山': '健康养护', '敬修堂': '健康养护',
+    '卓文后': '美妆个护', '金熊': '食品饮料',
+    '华京': '健康养护', '八马': '健康养护', '中茶': '健康养护',
+    '大益茶': '健康养护', '英红': '健康养护', '东阿阿胶': '健康养护',
+    '捷氏': '食品饮料', '华润三九': '健康养护',
+    '氏蜂社': '健康养护', '橙心有礼': '食品饮料',
+    '百果园': '生鲜特产', '黄天鹅': '生鲜特产', '圣迪乐': '生鲜特产',
+    '旭日': '生鲜特产', '萌宝鸭': '生鲜特产',
+    '科尔沁': '生鲜特产', '金华火腿': '生鲜特产', '皇上皇': '生鲜特产',
+    '唐人神': '生鲜特产', '诸记': '生鲜特产', '崇明家禽': '生鲜特产',
+    '信达肉肠': '生鲜特产', '雨润': '生鲜特产', '琪金': '生鲜特产',
+    '财卤德': '生鲜特产', '伊知牛': '生鲜特产', '金鳌': '生鲜特产',
+    '伯纳德': '生鲜特产', '江鲜森': '生鲜特产', '国信水产': '生鲜特产',
+    '品尊轩': '生鲜特产', '特诺娜': '生鲜特产', '纳福汇': '生鲜特产',
+    '万香斋': '生鲜特产', '老诚一锅': '生鲜特产', '德元': '生鲜特产',
+    '膳博士': '生鲜特产', '本味': '生鲜特产', '卡宴': '生鲜特产',
+    '溢流香': '生鲜特产', '上海牌': '生鲜特产', '三关六码头': '生鲜特产',
+    '挂荔': '生鲜特产', 'Liforce': '食品饮料',
+    '途道': '运动户外', '柯迈龙': '运动户外', '大洋洲袋鼠': '运动户外',
+    '蓝卡兑换': '卡券文娱', '天猫卡': '卡券文娱',
+};
+
+// 品牌调性参考 (brand → {bl, pr, bs})
+const BRAND_TONE = {
+    '金龙鱼': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '鲁花': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '福临门': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '胡姬花': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '良品铺子': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '三只松鼠': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '百草味': { bl: '全国一线品牌', pr: '平价', bs: '新潮有趣' },
+    '洽洽': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '沃隆': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '徐福记': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '旺旺': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '五芳斋': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '广州酒家': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '稻香村': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '华美': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '锦华': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '十月初五': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '澳门永辉': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '澳门英记': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '知味观': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '杏花楼': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '潘祥记': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '嘉士利': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '皇冠': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '轩妈': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '咀香园': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '元朗': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '迪士尼': { bl: '国际品牌', pr: '中端', bs: '轻奢精致' },
+    '歌帝梵': { bl: '国际品牌', pr: '高端', bs: '轻奢精致' },
+    '德亚': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '纽仕兰': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '费列罗': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '瑞士莲': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '乐事': { bl: '国际品牌', pr: '平价', bs: '轻奢精致' },
+    '怡口莲': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '光明': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '简爱': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '好想你': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '永辉': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '诸老大': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '真真老老': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '陶陶居': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '水星': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '水星家纺': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '慕思家纺': { bl: '全国一线品牌', pr: '高端', bs: '新潮有趣' },
+    '花西子': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '完美日记': { bl: '全国一线品牌', pr: '平价', bs: '新潮有趣' },
+    '薇诺娜': { bl: '全国一线品牌', pr: '中端', bs: '健康活力' },
+    '蜜丝婷': { bl: '国际品牌', pr: '中端', bs: '轻奢精致' },
+    '半亩花田': { bl: '全国一线品牌', pr: '平价', bs: '新潮有趣' },
+    '百果园': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '黄天鹅': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '科尔沁': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '金华火腿': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '皇上皇': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '唐人神': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '雨润': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '八马': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '中茶': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '大益茶': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '东阿阿胶': { bl: '全国一线品牌', pr: '高端', bs: '温馨实用' },
+    '华润三九': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '王老吉': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '元气森林': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '周黑鸭': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '劲仔': { bl: '全国一线品牌', pr: '平价', bs: '新潮有趣' },
+    '卫龙': { bl: '全国一线品牌', pr: '平价', bs: '新潮有趣' },
+    '盐津铺子': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '雀巢奇巧': { bl: '国际品牌', pr: '中端', bs: '轻奢精致' },
+    '亿滋': { bl: '国际品牌', pr: '中端', bs: '轻奢精致' },
+    '瑞幸': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '拉面说儿': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '海天': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '金沙河': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '桂格': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '十月稻田': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '北大荒': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '天地粮人': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '香满园': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '松鲜鲜': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '西麦': { bl: '全国一线品牌', pr: '平价', bs: '温馨实用' },
+    '欧扎克': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '轻上': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '佳果源': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '椰子知道': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '锋味派': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '无穷': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '自然派': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '如水': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '甘源': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '阿明': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '黄飞红': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '王小卤': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '紫燕百味鸡': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '榴芒一刻': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '雪海梅乡': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '乡乡嘴': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '麻辣王子': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '金晔': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '葵珍': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '臻味坚果': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '黑小知': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '匠心川冠': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '云上布拉': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '好膳道': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '汇味园': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '重冠': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '御庄园': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '味滋源': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '臻采': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    'ADOL': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '莎布蕾': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '椒巴客': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '萌宝鸭': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '放怀楼': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '鼎湖山': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '读酥世家': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '贝师傅': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '道滘粽': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    'Hibake晓粽': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '立家': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '紫光园': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '扬航': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '德荣恒': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '雅觅': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '冠华': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '卓牧': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '左江': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '隔壁刘奶奶': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '圣迪乐': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '旭日': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '膳博士': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '诸记': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '崇明家禽': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '信达肉肠': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '琪金': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '财卤德': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '伊知牛': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '金鳌': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '伯纳德': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '江鲜森': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '国信水产': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '品尊轩': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '特诺娜': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '纳福汇': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '万香斋': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '老诚一锅': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '德元': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '卡宴': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '溢流香': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '上海牌': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '三关六码头': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '三稳福记': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '华祥苑': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '谢裕大': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '狮峰': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '启泰': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '国济堂': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '良橘堂': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '新宝堂': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '寿全斋': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '福东海': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '官栈': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '悦栈': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '云鼎茶': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '勐乐山': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '敬修堂': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '蔡府': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '觅宫燕': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '田知府': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '圃也': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '新京堂': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '老侯爷': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '英红': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '江中': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '氏蜂社': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '橙心有礼': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '卓文后': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '金熊': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '华京': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '捷氏': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '北纬47度': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '北纬': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '嘉宝堂': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '豹牌BP03': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    'Liforce': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '挂荔': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '塞翁福': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '裕道府': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '邻家饭香': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '兢农': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '南太行': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '福花': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '盐蒸橙': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '太粮': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '中粮': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '刀唛': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '狮球唛': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '润心': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '品利': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '贝蒂斯': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '陇间柒月': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '谷米多': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '新大羌': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '泰那兰': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '孟乍隆': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '唐域': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '玉米力': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '齐云山': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '穗格氏': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '南方黑芝麻': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '鲜记': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '姚生记': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '姚朵朵': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '嗑西西': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '法丽兹': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '乐达': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '嘉顿': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '刻凡': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '光合植造': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '林源春': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '有零有食': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '亿家馨': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '久久丫': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '棒棒娃': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '三胖蛋': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '鲜品屋': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '甜冠': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '中食匠': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '谷之优品': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '恩纳尔': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '燕之坊': { bl: '地方品牌', pr: '中端', bs: '温馨实用' },
+    '猫屎咖啡': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '绽家': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '花卉诗': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '水卫士': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '植护': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '拜耳': { bl: '国际品牌', pr: '中端', bs: '温馨实用' },
+    '蔬果园': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '浅香': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '诗裴丝': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '欧贝斯': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '风影': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '屈臣氏': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '左颜右色': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '片仔癀': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '笛爱儿': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '我的美丽日志': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '美颜社': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '蜜斯莉': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '长发小寨': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '爱仕达': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '豹牌BP': { bl: '地方品牌', pr: '中端', bs: '新潮有趣' },
+    '小熊': { bl: '全国一线品牌', pr: '中端', bs: '新潮有趣' },
+    '科爱元素': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '艾贝丽Abereve': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '啄木鸟': { bl: '地方品牌', pr: '平价', bs: '温馨实用' },
+    '公牛': { bl: '全国一线品牌', pr: '中端', bs: '温馨实用' },
+    '途道': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '柯迈龙': { bl: '地方品牌', pr: '平价', bs: '新潮有趣' },
+    '大洋洲袋鼠': { bl: '地方品牌', pr: '中端', bs: '轻奢精致' },
+    '蓝卡兑换': { bl: '地方品牌', pr: '—', bs: '—' },
+    '天猫卡': { bl: '全国一线品牌', pr: '—', bs: '—' },
+};
+
+// 品牌标准化
+const COMBINED_BRAND_SPLIT = {
+    '柯迈龙、勒德威': '柯迈龙', '海天、松鲜鲜': '海天', '良西、科尔沁': '科尔沁',
+    '卡宴、三稳福记、好膳道': '卡宴', '嘉宝堂、新宝堂': '新宝堂', '王老吉/华润三九': '王老吉',
+    '英红+中茶': '中茶', '溢流香、卡宴': '溢流香', '八马、大益茶': '八马',
+    '屈臣氏，爱仕达': '屈臣氏', '官栈、百果园': '官栈',
+    '星巴克&五芳斋': '五芳斋', '星巴克、诸老大': '诸老大',
+    '洽洽&徐福记联名': '洽洽', '紫燕&百草味': '紫燕百味鸡',
+    '老侯爷&樊生华': '老侯爷', '黄天鹅&松鲜鲜联名款': '黄天鹅',
+    '官栈×陶陶居': '官栈',
+};
+const BRAND_NORMALIZE = {
+    '金龙鱼.': '金龙鱼', '法丽滋': '法丽兹',
+    '德亚牛奶': '德亚', '十月初五糕点': '十月初五', '十月初五粽子': '十月初五',
+    '三只松鼠粽子': '三只松鼠', '浅香青春版': '浅香', '水卫士套盒': '水卫士',
+    'BULL公牛': '公牛', '八马万山红': '华祥苑', '江中食疗': '江中',
+    '天地粮人甄制': '天地粮人', '百事&佳得乐': '百事', '刻凡粽子': '刻凡',
+    '佳果源礼盒': '佳果源', '自然派肉肉零食': '自然派',
+    '劲仔深海小鱼': '劲仔', '劲仔深海鳀鱼': '劲仔', '萌宝鸭咸鸭蛋': '萌宝鸭',
+    '百草味鱼豆腐': '百草味', '北纬有机': '北纬47度',
+    '洽洽小黄袋每日坚果500g': '洽洽', '华美麦麸粗粮饼': '华美',
+    '无穷风干鸡脖': '无穷', '无穷虎皮鸡爪': '无穷',
+    '玉米力原味35g': '玉米力', '棒棒娃麻辣牛肉': '棒棒娃',
+    '欧贝斯去屑洗发露': '欧贝斯', '欧贝斯焗油柔亮洗发露': '欧贝斯',
+    '风影香氛去屑洗发露': '风影', '风影无硅油香氛去屑洗发露': '风影',
+    '风影香氛去屑洗发露（臻华乌木香）': '风影',
+    '水星家纺碧玉妆成': '水星家纺', '水星集团冰沁凉感抗菌夏被': '水星',
+    '水星60S长绒棉刺绣': '水星', '德亚4.0g 新西兰进口高蛋白全脂纯牛奶250ml*1': '德亚',
+    '齐云山高纯山茶油': '齐云山', '八马茶叶': '华祥苑',
+    '品尊轩牛肉': '品尊轩', '品尊轩海鲜': '品尊轩',
+    '【华润三九】清养润心': '华润三九', '【王老吉】绿盒250ml*': '王老吉',
+    '【徐福记】沙琪玛': '徐福记', '【桂格】每日燕麦15包装': '桂格',
+    '【桂格】每日燕麦': '桂格', '【桂格】每日燕麦1': '桂格',
+    '【金沙河】鸡蛋挂面3': '金沙河', '【金沙河】鸡蛋挂面': '金沙河',
+    '【刻凡】福运': '刻凡', '【刻凡】锦绣臻礼': '刻凡', '【刻凡】坚果': '刻凡',
+    '【金龙鱼】纯香花生油': '金龙鱼', '【香满园】御品甄制花生油': '香满园',
+    '【盐津铺子】盐津': '盐津铺子', '【科尔沁】牛肉': '科尔沁',
+    '【佳果源】100%': '佳果源', '松鲜鲜 糙能农场': '松鲜鲜',
+    '半亩花田植护': '半亩花田', '花卉诗·家清': '花卉诗', '植护包销': '植护',
+    '【洽洽&徐福记】洽好': '洽洽', '水星集团': '水星',
+    '【王老吉': '王老吉', '【洽洽': '洽洽',
+    '华润三九清养润心': '华润三九', '王老吉绿盒250ml*': '王老吉',
+    '盐津铺子盐津': '盐津铺子', '金沙河鸡蛋挂面': '金沙河',
+    '科尔沁牛肉': '科尔沁', '桂格每日燕麦15包装': '桂格',
+    '桂格每日燕麦': '桂格', '桂格每日燕麦1': '桂格',
+    '佳果源100%': '佳果源', '香满园御品甄制花生油': '香满园',
+    '徐福记沙琪玛': '徐福记', '金沙河鸡蛋挂面3': '金沙河',
+    '刻凡福运': '刻凡', '刻凡锦绣臻礼': '刻凡', '刻凡坚果': '刻凡',
+    '金龙鱼纯香花生油': '金龙鱼', 'Liforce金钻': 'Liforce',
+    'Liforce金钻908': 'Liforce', 'Liforce金钻1016克': 'Liforce',
+    'Liforce金钻1008克': 'Liforce', '洽洽&徐福记洽好': '洽洽',
+    '王老吉/华润三九': '王老吉', '橙心有礼/佬滋味': '橙心有礼',
+};
+const NON_BRANDS = new Set([
+    '礼尚联合定制', '皓天独家定制', '礼邦组合礼包', '礼邦独家定制',
+    '永辉包销款', '洽洽包销款', '集味轩坚果',
+    '德邦/京东/顺丰', '京东/顺丰', '橙心有礼/佬滋味',
+]);
+
+function cleanBrandName(raw) {
+    if (!raw) return raw;
+    let b = raw.replace(/[\n\r]+/g, '').replace(/\s+/g, ' ').trim();
+    if (COMBINED_BRAND_SPLIT[b]) b = COMBINED_BRAND_SPLIT[b];
+    for (let i = 0; i < 5; i++) { if (BRAND_NORMALIZE[b]) b = BRAND_NORMALIZE[b]; else break; }
+    b = b.replace(/^【(.+?)】$/s, '$1').replace(/^【(.+?)】(.+)/s, '$1$2');
+    b = b.replace(/^【(.+)$/s, '$1').trim();
+    for (let i = 0; i < 5; i++) { if (BRAND_NORMALIZE[b]) b = BRAND_NORMALIZE[b]; else break; }
+    if (NON_BRANDS.has(b)) return null;
+    return b;
+}
+
+// ========== 全局状态 ==========
+let DB = null;
+let ALL_PRODUCTS = [];
+let BRAND_GROUPS = {};       // { brand → [products] }
+let BRAND_STATS = {};        // { brand → { count, issues, severity, majors } }
+let BRAND_ORIGINALS = {};    // { brand → [{...product}] } -- deep copy on first edit
+let BRAND_DELETED = {};      // { brand → [{...product}] } -- products deleted but restorable
+let DIRTY_BRANDS = new Set();
+let ACTIVE_BRAND = null;
+let ACTIVE_FILTERS = new Set();
+let FILTERED_BRANDS = [];
+
+// ========== 供应商模式 ==========
+let VIEW_MODE = 'brand'; // 'brand' | 'supplier'
+// 模式切换时保存/恢复状态，让已有变量名同时服务于品牌和供应商两种视图
+let _SAVED_BRAND_STATE = null;
+let _SAVED_SUPPLIER_STATE = null;
+function _snapState() {
+    return { BRAND_GROUPS, BRAND_STATS, BRAND_ORIGINALS, BRAND_DELETED, DIRTY_BRANDS, ACTIVE_BRAND, FILTERED_BRANDS };
+}
+function _loadState(s) {
+    ({ BRAND_GROUPS, BRAND_STATS, BRAND_ORIGINALS, BRAND_DELETED, DIRTY_BRANDS, ACTIVE_BRAND, FILTERED_BRANDS } = s);
+}
+function _glabel() { return VIEW_MODE === 'brand' ? '品牌' : '供应商'; }
+
+const EDITABLE_FIELDS = ['brand', 'majorCategory', 'category', 'brandLevel', 'brandStyle', 'priceRange', 'sceneTag', 'region'];
+const BRAND_LEVELS = ['', '国际品牌', '全国一线品牌', '全国二线品牌', '网红/新消费品牌', '地方品牌', '白牌'];
+const BRAND_STYLES = ['', '温馨实用', '健康活力', '轻奢精致', '新潮有趣'];
+const PRICE_RANGES = ['', '高端', '中端', '平价'];
+	const REGIONS = ['', '华北', '华东', '华南', '华中', '东北', '西北', '西南', '全国', '进口'];
+
+// ========== 字段名中文映射 ==========
+const FIELD_LABELS = {
+    id: 'ID', name: '商品名称', brand: '品牌', majorCategory: '大类', category: '品类',
+    brandLevel: '品牌级别', brandStyle: '调性', priceRange: '价格定位', region: '区域', sceneTag: '适用场景',
+    supplierId: '供应商', supplierName: '供应商名称', productType: '产品类型', origin: '产地',
+    spec: '单品规格', unit: '单位', packageForm: '包装形式', shelfLife: '保质期',
+    purchasePrice: '集采价', retailPrice: '零售价', quotePrice: '团购价', dropshipPrice: '代发价',
+    dropshipFreight: '代发运费', margin: '毛利率', stockType: '库存类型', moq: '最小起订量',
+    supportsDropship: '支持代发', status: '状态', barcode: '产品条码', cartonBarcode: '外箱条码',
+    cartonSpec: '箱规', innerPack: '内配', productSize: '产品尺寸', cartonSize: '整箱尺寸',
+    singleWeight: '单品重量', cartonWeight: '整箱重量', sugarFree: '无糖', organic: '有机',
+    taxCode: '税收编码', gradeLevel: '档次等级', freightIncluded: '运费包含',
+    excludeRegions: '不包邮区域', defaultExpress: '默认快递', deliveryFrom: '发货地',
+    jdUrl: '京东链接', jdPrice: '京东价', taobaoUrl: '淘宝链接', taobaoPrice: '淘宝价',
+    pddUrl: '拼多多链接', pddPrice: '拼多多价', images: '产品图片', detailImages: '详情图',
+    remark: '备注', source: '录入来源', createdAt: '录入时间', updatedAt: '最后更新',
+    supplierSKU: '供应商SKU', ingredients: '配料表', stockStatus: '备货状态',
+    priceExpiry: '价格有效期', jdSFPrice: '京东顺丰代发价', jdSFFreight: '京东顺丰代发运费', jdSFMargin: '京东顺丰代发毛利率',
+};
+function fieldLabel(key) { return FIELD_LABELS[key] || key; }
+
+// ========== 列配置（localStorage 持久化） ==========
+const COL_STORAGE_KEY = 'data-repair-column-config';
+let COLUMN_CONFIG = { visible: [], order: [] }; // { visible: ['name','brand',...], order: ['name','brand',...] }
+const CORE_COLS = ['name']; // 始终显示的核心列
+
+function loadColumnConfig() {
+    try {
+        const saved = localStorage.getItem(COL_STORAGE_KEY + '-' + VIEW_MODE);
+        if (saved) { COLUMN_CONFIG = JSON.parse(saved); return; }
+    } catch(e) {}
+    // 默认：当前 EDITABLE_FIELDS + name
+    COLUMN_CONFIG = {
+        visible: ['name', ...EDITABLE_FIELDS],
+        order: ['name', ...EDITABLE_FIELDS]
+    };
+}
+function saveColumnConfig() {
+    localStorage.setItem(COL_STORAGE_KEY + '-' + VIEW_MODE, JSON.stringify(COLUMN_CONFIG));
+}
+function getAllFieldKeys() {
+    const keys = new Set();
+    for (const p of ALL_PRODUCTS) Object.keys(p).forEach(k => keys.add(k));
+    // 排除内部字段
+    const exclude = ['_score', '_totalQuote', '_comboKey', '_brandLevelRatioOK', '_productTypeRatioOK'];
+    exclude.forEach(k => keys.delete(k));
+    return [...keys].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+}
+
+// ========== 列配置面板 ==========
+function toggleColumnConfig() {
+	const panel = document.getElementById('col-config-panel');
+	if (panel.classList.contains('hidden')) {
+		buildColConfigPanel();
+		panel.classList.remove('hidden');
+	} else {
+		panel.classList.add('hidden');
+	}
+}
+function buildColConfigPanel() {
+	const list = document.getElementById('col-config-list');
+	const allKeys = getAllFieldKeys();
+	for (const k of allKeys) {
+		if (!COLUMN_CONFIG.order.includes(k)) COLUMN_CONFIG.order.push(k);
+	}
+	const ordered = COLUMN_CONFIG.order.filter(k => allKeys.includes(k));
+	for (const k of allKeys) {
+		if (!ordered.includes(k)) ordered.push(k);
+	}
+	let html = '';
+	for (const k of ordered) {
+		const isCore = CORE_COLS.includes(k);
+		const checked = COLUMN_CONFIG.visible.includes(k);
+		const label = fieldLabel(k);
+		html += '<div class="cc-item' + (isCore ? ' core' : '') + '" data-field="' + escAttr(k) + '" draggable="' + (!isCore) + '" ondragstart="colDragStart(event)" ondragover="colDragOver(event)" ondragleave="colDragLeave(event)" ondrop="colDrop(event)">' +
+			'<input type="checkbox" ' + (checked ? 'checked' : '') + ' ' + (isCore ? 'disabled' : '') + ' onchange="toggleColField(\'' + escAttr(k) + '\')">' +
+			'<span class="cc-label">' + escHtml(label) + '</span>' +
+			'<span class="cc-drag" style="visibility:' + (isCore ? 'hidden' : 'visible') + ';">⋮⋮</span>' +
+			'</div>';
+	}
+	list.innerHTML = html;
+}
+function toggleColField(field) {
+	if (CORE_COLS.includes(field)) return;
+	const idx = COLUMN_CONFIG.visible.indexOf(field);
+	if (idx >= 0) {
+		COLUMN_CONFIG.visible.splice(idx, 1);
+	} else {
+		COLUMN_CONFIG.visible.push(field);
+	}
+	saveColumnConfig();
+	if (ACTIVE_BRAND && BRAND_GROUPS[ACTIVE_BRAND]) renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+}
+function resetColumnConfig() {
+	COLUMN_CONFIG = {
+		visible: ['name', ...EDITABLE_FIELDS],
+		order: ['name', ...EDITABLE_FIELDS]
+	};
+	saveColumnConfig();
+	buildColConfigPanel();
+	if (ACTIVE_BRAND && BRAND_GROUPS[ACTIVE_BRAND]) renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+}
+let _colDragField = null;
+function colDragStart(e) {
+	_colDragField = e.target.closest('.cc-item')?.dataset.field;
+	e.dataTransfer.effectAllowed = 'move';
+	e.dataTransfer.setData('text/plain', _colDragField);
+	e.target.closest('.cc-item').style.opacity = '0.4';
+}
+function colDragOver(e) {
+	e.preventDefault();
+	e.dataTransfer.dropEffect = 'move';
+	e.target.closest('.cc-item')?.classList.add('drag-over');
+}
+function colDragLeave(e) {
+	e.target.closest('.cc-item')?.classList.remove('drag-over');
+}
+function colDrop(e) {
+	e.preventDefault();
+	e.target.closest('.cc-item')?.classList.remove('drag-over');
+	const srcField = e.dataTransfer.getData('text/plain');
+	const dstItem = e.target.closest('.cc-item');
+	if (!dstItem || !srcField) return;
+	const dstField = dstItem.dataset.field;
+	if (srcField === dstField) return;
+	if (CORE_COLS.includes(srcField)) return;
+	const srcIdx = COLUMN_CONFIG.order.indexOf(srcField);
+	const dstIdx = COLUMN_CONFIG.order.indexOf(dstField);
+	if (srcIdx < 0 || dstIdx < 0) return;
+	COLUMN_CONFIG.order.splice(srcIdx, 1);
+	COLUMN_CONFIG.order.splice(dstIdx, 0, srcField);
+	saveColumnConfig();
+	buildColConfigPanel();
+	if (ACTIVE_BRAND && BRAND_GROUPS[ACTIVE_BRAND]) renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+}
+
+// ========== 字段 CRUD ==========
+const PROTECTED_FIELDS = new Set(['id', 'name', 'brand', 'majorCategory', 'category']);
+function _markAllBrandsDirty() { for (const key of Object.keys(BRAND_GROUPS)) markBrandDirtyByBrand(key); } function showAddFieldModal() {
+	document.getElementById("modal-title").textContent = "新增字段（整个商品库）";
+	document.getElementById("modal-body").innerHTML =
+		"<div class=\"field-crud-form\">" +
+		"<div><label>字段名（英文key）</label><input id=\"new-field-name\" placeholder=\"例如: customNote\"></div>" +
+		"<div><label>默认值</label><input id=\"new-field-value\" placeholder=\"留空则设为空字符串\"></div>" +
+		"<div style=\"display:flex;gap:8px;justify-content:flex-end;margin-top:4px;\">" +
+		"<button class=\"btn btn-outline btn-sm\" onclick=\"closeModal()\">取消</button>" +
+		"<button class=\"btn btn-primary btn-sm\" onclick=\"addField()\">应用到整个商品库</button>" +
+		"</div></div>";
+	document.getElementById("modal-overlay").classList.remove("hidden");
+	setTimeout(function() { document.getElementById("new-field-name")?.focus(); }, 100);
+}
+function addField() {
+	const nameInput = document.getElementById("new-field-name");
+	const valueInput = document.getElementById("new-field-value");
+	const fieldName = (nameInput?.value || "").trim();
+	if (!fieldName) { toast("请输入字段名"); return; }
+	if (PROTECTED_FIELDS.has(fieldName)) { toast("不能添加受保护的系统字段: " + fieldName); return; }
+	const defaultValue = valueInput?.value || "";
+	let count = 0;
+	for (const p of ALL_PRODUCTS) {
+		if (!(fieldName in p)) { p[fieldName] = defaultValue; count++; }
+	}
+	if (!COLUMN_CONFIG.order.includes(fieldName)) {
+		COLUMN_CONFIG.order.push(fieldName);
+	}
+	if (!COLUMN_CONFIG.visible.includes(fieldName)) {
+		COLUMN_CONFIG.visible.push(fieldName);
+	}
+	saveColumnConfig();
+	_markAllBrandsDirty();
+	closeModal();
+	VIEW_MODE === "brand" ? groupByBrand() : groupBySupplier();
+	renderBrandList();
+	renderFilterChips();
+	if (ACTIVE_BRAND && BRAND_GROUPS[ACTIVE_BRAND]) renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+	toast("已添加字段 \"" + fieldName + "\" 到整个商品库 " + count + " 个产品");
+}function showDeleteFieldPanel() {
+	const fieldSet = new Set();
+	for (const p of ALL_PRODUCTS) {
+		for (const k of Object.keys(p)) {
+			if (!PROTECTED_FIELDS.has(k) && !k.startsWith("_")) fieldSet.add(k);
+		}
+	}
+	const fields = [...fieldSet].sort(function(a, b) { return a.localeCompare(b, "zh-CN"); });
+	if (fields.length === 0) { toast("没有可删除的字段"); return; }
+	document.getElementById("modal-title").textContent = "删除字段（整个商品库）";
+	document.getElementById("modal-body").innerHTML =
+		"<p style=\"font-size:13px;color:var(--text2);margin-bottom:12px;\">选择要删除的字段（将从整个商品库 <b>" + ALL_PRODUCTS.length + "</b> 个产品中移除）。此操作不可撤销。</p>" +
+		"<div id=\"delete-field-list\">" +
+		fields.map(function(f) { return "<div class=\"df-item\" onclick=\"confirmDeleteField('"+escAttr(f)+"')\">" + escHtml(fieldLabel(f)) + " <span style=\"font-size:11px;color:var(--text2);\">(" + escHtml(f) + ")</span></div>"; }).join("") +
+		"</div>" +
+		"<div style=\"margin-top:12px;text-align:right;\">" +
+		"<button class=\"btn btn-outline btn-sm\" onclick=\"closeModal()\">取消</button>" +
+		"</div>";
+	document.getElementById("modal-overlay").classList.remove("hidden");
+}function confirmDeleteField(fieldName) {
+	if (!confirm("确定要删除字段 \"" + fieldLabel(fieldName) + "\" (" + fieldName + ") 吗？\n\n这将从整个商品库 " + ALL_PRODUCTS.length + " 个产品中移除此字段。此操作不可撤销。")) return;
+	let count = 0;
+	for (const p of ALL_PRODUCTS) {
+		if (fieldName in p) { delete p[fieldName]; count++; }
+	}
+	COLUMN_CONFIG.visible = COLUMN_CONFIG.visible.filter(function(k) { return k !== fieldName; });
+	COLUMN_CONFIG.order = COLUMN_CONFIG.order.filter(function(k) { return k !== fieldName; });
+	saveColumnConfig();
+	_markAllBrandsDirty();
+	closeModal();
+	VIEW_MODE === "brand" ? groupByBrand() : groupBySupplier();
+	renderBrandList();
+	renderFilterChips();
+	if (ACTIVE_BRAND && BRAND_GROUPS[ACTIVE_BRAND]) renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+	toast("已删除字段 \"" + fieldLabel(fieldName) + "\" 从整个商品库 " + count + " 个产品");
+}
+	// ========== 字段重命名 ==========
+	function showRenameFieldModal() {
+		const fieldSet = new Set();
+		for (const p of ALL_PRODUCTS) {
+			for (const k of Object.keys(p)) {
+				if (!PROTECTED_FIELDS.has(k) && !k.startsWith('_')) fieldSet.add(k);
+			}
+		}
+		const fields = [...fieldSet].sort(function(a, b) { return a.localeCompare(b, 'zh-CN'); });
+		if (fields.length === 0) { toast('没有可重命名的字段'); return; }
+		document.getElementById('modal-title').textContent = '重命名字段（整个商品库）';
+		document.getElementById('modal-body').innerHTML =
+			'<div class="field-crud-form">' +
+			'<div><label>原字段名</label><select id="rename-old-field" style="padding:8px 10px;border:1px solid var(--border);border-radius:6px;font-size:14px;">' +
+			fields.map(function(f) { return '<option value="' + escAttr(f) + '">' + escHtml(fieldLabel(f)) + ' (' + escHtml(f) + ')</option>'; }).join('') +
+			'</select></div>' +
+			'<div><label>新字段名（英文key）</label><input id="rename-new-field" placeholder="例如: newFieldName"></div>' +
+			'<div style="font-size:12px;color:var(--text2);">将重命名整个商品库 <b>' + ALL_PRODUCTS.length + '</b> 个产品中的该字段</div>' +
+			'<div style="display:flex;gap:8px;justify-content:flex-end;margin-top:4px;">' +
+			'<button class="btn btn-outline btn-sm" onclick="closeModal()">取消</button>' +
+			'<button class="btn btn-primary btn-sm" onclick="renameField()">应用到整个商品库</button>' +
+			'</div></div>';
+		document.getElementById('modal-overlay').classList.remove('hidden');
+	}
+	function renameField() {
+		const oldName = document.getElementById('rename-old-field')?.value || '';
+		const newName = (document.getElementById('rename-new-field')?.value || '').trim();
+		if (!oldName) { toast('请选择原字段'); return; }
+		if (!newName) { toast('请输入新字段名'); return; }
+		if (oldName === newName) { toast('新旧字段名相同，无需修改'); return; }
+		if (PROTECTED_FIELDS.has(newName)) { toast('不能使用受保护的系统字段名: ' + newName); return; }
+		let conflict = false;
+		for (const p of ALL_PRODUCTS) {
+			if (newName in p) { conflict = true; break; }
+		}
+		if (conflict && !confirm('字段 "' + newName + '" 已存在于部分产品中。继续将覆盖这些值。\n\n确定继续？')) return;
+		let count = 0;
+		for (const p of ALL_PRODUCTS) {
+			if (oldName in p) {
+				p[newName] = p[oldName];
+				delete p[oldName];
+				count++;
+			}
+		}
+		const visIdx = COLUMN_CONFIG.visible.indexOf(oldName);
+		if (visIdx >= 0) COLUMN_CONFIG.visible[visIdx] = newName;
+		const ordIdx = COLUMN_CONFIG.order.indexOf(oldName);
+		if (ordIdx >= 0) COLUMN_CONFIG.order[ordIdx] = newName;
+		saveColumnConfig();
+		_markAllBrandsDirty();
+		closeModal();
+		VIEW_MODE === 'brand' ? groupByBrand() : groupBySupplier();
+		renderBrandList();
+		renderFilterChips();
+		if (ACTIVE_BRAND && BRAND_GROUPS[ACTIVE_BRAND]) renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+		toast('已重命名字段 "' + fieldLabel(oldName) + '" \u2192 "' + newName + '"（' + count + ' 个产品）');
+	}
+
+// Click outside to close column config panel
+document.addEventListener('click', function(e) {
+	const panel = document.getElementById('col-config-panel');
+	if (!panel || panel.classList.contains('hidden')) return;
+	const btn = document.getElementById('col-config-btn');
+	if (!panel.contains(e.target) && e.target !== btn && !btn.contains(e.target)) {
+		panel.classList.add('hidden');
+	}
+});
+
+// ========== DB ==========
+async function connectDB() {
+    document.getElementById('db-dot').className = 'dot';
+    document.getElementById('db-label').textContent = '正在连接...';
+    try {
+        DB = await new Promise((resolve, reject) => {
+            const req = indexedDB.open('ProductLibraryDB', 9);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(req.error);
+        });
+        const tx = DB.transaction('products', 'readonly');
+        const store = tx.objectStore('products');
+        const count = store.count();
+        const all = store.getAll();
+        await new Promise((r, e) => { tx.oncomplete = r; tx.onerror = () => e(tx.error); });
+        ALL_PRODUCTS = all.result || [];
+        document.getElementById('db-dot').className = 'dot on';
+        document.getElementById('db-label').textContent = '已连接: ' + count.result + ' 产品';
+        document.getElementById('btn-backup').disabled = false;
+        document.getElementById('btn-save-all').disabled = false;
+        document.getElementById('btn-undo-all').disabled = false;
+        // 初始化 brand 下拉选项
+        initFieldSelects();
+        // 分组+统计
+        groupByBrand();
+        loadColumnConfig();
+        renderBrandList();
+        renderFilterChips();
+        loadAISettings();
+        log('连接成功: ' + ALL_PRODUCTS.length + ' 产品, ' + Object.keys(BRAND_GROUPS).length + ' 品牌');
+    } catch (e) {
+        document.getElementById('db-dot').className = 'dot';
+        document.getElementById('db-label').textContent = '连接失败 — 点击重试';
+        toast('数据库连接失败: ' + e.message);
+    }
+}
+
+function initFieldSelects() {
+    for (const id of ['field-brandLevel', 'field-brandStyle', 'field-priceRange']) {
+        const sel = document.getElementById(id);
+        const opts = id === 'field-brandLevel' ? BRAND_LEVELS : id === 'field-brandStyle' ? BRAND_STYLES : PRICE_RANGES;
+        sel.innerHTML = opts.map(o => `<option value="${o}">${o || '—'}</option>`).join('');
+    }
+}
+
+function groupByBrand() {
+    BRAND_GROUPS = {};
+    for (const p of ALL_PRODUCTS) {
+        let brand = (p.brand || '').trim();
+        if (!brand) brand = '__无品牌__';
+        if (!BRAND_GROUPS[brand]) BRAND_GROUPS[brand] = [];
+        BRAND_GROUPS[brand].push(p);
+    }
+    BRAND_STATS = {};
+    for (const [brand, prods] of Object.entries(BRAND_GROUPS)) {
+        BRAND_STATS[brand] = computeBrandStats(brand, prods);
+    }
+}
+
+function computeBrandStats(brand, prods) {
+    const count = prods.length;
+    const majors = [...new Set(prods.map(p => p.majorCategory).filter(Boolean))];
+    const missingBL = prods.filter(p => !p.brandLevel).length;
+    const missingBS = prods.filter(p => !p.brandStyle).length;
+    const missingPR = prods.filter(p => !p.priceRange).length;
+    const missingCat = prods.filter(p => !p.category || STANDARD_MAJORS.includes(p.category)).length;
+    const missingScene = prods.filter(p => !p.sceneTag).length;
+    const obsoleteMajor = prods.filter(p => OBSOLETE_MAJORS[p.majorCategory]).length;
+    const totalIssues = missingBL + missingBS + missingPR + missingCat + missingScene + obsoleteMajor;
+    let severity = 'good';
+    if (missingBL === count || missingBS === count) severity = 'critical';
+    else if (totalIssues > 0) severity = 'warning';
+    return { count, majors, missingBL, missingBS, missingPR, missingCat, missingScene, obsoleteMajor, totalIssues, severity };
+}
+function recomputeStats(key, prods) {
+    return VIEW_MODE === 'brand' ? computeBrandStats(key, prods) : computeSupplierStats(key, prods);
+}
+
+function groupBySupplier() {
+    BRAND_GROUPS = {};
+    for (const p of ALL_PRODUCTS) {
+        let supplier = (p.supplierId || p.supplierName || '').trim();
+        if (!supplier) supplier = '__无供应商__';
+        if (!BRAND_GROUPS[supplier]) BRAND_GROUPS[supplier] = [];
+        BRAND_GROUPS[supplier].push(p);
+    }
+    BRAND_STATS = {};
+    for (const [sup, prods] of Object.entries(BRAND_GROUPS)) {
+        BRAND_STATS[sup] = computeSupplierStats(sup, prods);
+    }
+}
+function computeSupplierStats(name, prods) {
+    const count = prods.length;
+    const majors = [...new Set(prods.map(p => p.majorCategory).filter(Boolean))];
+    const missingCat = prods.filter(p => !p.category || STANDARD_MAJORS.includes(p.category)).length;
+    const missingScene = prods.filter(p => !p.sceneTag).length;
+    const missingBrand = prods.filter(p => !p.brand || (p.brand || '').trim() === '').length;
+    const obsoleteMajor = prods.filter(p => OBSOLETE_MAJORS[p.majorCategory]).length;
+    const totalIssues = missingCat + missingScene + missingBrand + obsoleteMajor;
+    let severity = 'good';
+    if (missingBrand === count && count > 0) severity = 'critical';
+    else if (totalIssues > 0) severity = 'warning';
+    return { count, majors, missingBL: 0, missingBS: 0, missingPR: 0, missingCat, missingScene, missingBrand, obsoleteMajor, totalIssues, severity };
+}
+
+// ========== 模式切换 ==========
+function switchMode() {
+    try {
+    const toSupplier = VIEW_MODE === 'brand';
+    // 提示用户保存未保存的修改
+    if (DIRTY_BRANDS.size > 0 && !confirm('当前有未保存的修改。切换模式将丢失这些修改。\n\n确定切换吗？')) return;
+    VIEW_MODE = toSupplier ? 'supplier' : 'brand';
+    loadColumnConfig();
+    // 从全量产品重建分组
+    if (toSupplier) groupBySupplier(); else groupByBrand();
+    DIRTY_BRANDS = new Set(); BRAND_ORIGINALS = {}; BRAND_DELETED = {}; ACTIVE_BRAND = null; FILTERED_BRANDS = [];
+    // 重置 UI 状态
+    document.getElementById('right-content').style.display = 'none';
+    document.getElementById('right-empty').style.display = 'flex';
+    // 适配标签
+    const isBrand = VIEW_MODE === 'brand';
+    const G = isBrand ? '品牌' : '供应商';
+    document.getElementById('mode-toggle').textContent = isBrand ? '按供应商' : '按品牌';
+    document.getElementById('brand-search').placeholder = '搜索' + G + '...';
+    document.getElementById('btn-save-brand').textContent = '保存此' + G;
+    document.getElementById('btn-undo-brand').textContent = '撤销此' + G;
+    // 品牌独有区域显示/隐藏
+    document.getElementById('brand-fields').style.display = isBrand ? '' : 'none';
+    document.getElementById('brand-search-btns').style.display = isBrand ? '' : 'none';
+    document.getElementById('suggestion-bar').style.display = isBrand ? '' : 'none';
+    if (!isBrand) document.getElementById('suggestion-bar').classList.add('hidden');
+    document.getElementById('batch-level').style.display = isBrand ? '' : 'none';
+    document.getElementById('batch-style').style.display = isBrand ? '' : 'none';
+    document.getElementById('batch-price').style.display = isBrand ? '' : 'none'; document.getElementById('batch-region').style.display = isBrand ? '' : 'none';
+    // 重新渲染列表
+    ACTIVE_FILTERS.clear();
+    renderFilterChips();
+    renderBrandList();
+    toast('已切换到' + G + '模式');
+    } catch(e) {
+        alert('模式切换出错: ' + e.message);
+    }
+}
+
+// ========== 品牌/供应商列表 ==========
+function renderFilterChips() {
+    const container = document.getElementById('left-filters');
+    const isBrand = VIEW_MODE === 'brand';
+    const filters = isBrand ? [
+        { key: 'missingBL', label: '缺品牌级别' },
+        { key: 'missingBS', label: '缺品牌调性' },
+        { key: 'missingPR', label: '缺价格定位' },
+        { key: 'missingCat', label: '品类问题' },
+        { key: 'missingScene', label: '缺场景标签' },
+        { key: 'obsoleteMajor', label: '大类待更新' },
+    ] : [
+        { key: 'missingCat', label: '品类问题' },
+        { key: 'missingScene', label: '缺场景标签' },
+        { key: 'missingBrand', label: '缺品牌' },
+        { key: 'obsoleteMajor', label: '大类待更新' },
+    ];
+    container.innerHTML = filters.map(f => {
+        const active = ACTIVE_FILTERS.has(f.key) ? ' active' : '';
+        return `<span class="filter-chip${active}" data-key="${f.key}" onclick="toggleFilter('${f.key}')">${f.label}</span>`;
+    }).join('');
+}
+
+function toggleFilter(key) {
+    if (ACTIVE_FILTERS.has(key)) ACTIVE_FILTERS.delete(key);
+    else ACTIVE_FILTERS.add(key);
+    renderFilterChips();
+    renderBrandList();
+}
+
+function renderBrandList() {
+    const search = (document.getElementById('brand-search').value || '').toLowerCase();
+    const entries = Object.entries(BRAND_STATS).filter(([key, stats]) => {
+        if (search && !key.toLowerCase().includes(search)) return false;
+        if (ACTIVE_FILTERS.has('missingBL') && stats.missingBL === 0) return false;
+        if (ACTIVE_FILTERS.has('missingBS') && stats.missingBS === 0) return false;
+        if (ACTIVE_FILTERS.has('missingPR') && stats.missingPR === 0) return false;
+        if (ACTIVE_FILTERS.has('missingCat') && stats.missingCat === 0) return false;
+        if (ACTIVE_FILTERS.has('missingScene') && stats.missingScene === 0) return false;
+        if (ACTIVE_FILTERS.has('missingBrand') && (stats.missingBrand || 0) === 0) return false;
+        if (ACTIVE_FILTERS.has('obsoleteMajor') && stats.obsoleteMajor === 0) return false;
+        return true;
+    });
+    // 排序：严重优先 → 预警 → 正常
+    const sevOrder = { critical: 0, warning: 1, good: 2 };
+    entries.sort((a, b) => {
+        if (sevOrder[a[1].severity] !== sevOrder[b[1].severity])
+            return sevOrder[a[1].severity] - sevOrder[b[1].severity];
+        return a[0].localeCompare(b[0], 'zh-CN');
+    });
+    FILTERED_BRANDS = entries.map(e => e[0]);
+
+    const isBrand = VIEW_MODE === 'brand';
+    const container = document.getElementById('brand-list');
+    container.innerHTML = entries.map(([key, stats]) => {
+        const sevIcon = stats.severity === 'critical' ? '❌' : stats.severity === 'warning' ? '⚠️' : '✅';
+        const sevNum = stats.totalIssues > 0 ? stats.totalIssues : '';
+        const activeClass = key === ACTIVE_BRAND ? ' active' : '';
+        const dirtyClass = DIRTY_BRANDS.has(key) ? ' dirty' : '';
+        const majors = stats.majors.slice(0, 3).join('/') || '无大类';
+        return `<div class="brand-entry${activeClass}${dirtyClass}" onclick="selectBrand('${escAttr(key)}')" data-brand="${escAttr(key)}">
+            <span class="sev">${sevIcon}</span>
+            <div class="info">
+                <div class="name">${escHtml(key)}</div>
+                <div class="meta"><span>${majors}</span></div>
+            </div>
+            <span class="count">${stats.count}品${sevNum ? ' ' + sevNum : ''}</span>
+            <span class="dirty-dot"></span>
+        </div>`;
+    }).join('');
+    const label = isBrand ? '品牌' : '供应商';
+    document.getElementById('left-stats').textContent = `显示 ${FILTERED_BRANDS.length} / ${Object.keys(BRAND_STATS).length} ${label}`;
+}
+
+// ========== 组详情（品牌/供应商通用） ==========
+function selectBrand(brand) {
+    ACTIVE_BRAND = brand;
+    const products = BRAND_GROUPS[brand] || [];
+    const isBrand = VIEW_MODE === 'brand';
+    document.getElementById('right-empty').style.display = 'none';
+    document.getElementById('right-content').style.display = 'flex';
+    document.getElementById('detail-brand-name').textContent = brand;
+    document.getElementById('detail-product-count').textContent = products.length + ' 个产品';
+
+    const stats = BRAND_STATS[brand];
+    const issues = [];
+    if (isBrand) {
+        if (stats.missingBL > 0) issues.push(`${stats.missingBL}缺品牌级别`);
+        if (stats.missingBS > 0) issues.push(`${stats.missingBS}缺品牌调性`);
+        if (stats.missingPR > 0) issues.push(`${stats.missingPR}缺价格定位`);
+    } else {
+        if ((stats.missingBrand || 0) > 0) issues.push(`${stats.missingBrand}缺品牌`);
+    }
+    if (stats.missingCat > 0) issues.push(`${stats.missingCat}品类泛化`);
+    if (stats.missingScene > 0) issues.push(`${stats.missingScene}缺场景标签`);
+    if (stats.obsoleteMajor > 0) issues.push(`${stats.obsoleteMajor}大类需更新`);
+    document.getElementById('detail-issues').innerHTML = issues.length > 0
+        ? '<span style="color:var(--danger);">⚠ ' + issues.join(' · ') + '</span>'
+        : '<span style="color:var(--success);">✓ 无问题</span>';
+
+    // 品牌级下拉：仅品牌模式
+    if (isBrand) {
+        const mostCommon = (field) => {
+            const vals = {};
+            for (const p of products) { const v = p[field] || ''; vals[v] = (vals[v] || 0) + 1; }
+            let best = '', bestN = 0;
+            for (const [v, n] of Object.entries(vals)) { if (n > bestN) { bestN = n; best = v; } }
+            return best;
+        };
+        document.getElementById('field-brandLevel').value = mostCommon('brandLevel');
+        document.getElementById('field-brandStyle').value = mostCommon('brandStyle');
+        document.getElementById('field-priceRange').value = mostCommon('priceRange'); document.getElementById('field-region').value = mostCommon('region');
+    }
+
+    // 建议条：仅品牌模式 + BRAND_TONE 数据
+    const suggestBar = document.getElementById('suggestion-bar');
+    if (isBrand) {
+        const tone = BRAND_TONE[brand];
+        if (tone) {
+            const parts = [];
+            if (tone.bl) parts.push('品牌级别: ' + tone.bl);
+            if (tone.bs) parts.push('调性: ' + tone.bs);
+            if (tone.pr) parts.push('价格: ' + tone.pr);
+            document.getElementById('suggestion-text').textContent = '参考数据: ' + parts.join(' | ');
+            suggestBar.dataset.level = tone.bl || '';
+            suggestBar.dataset.style = tone.bs || '';
+            suggestBar.dataset.price = tone.pr || '';
+            document.getElementById('btn-accept-suggestion').disabled = false;
+            suggestBar.classList.remove('hidden');
+        } else {
+            suggestBar.dataset.level = '';
+            suggestBar.dataset.style = '';
+            suggestBar.dataset.price = '';
+            suggestBar.classList.add('hidden');
+        }
+    } else {
+        suggestBar.classList.add('hidden');
+    }
+
+    // 导航按钮
+    const idx = FILTERED_BRANDS.indexOf(brand);
+    document.getElementById('btn-prev').disabled = idx <= 0;
+    document.getElementById('btn-next').disabled = idx >= FILTERED_BRANDS.length - 1;
+
+    // 撤销按钮
+    document.getElementById('btn-undo-brand').disabled = !BRAND_ORIGINALS[brand];
+
+    // 产品表
+    renderProductTable(brand, products);
+    renderBrandList(); // refresh active highlight
+}
+
+function navigateBrand(dir) {
+    const idx = FILTERED_BRANDS.indexOf(ACTIVE_BRAND);
+    const newIdx = idx + dir;
+    if (newIdx >= 0 && newIdx < FILTERED_BRANDS.length) {
+        selectBrand(FILTERED_BRANDS[newIdx]);
+    }
+}
+
+// ========== 产品表 ==========
+// ========== 产品详情弹窗 ==========
+function showProductDetail(idx) {
+    const products = BRAND_GROUPS[ACTIVE_BRAND];
+    if (!products || idx < 0 || idx >= products.length) return;
+    const p = products[idx];
+    document.getElementById('modal-title').textContent = p.name || '产品详情';
+    // Show all fields sorted
+    const keys = Object.keys(p).sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    let html = '<table>';
+    for (const k of keys) {
+        let val = p[k];
+        if (val === undefined) val = '<span style="color:#d1d5db;">—</span>';
+        else if (val === null) val = '<span style="color:#d1d5db;">null</span>';
+        else if (val === '') val = '<span style="color:#d1d5db;">(空)</span>';
+        else if (typeof val === 'boolean') val = val ? '✅' : '❌';
+        else if (typeof val === 'number') val = val.toLocaleString();
+        else val = escHtml(String(val));
+        html += `<tr><td>${escHtml(k)}</td><td>${val}</td></tr>`;
+    }
+    html += '</table>';
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+}
+function closeModal() {
+    document.getElementById('modal-overlay').classList.add('hidden');
+}
+function showAIDetail() {
+    const bar = document.getElementById('suggestion-bar');
+    const detail = bar.dataset.detail || '';
+    const brand = ACTIVE_BRAND || '';
+    document.getElementById('modal-title').textContent = `AI 分析: ${brand}`;
+    document.getElementById('modal-body').innerHTML = `<div style="line-height:1.8;font-size:14px;">${escHtml(detail).replace(/\n/g, '<br>')}</div>
+        <div style="margin-top:16px;font-size:12px;color:var(--text2);">
+            <b>级别:</b> ${escHtml(bar.dataset.level)} &nbsp;|&nbsp;
+            <b>调性:</b> ${escHtml(bar.dataset.style)} &nbsp;|&nbsp;
+            <b>价格:</b> ${escHtml(bar.dataset.price)}
+            ${bar.dataset.region ? ` &nbsp;|&nbsp; <b>区域:</b> ${escHtml(bar.dataset.region)}` : ''}
+        </div>`;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+}
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeModal(); });
+
+function getCatOptions(major) {
+    const cats = [];
+    for (const [cat, maj] of Object.entries(SUBCATEGORY_TO_MAJOR)) {
+        if (maj === major) cats.push(cat);
+    }
+    cats.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+    return cats;
+}
+
+function hasFieldIssue(field, p) {
+    const v = p[field];
+    switch (field) {
+        case 'brand': return !v || /^\d+\.?\d*$/.test(v);
+        case 'majorCategory': return OBSOLETE_MAJORS[v];
+        case 'category': return !v || STANDARD_MAJORS.includes(v) || OBSOLETE_MAJORS[v];
+        case 'sceneTag': return !v;
+        case 'brandLevel': return !v;
+        case 'brandStyle': return !v;
+        case 'priceRange': return !v;
+	        case 'region': return !v;
+        default: return false;
+    }
+}
+
+function renderProductTable(brand, products) {
+    // 构建可见列列表（name 始终在最前，其余按 order 过滤 visible）
+    const visibleFields = COLUMN_CONFIG.order.filter(f => COLUMN_CONFIG.visible.includes(f));
+    if (!visibleFields.includes('name')) visibleFields.unshift('name');
+
+    const headerCols = ['<th class="col-cb"><input type="checkbox" id="cb-all" title="全选/全不选"></th>'];
+    for (const f of visibleFields) {
+        headerCols.push(`<th>${escHtml(fieldLabel(f))}</th>`);
+    }
+    headerCols.push('<th class="col-del"></th>');
+    const header = '<thead><tr>' + headerCols.join('') + '</tr></thead>';
+
+    const rows = products.map((p, i) => {
+        let row = `<tr data-idx="${i}"><td class="col-cb"><input type="checkbox" checked id="cb-${i}"></td>`;
+        for (const f of visibleFields) {
+            const raw = p[f];
+            let display = '';
+            if (raw === undefined || raw === null) display = '—';
+            else if (typeof raw === 'boolean') display = raw ? '✅' : '❌';
+            else if (typeof raw === 'number') display = raw.toLocaleString();
+            else display = escHtml(String(raw));
+            if (f === 'name') {
+                row += `<td class="col-name" title="点击查看详情" onclick="showProductDetail(${i})">${display || '—'}</td>`;
+            } else {
+                const issue = hasFieldIssue(f, p);
+                const title = issue ? (fieldLabel(f) + '需修正') : '';
+                row += `<td class="editable${issue ? ' cell-issue' : ''}" data-field="${escAttr(f)}" data-idx="${i}" title="${title}">${display || '—'}</td>`;
+            }
+        }
+        row += `<td class="col-del"><button class="del-btn" onclick="(async()=>await deleteProduct(${i}))()" title="删除此产品">🗑</button></td></tr>`;
+        return row;
+    }).join('');
+
+    document.getElementById('product-table').innerHTML = header + '<tbody>' + rows + '</tbody>';
+
+    // 全选/全不选
+    const cbAll = document.getElementById('cb-all');
+    if (cbAll) {
+        cbAll.addEventListener('change', () => {
+            const checked = cbAll.checked;
+            document.querySelectorAll('#product-table input[type=checkbox]').forEach(cb => { cb.checked = checked; });
+            updateBatchBar();
+        });
+    }
+    // 单个checkbox变化
+    document.querySelectorAll('#product-table input[type=checkbox]').forEach(cb => {
+        if (cb.id === 'cb-all') return;
+        cb.addEventListener('change', updateBatchBar);
+    });
+
+    // 绑定编辑事件
+    document.getElementById('product-table').querySelectorAll('.editable').forEach(cell => {
+        cell.addEventListener('click', () => startEdit(cell));
+    });
+    updateBatchBar();
+}
+
+function startEdit(cell) {
+    if (cell.classList.contains('editing')) return;
+    const field = cell.dataset.field;
+    const idx = parseInt(cell.dataset.idx);
+    const products = BRAND_GROUPS[ACTIVE_BRAND];
+    const p = products[idx];
+    const curVal = p[field] !== undefined && p[field] !== null ? String(p[field]) : '';
+    cell.classList.add('editing');
+    cell.innerHTML = '';
+
+    let input;
+    // 已知字段用 select，未知字段用 text input
+    if (field === 'majorCategory') {
+        input = document.createElement('select');
+        input.innerHTML = ['<option value="">—</option>', ...STANDARD_MAJORS.map(m => `<option value="${m}" ${m === curVal ? 'selected' : ''}>${m}</option>`)].join('');
+    } else if (field === 'category') {
+        input = document.createElement('select');
+        const major = p.majorCategory || '';
+        const cats = getCatOptions(major);
+        input.innerHTML = ['<option value="">—</option>', ...cats.map(c => `<option value="${c}" ${c === curVal ? 'selected' : ''}>${c}</option>`)].join('');
+        if (curVal && !cats.includes(curVal)) {
+            input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
+        }
+    } else if (field === 'sceneTag') {
+        input = document.createElement('select');
+        const scenePresets = ['', '日常', '端午', '中秋', '春节', '三八', '夏日', '年终', '生日', '端午,日常', '中秋,日常', '春节,日常', '教师节', '国庆'];
+        input.innerHTML = scenePresets.map(s => `<option value="${s}" ${s === curVal ? 'selected' : ''}>${s || '—'}</option>`).join('');
+        if (curVal && !scenePresets.includes(curVal)) {
+            input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
+        }
+    } else if (field === 'brandLevel') {
+        input = document.createElement('select');
+        input.innerHTML = BRAND_LEVELS.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+    } else if (field === 'brandStyle') {
+        input = document.createElement('select');
+        input.innerHTML = BRAND_STYLES.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+    } else if (field === 'region') { input = document.createElement('select'); input.innerHTML = REGIONS.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join(''); if (curVal && !REGIONS.includes(curVal)) { input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`; } } else if (field === 'priceRange') {
+        input = document.createElement('select');
+        input.innerHTML = PRICE_RANGES.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+    } else if (field === 'productType') {
+        input = document.createElement('select');
+        const types = ['', '普通', '定制', '包销'];
+        input.innerHTML = types.map(t => `<option value="${t}" ${t === curVal ? 'selected' : ''}>${t || '—'}</option>`).join('');
+        if (curVal && !types.includes(curVal)) {
+            input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
+        }
+    } else if (field === 'supportsDropship' || field === 'sugarFree' || field === 'organic' || field === 'freightIncluded') {
+        input = document.createElement('select');
+        const boolOpts = ['', '是', '否'];
+        const curNorm = curVal === 'true' || curVal === '是' ? '是' : curVal === 'false' || curVal === '否' ? '否' : curVal;
+        input.innerHTML = boolOpts.map(o => `<option value="${o}" ${o === curNorm ? 'selected' : ''}>${o || '—'}</option>`).join('');
+        if (curNorm && !boolOpts.includes(curNorm)) {
+            input.innerHTML += `<option value="${escAttr(curNorm)}" selected>${escHtml(curNorm)} (当前)</option>`;
+        }
+    } else {
+        input = document.createElement('input');
+        input.type = 'text';
+        input.value = curVal;
+        input.placeholder = fieldLabel(field);
+    }
+
+    const commit = () => {
+        let newVal = input.value;
+        if (newVal !== curVal) {
+            // 布尔字段规范化
+            if (field === 'supportsDropship' || field === 'sugarFree' || field === 'organic' || field === 'freightIncluded') {
+                newVal = newVal === '是' ? 'true' : newVal === '否' ? 'false' : newVal;
+            }
+            applyEdit(p, field, newVal);
+        }
+        cell.textContent = newVal || '—';
+        cell.classList.remove('editing');
+        const hasIssue = hasFieldIssue(field, p);
+        if (!hasIssue) cell.classList.remove('cell-issue');
+        if (hasIssue) cell.classList.add('cell-issue');
+    };
+
+    input.addEventListener('change', commit);
+    input.addEventListener('blur', () => { if (cell.classList.contains('editing')) commit(); });
+    cell.appendChild(input);
+    input.focus();
+}
+
+// ========== 编辑 ==========
+function applyEdit(product, field, value) {
+    product[field] = value;
+    if (field === 'brand') {
+        // 品牌变化 → 仅品牌模式下重新分组
+        if (VIEW_MODE === 'brand') handleBrandChange(product, value);
+    }
+    markBrandDirty(product);
+}
+
+function handleBrandChange(product, newBrand) {
+    const oldBrand = ACTIVE_BRAND;
+    const normalizedNew = (newBrand || '').trim() || '__无品牌__';
+    if (normalizedNew === oldBrand && product.brand === (ACTIVE_BRAND === '__无品牌__' ? '' : ACTIVE_BRAND)) return;
+    product.brand = (normalizedNew === '__无品牌__' ? '' : normalizedNew);
+    // 保存该产品的原始快照（跨组迁移）
+    let prodOrig = null;
+    if (BRAND_ORIGINALS[oldBrand]) {
+        const oidx = BRAND_ORIGINALS[oldBrand].findIndex(o => o.id === product.id);
+        if (oidx >= 0) {
+            prodOrig = BRAND_ORIGINALS[oldBrand].splice(oidx, 1)[0];
+        }
+    }
+    // 从旧组移除
+    const oldGroup = BRAND_GROUPS[oldBrand];
+    const idx = oldGroup.indexOf(product);
+    if (idx >= 0) oldGroup.splice(idx, 1);
+    DIRTY_BRANDS.add(oldBrand);  // 旧品牌有变更（产品移出）
+    if (oldGroup.length === 0) {
+        delete BRAND_GROUPS[oldBrand];
+        delete BRAND_STATS[oldBrand];
+        // 保留 BRAND_ORIGINALS 和 DIRTY_BRANDS 以便撤销/保存
+    } else {
+        BRAND_STATS[oldBrand] = computeBrandStats(oldBrand, oldGroup);
+    }
+    // 加入新组
+    if (!BRAND_GROUPS[normalizedNew]) BRAND_GROUPS[normalizedNew] = [];
+    BRAND_GROUPS[normalizedNew].push(product);
+    BRAND_STATS[normalizedNew] = computeBrandStats(normalizedNew, BRAND_GROUPS[normalizedNew]);
+    DIRTY_BRANDS.add(normalizedNew);
+    // 迁移原始快照到新组
+    if (!BRAND_ORIGINALS[normalizedNew]) BRAND_ORIGINALS[normalizedNew] = [];
+    if (prodOrig) {
+        BRAND_ORIGINALS[normalizedNew].push(prodOrig);
+    } else {
+        // 该产品首次被编辑 → 用修改前的状态创建快照（brand 改为 newBrand 之前的 oldBrand）
+        const copy = {};
+        for (const f of Object.keys(product)) { if (!f.startsWith('_')) copy[f] = (f === 'brand' ? oldBrand : product[f]); }
+        copy.id = product.id;
+        BRAND_ORIGINALS[normalizedNew].push(copy);
+    }
+    if (BRAND_ORIGINALS[normalizedNew].length === 0) delete BRAND_ORIGINALS[normalizedNew];
+    // 如果当前品牌组已空，切到新组
+    if (!BRAND_GROUPS[oldBrand]) {
+        ACTIVE_BRAND = normalizedNew;
+    }
+    renderBrandList();
+    renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+}
+
+function getSelectedIndices() {
+    const indices = [];
+    document.querySelectorAll('#product-table input[type=checkbox]').forEach(cb => {
+        if (cb.checked && cb.id.startsWith('cb-')) indices.push(parseInt(cb.id.replace('cb-', '')));
+    });
+    return indices;
+}
+
+// ========== 删除产品 ==========
+async function deleteProduct(idx) {
+    const products = BRAND_GROUPS[ACTIVE_BRAND];
+    if (!products || idx < 0 || idx >= products.length) return;
+    const p = products[idx];
+    if (!confirm(`确定删除产品"${p.name}"？\n\n可以撤销，但需要在本${_glabel()}内操作。`)) return;
+    // 快照此产品以便撤销
+    if (!BRAND_DELETED[ACTIVE_BRAND]) BRAND_DELETED[ACTIVE_BRAND] = [];
+    BRAND_DELETED[ACTIVE_BRAND].push(p);
+    // 从分组和全量中移除
+    products.splice(idx, 1);
+    const allIdx = ALL_PRODUCTS.indexOf(p);
+    if (allIdx >= 0) ALL_PRODUCTS.splice(allIdx, 1);
+    markBrandDirtyByBrand(ACTIVE_BRAND);
+    BRAND_STATS[ACTIVE_BRAND] = recomputeStats(ACTIVE_BRAND, products);
+    renderProductTable(ACTIVE_BRAND, products);
+    updateBatchBar();
+    await saveBrand();
+    toast('已删除并保存: ' + p.name);
+}
+
+async function deleteSelected() {
+    const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    const selIndices = getSelectedIndices();
+    if (selIndices.length === 0) { toast('请先勾选产品'); return; }
+    if (!confirm(`确定删除 ${selIndices.length} 个产品？\n\n可以撤销，但需要在本${_glabel()}内操作。`)) return;
+    if (!BRAND_DELETED[ACTIVE_BRAND]) BRAND_DELETED[ACTIVE_BRAND] = [];
+    // 从后往前删除避免索引偏移
+    const sorted = selIndices.sort((a, b) => b - a);
+    for (const idx of sorted) {
+        const p = products[idx];
+        if (!p) continue;
+        BRAND_DELETED[ACTIVE_BRAND].push(p);
+        products.splice(idx, 1);
+        const allIdx = ALL_PRODUCTS.indexOf(p);
+        if (allIdx >= 0) ALL_PRODUCTS.splice(allIdx, 1);
+    }
+    markBrandDirtyByBrand(ACTIVE_BRAND);
+    BRAND_STATS[ACTIVE_BRAND] = recomputeStats(ACTIVE_BRAND, products);
+    renderProductTable(ACTIVE_BRAND, products);
+    updateBatchBar();
+    await saveBrand();
+    toast('已删除并保存 ' + selIndices.length + ' 个产品');
+}
+
+function markBrandDirtyByBrand(brand) {
+    DIRTY_BRANDS.add(brand);
+    if (!BRAND_ORIGINALS[brand]) {
+        BRAND_ORIGINALS[brand] = (BRAND_GROUPS[brand] || []).map(p => {
+            const copy = {};
+            for (const f of Object.keys(p)) { if (!f.startsWith("_") && f !== "id") copy[f] = p[f]; } copy.id = p.id;
+            copy.id = p.id;
+            return copy;
+        });
+    }
+    renderBrandList();
+    document.getElementById('btn-undo-all').disabled = DIRTY_BRANDS.size === 0;
+}
+
+function updateBatchBar() {
+    const sel = getSelectedIndices();
+    const bar = document.getElementById('batch-bar');
+    bar.style.display = sel.length > 0 ? 'flex' : 'none';
+    document.getElementById('batch-count').textContent = sel.length + ' 个选中';
+}
+
+function applyBrandField(field, target) {
+    const selId = field === 'brandLevel' ? 'field-brandLevel' : field === 'brandStyle' ? 'field-brandStyle' : field === 'priceRange' ? 'field-priceRange' : 'field-region';
+    const value = document.getElementById(selId).value;
+    if (!value && !confirm('确定要清空该' + _glabel() + '产品的"' + field + '"字段吗？')) return;
+    const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    let count = 0;
+    for (let i = 0; i < products.length; i++) {
+        if (target === 'sel') {
+            const cb = document.getElementById('cb-' + i);
+            if (!cb || !cb.checked) continue;
+        }
+        applyEdit(products[i], field, value);
+        count++;
+    }
+    renderProductTable(ACTIVE_BRAND, products);
+    toast('已应用: ' + value + ' → ' + count + ' 个产品');
+}
+
+async function batchApply() {
+    const brandVal = document.getElementById('batch-brand').value.trim();
+    const majorVal = document.getElementById('batch-major').value;
+    const catVal = document.getElementById('batch-cat').value;
+    const sceneVal = document.getElementById('batch-scene').value;
+    const levelVal = document.getElementById('batch-level').value;
+    const styleVal = document.getElementById('batch-style').value;
+    const priceVal = document.getElementById('batch-price').value; const regionVal = document.getElementById('batch-region').value;
+    const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    const selIndices = getSelectedIndices();
+    if (selIndices.length === 0) { toast('请先勾选产品'); return; }
+    let count = 0;
+    // Apply field edits first (before brand migration shifts indices)
+    for (const i of selIndices) {
+        const p = products[i];
+        if (!p) continue;
+        if (majorVal) { applyEdit(p, 'majorCategory', majorVal); count++; }
+        if (catVal) { applyEdit(p, 'category', catVal); count++; }
+        if (sceneVal) { applyEdit(p, 'sceneTag', sceneVal); count++; }
+        if (levelVal) { applyEdit(p, 'brandLevel', levelVal); count++; }
+        if (styleVal) { applyEdit(p, 'brandStyle', styleVal); count++; }
+        if (priceVal) { applyEdit(p, 'priceRange', priceVal); count++; } if (regionVal) { applyEdit(p, 'region', regionVal); count++; }
+    }
+    // Brand migration last (mutates groups, shifts indices) — 仅品牌模式
+    let newBrandName = null;
+    if (brandVal && VIEW_MODE === 'brand') {
+        newBrandName = (brandVal || '').trim() || '__无品牌__';
+        const toMove = selIndices.map(i => products[i]).filter(Boolean);
+        for (const p of toMove) {
+            handleBrandChange(p, brandVal);
+        }
+    }
+    // Refresh display
+    const curProds = BRAND_GROUPS[ACTIVE_BRAND];
+    if (curProds) {
+        renderProductTable(ACTIVE_BRAND, curProds);
+    } else {
+        document.getElementById('product-area').innerHTML = '<div style="padding:40px;text-align:center;color:var(--text2);">该' + _glabel() + '已无产品</div>';
+        document.getElementById('brand-footer').innerHTML = '';
+        document.getElementById('batch-bar').style.display = 'none';
+    }
+    renderBrandList();
+    // Auto-save both affected brands when brand changed (仅品牌模式)
+    if (brandVal && newBrandName) {
+        const prevActive = ACTIVE_BRAND;
+        // Save new brand group first
+        if (BRAND_GROUPS[newBrandName]) {
+            ACTIVE_BRAND = newBrandName;
+            await saveBrand();
+        }
+        // Save old brand group if it still has products
+        if (BRAND_GROUPS[prevActive]) {
+            ACTIVE_BRAND = prevActive;
+            await saveBrand();
+        }
+        toast('批量修改: ' + count + ' 处已更新 + 品牌迁移并已保存');
+    } else {
+        toast('批量修改: ' + count + ' 处已更新');
+    }
+}
+
+function initBatchDropdowns() {
+    const majorSel = document.getElementById('batch-major');
+    majorSel.innerHTML = '<option value="">大类—</option>' + STANDARD_MAJORS.map(m => `<option value="${m}">${m}</option>`).join('');
+    const sceneSel = document.getElementById('batch-scene');
+    const sceneOpts = ['', '日常', '端午', '中秋', '春节', '三八', '夏日', '年终', '生日', '教师节', '国庆'];
+    sceneSel.innerHTML = sceneOpts.map(s => `<option value="${s}">${s || '场景—'}</option>`).join('');
+    document.getElementById('batch-level').innerHTML = BRAND_LEVELS.map(o => `<option value="${o}">${o || '级别—'}</option>`).join('');
+    document.getElementById('batch-style').innerHTML = BRAND_STYLES.map(o => `<option value="${o}">${o || '调性—'}</option>`).join('');
+    document.getElementById('batch-price').innerHTML = PRICE_RANGES.map(o => `<option value="${o}">${o || '价格—'}</option>`).join(''); document.getElementById('batch-region').innerHTML = REGIONS.map(o => `<option value="${o}">${o || '区域—'}</option>`).join('');
+    // 品类下拉随大类联动
+    majorSel.addEventListener('change', () => {
+        const catSel = document.getElementById('batch-cat');
+        const major = majorSel.value;
+        const cats = major ? getCatOptions(major) : [];
+        catSel.innerHTML = '<option value="">品类—</option>' + cats.map(c => `<option value="${c}">${c}</option>`).join('');
+    });
+}
+
+function markBrandDirty(product) {
+    const key = VIEW_MODE === 'brand' ? (product.brand || '__无品牌__') : ACTIVE_BRAND;
+    DIRTY_BRANDS.add(key);
+    if (!BRAND_ORIGINALS[key]) {
+        const group = BRAND_GROUPS[key];
+        if (group) {
+            BRAND_ORIGINALS[key] = group.map(p => {
+                const copy = {};
+                for (const f of Object.keys(p)) { if (!f.startsWith("_") && f !== "id") copy[f] = p[f]; } copy.id = p.id;
+                return copy;
+            });
+        }
+    }
+    renderBrandList();
+    document.getElementById('btn-undo-all').disabled = DIRTY_BRANDS.size === 0;
+}
+
+// ========== 保存/撤销 ==========
+async function saveBrand() {
+    if (!ACTIVE_BRAND) return;
+    if (!DIRTY_BRANDS.has(ACTIVE_BRAND)) { toast('没有修改'); return; }
+    const btn = document.getElementById('btn-save-brand');
+    const origText = btn.textContent;
+    btn.textContent = '保存中...';
+    btn.disabled = true;
+    try {
+        const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+        const deleted = BRAND_DELETED[ACTIVE_BRAND] || [];
+        const tx = DB.transaction('products', 'readwrite');
+        const store = tx.objectStore('products');
+        for (const p of products) {
+            store.put(p);
+        }
+        for (const d of deleted) {
+            store.delete(d.id);
+        }
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(new Error('事务被中止'));
+        });
+        delete BRAND_DELETED[ACTIVE_BRAND];
+        // 验证：读回数据确认已写入
+        const vtx = DB.transaction('products', 'readonly');
+        const vstore = vtx.objectStore('products');
+        const ids = products.map(p => p.id);
+        let verified = 0;
+        for (const id of ids) {
+            const req = vstore.get(id);
+            await new Promise(r => { req.onsuccess = r; req.onerror = r; });
+            if (req.result) verified++;
+        }
+        DIRTY_BRANDS.delete(ACTIVE_BRAND);
+        delete BRAND_ORIGINALS[ACTIVE_BRAND];
+        BRAND_STATS[ACTIVE_BRAND] = recomputeStats(ACTIVE_BRAND, products);
+        renderProductTable(ACTIVE_BRAND, products);
+        renderBrandList();
+        document.getElementById('btn-undo-brand').disabled = true;
+        document.getElementById('btn-undo-all').disabled = DIRTY_BRANDS.size === 0;
+        toast('已保存: ' + ACTIVE_BRAND + ' (' + verified + '/' + products.length + '品' + (deleted.length ? ', 删除' + deleted.length + '品' : '') + ')');
+        document.getElementById('btn-undo-brand').textContent = '撤销此' + _glabel();
+    } catch (e) {
+        toast('保存失败: ' + e.message);
+        alert('保存失败: ' + e.message + '\n\n请检查数据库连接，不要刷新页面。');
+    }
+    btn.textContent = origText;
+    btn.disabled = false;
+}
+
+function undoBrand() {
+    if (!ACTIVE_BRAND) return;
+    const originals = BRAND_ORIGINALS[ACTIVE_BRAND];
+    if (!originals && !(BRAND_DELETED[ACTIVE_BRAND] && BRAND_DELETED[ACTIVE_BRAND].length)) return;
+    const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    // 恢复字段修改
+    if (originals) {
+        const map = {};
+        for (const o of originals) map[o.id] = o;
+        for (const p of products) {
+            const orig = map[p.id];
+            if (orig) { for (const f of Object.keys(orig)) { if (!f.startsWith("_") || f === "id") p[f] = orig[f]; } }
+        }
+        delete BRAND_ORIGINALS[ACTIVE_BRAND];
+    }
+    // 恢复已删除产品
+    const deleted = BRAND_DELETED[ACTIVE_BRAND] || [];
+    if (deleted.length) {
+        for (const p of deleted) {
+            products.push(p);
+            ALL_PRODUCTS.push(p);
+        }
+        delete BRAND_DELETED[ACTIVE_BRAND];
+    }
+    DIRTY_BRANDS.delete(ACTIVE_BRAND);
+    BRAND_STATS[ACTIVE_BRAND] = recomputeStats(ACTIVE_BRAND, products);
+    document.getElementById('btn-undo-brand').disabled = true;
+    document.getElementById('btn-undo-all').disabled = DIRTY_BRANDS.size === 0;
+    renderBrandList();
+    renderProductTable(ACTIVE_BRAND, products);
+    toast('已撤销: ' + ACTIVE_BRAND);
+}
+
+function undoAll() {
+    const count = DIRTY_BRANDS.size;
+    if (count === 0) return;
+    if (!confirm('撤销全部 ' + count + ' 个' + _glabel() + '的修改？')) return;
+    for (const brand of DIRTY_BRANDS) {
+        const originals = BRAND_ORIGINALS[brand];
+        const products = BRAND_GROUPS[brand] || [];
+        if (originals) {
+            const map = {};
+            for (const o of originals) map[o.id] = o;
+            for (const p of products) {
+                const orig = map[p.id];
+                if (orig) { for (const f of Object.keys(orig)) { if (!f.startsWith("_")) p[f] = orig[f]; } }
+            }
+            delete BRAND_ORIGINALS[brand];
+        }
+        // 恢复已删除产品
+        const deleted = BRAND_DELETED[brand] || [];
+        if (deleted.length) {
+            for (const p of deleted) products.push(p);
+            if (!BRAND_GROUPS[brand]) BRAND_GROUPS[brand] = products;
+            for (const p of deleted) ALL_PRODUCTS.push(p);
+            delete BRAND_DELETED[brand];
+        }
+        BRAND_STATS[brand] = recomputeStats(brand, products);
+    }
+    DIRTY_BRANDS.clear();
+    document.getElementById('btn-undo-all').disabled = true;
+    if (ACTIVE_BRAND) {
+        document.getElementById('btn-undo-brand').disabled = true;
+        renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+    }
+    renderBrandList();
+    toast('已全部撤销');
+}
+
+async function saveAllToDB() {
+    const count = DIRTY_BRANDS.size;
+    if (count === 0) { toast('没有需要保存的修改'); return; }
+    if (!confirm('将保存 ' + count + ' 个' + _glabel() + '的修改到数据库。\n建议先下载备份。\n\n确定继续？')) return;
+    const btn = document.getElementById('btn-save-all');
+    const origText = btn.textContent;
+    btn.textContent = '保存中...';
+    btn.disabled = true;
+    try {
+        let totalProducts = 0;
+        let totalDeleted = 0;
+        const tx = DB.transaction('products', 'readwrite');
+        const store = tx.objectStore('products');
+        for (const brand of DIRTY_BRANDS) {
+            const prods = BRAND_GROUPS[brand];
+            if (prods) {
+                for (const p of prods) {
+                    store.put(p);
+                    totalProducts++;
+                }
+            }
+            const deleted = BRAND_DELETED[brand] || [];
+            for (const d of deleted) {
+                store.delete(d.id);
+                totalDeleted++;
+            }
+        }
+        await new Promise((resolve, reject) => {
+            tx.oncomplete = resolve;
+            tx.onerror = () => reject(tx.error);
+            tx.onabort = () => reject(new Error('事务被中止'));
+        });
+        const savedBrands = DIRTY_BRANDS.size;
+        for (const brand of DIRTY_BRANDS) {
+            delete BRAND_ORIGINALS[brand];
+            delete BRAND_DELETED[brand];
+            BRAND_STATS[brand] = recomputeStats(brand, BRAND_GROUPS[brand]);
+        }
+        DIRTY_BRANDS.clear();
+        document.getElementById('btn-undo-all').disabled = true;
+        if (ACTIVE_BRAND) document.getElementById('btn-undo-brand').disabled = true;
+        renderBrandList();
+        toast('已保存 ' + savedBrands + ' 个' + _glabel() + ' / ' + totalProducts + ' 个产品' + (totalDeleted ? ' + 删除' + totalDeleted + '个' : ''));
+    } catch (e) {
+        toast('保存失败: ' + e.message);
+        alert('保存失败: ' + e.message + '\n\n请检查数据库连接，不要刷新页面。');
+    }
+    btn.textContent = origText;
+    btn.disabled = false;
+}
+
+// ========== 备份 ==========
+function downloadBackup() {
+    if (ALL_PRODUCTS.length === 0) return;
+    const ts = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const data = JSON.stringify(ALL_PRODUCTS, null, 2);
+    const blob = new Blob([data], { type: 'application/json' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'product-library-backup-' + ts + '.json';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+    log('备份已下载: ' + ALL_PRODUCTS.length + ' 条');
+}
+
+// ========== AI 设置与调用 ==========
+let aiSettings = { apiType: 'deepseek', endpoint: 'https://api.deepseek.com/chat/completions', apiKey: '', model: 'deepseek-chat', maxTokens: 2048, temperature: 0.3 };
+
+async function loadAISettings() {
+    try {
+        const tx = DB.transaction('settings', 'readonly');
+        const store = tx.objectStore('settings');
+        const req = store.get('aiSettings');
+        await new Promise((r, e) => { tx.oncomplete = r; tx.onerror = () => e(tx.error); });
+        if (req.result && req.result.value) {
+            aiSettings = { ...aiSettings, ...req.result.value };
+        }
+    } catch (e) {
+        // settings store may not exist — use defaults
+        console.log('[数据修复] AI设置加载失败，使用默认配置', e.message);
+    }
+}
+
+async function callAI(prompt) {
+    if (!aiSettings.apiKey) throw new Error('请先在主应用中配置 AI API Key（设置 → AI 设置）');
+    const isOpenAI = aiSettings.apiType === 'openai' || aiSettings.apiType === 'deepseek' || aiSettings.apiType === 'custom';
+    const body = isOpenAI
+        ? { model: aiSettings.model, messages: [{ role: 'user', content: prompt }], max_tokens: aiSettings.maxTokens, temperature: aiSettings.temperature, response_format: { type: 'json_object' } }
+        : { model: aiSettings.model, max_tokens: aiSettings.maxTokens, messages: [{ role: 'user', content: prompt + '\n\n请只返回 JSON 对象，不要其他内容。' }] };
+    const headers = isOpenAI
+        ? { 'Content-Type': 'application/json', 'Authorization': `Bearer ${aiSettings.apiKey}` }
+        : { 'Content-Type': 'application/json', 'x-api-key': aiSettings.apiKey, 'anthropic-version': '2023-06-01' };
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+        const resp = await fetch(aiSettings.endpoint, { method: 'POST', headers, body: JSON.stringify(body), signal: controller.signal });
+        clearTimeout(timer);
+        if (!resp.ok) { const errText = await resp.text(); throw new Error(`HTTP ${resp.status}: ${errText.slice(0, 200)}`); }
+        const data = await resp.json();
+        return isOpenAI ? data.choices[0].message.content : data.content[0].text;
+    } catch (e) {
+        clearTimeout(timer);
+        if (e.name === 'AbortError') throw new Error('AI 请求超时（30秒）');
+        throw e;
+    }
+}
+
+// ========== AI 品牌查询 ==========
+async function aiBrandQuery() {
+    if (!ACTIVE_BRAND || ACTIVE_BRAND === '__无品牌__') return;
+    const btn = document.querySelector('#brand-search-btns .search-btn');
+    const origText = btn.textContent;
+    btn.textContent = 'AI 查询中...';
+    btn.disabled = true;
+    try {
+        const prompt = `请以 JSON 格式返回品牌"${ACTIVE_BRAND}"的信息：
+{
+  "brandLevel": "国际品牌|全国一线品牌|全国二线品牌|网红/新消费品牌|地方品牌|白牌",
+  "brandStyle": "温馨实用|健康活力|轻奢精致|新潮有趣",
+  "priceRange": "高端|中端|平价",
+  "region": "华北|华东|华南|华中|东北|西北|西南|全国|进口",
+  "reason": "一句话判断依据",
+  "detail": "详细说明（150-300字），从品牌知名度、市场定位、消费群体、产品特色、适合福利场景等角度分析，解释为什么给出以上级别和调性判断"
+}
+只返回 JSON，不要其他内容。`;
+        const raw = await callAI(prompt);
+        // 提取 JSON（处理可能的 markdown 包裹）
+        const jsonMatch = raw.match(/\{[\s\S]*\}/);
+        if (!jsonMatch) throw new Error('AI 返回格式异常：未找到 JSON');
+        const result = JSON.parse(jsonMatch[0]);
+        if (!result.brandLevel && !result.brandStyle && !result.priceRange) {
+            throw new Error('AI 返回数据不完整');
+        }
+        // 显示到建议栏
+        const bar = document.getElementById('suggestion-bar');
+        const text = document.getElementById('suggestion-text');
+        const parts = [];
+        if (result.brandLevel) parts.push(`级别: <b>${escHtml(result.brandLevel)}</b>`);
+        if (result.brandStyle) parts.push(`调性: <b>${escHtml(result.brandStyle)}</b>`);
+        if (result.priceRange) parts.push(`价格: <b>${escHtml(result.priceRange)}</b>`); if (result.region) parts.push(`区域: <b>${escHtml(result.region)}</b>`);
+        if (result.reason) parts.push(`<br><span style="font-size:11px;color:var(--text2);">${escHtml(result.reason)}</span>`);
+        if (result.detail) parts.push(` <a href="javascript:void(0)" onclick="showAIDetail()" style="font-size:11px;color:var(--primary);">查看详情 →</a>`);
+        text.innerHTML = parts.join(' &nbsp;|&nbsp; ');
+        bar.classList.remove('hidden');
+        // 暂存到 suggestion-bar 的 data 属性供 accept 使用
+        bar.dataset.level = result.brandLevel || '';
+        bar.dataset.style = result.brandStyle || '';
+        bar.dataset.price = result.priceRange || ''; bar.dataset.region = result.region || '';
+        bar.dataset.detail = result.detail || '';
+        document.getElementById('btn-accept-suggestion').disabled = false;
+        toast('AI 已返回建议，请确认后点击"接受建议并保存"');
+    } catch (e) {
+        toast('AI 查询失败: ' + e.message);
+        alert('AI 查询失败: ' + e.message + '\n\n确认主应用已配置 AI API Key（设置 → AI 设置）。');
+    }
+    btn.textContent = origText;
+    btn.disabled = false;
+}
+
+// ========== 建议接受 ==========
+async function acceptSuggestions() {
+    const bar = document.getElementById('suggestion-bar');
+    const levelVal = bar.dataset.level || '';
+    const styleVal = bar.dataset.style || '';
+    const priceVal = bar.dataset.price || '';
+    if (!levelVal && !styleVal && !priceVal) return;
+    const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    if (!products.length) return;
+    let count = 0;
+    if (levelVal) {
+        document.getElementById('field-brandLevel').value = levelVal;
+        for (const p of products) { applyEdit(p, 'brandLevel', levelVal); count++; }
+    }
+    if (styleVal) {
+        document.getElementById('field-brandStyle').value = styleVal;
+        for (const p of products) { applyEdit(p, 'brandStyle', styleVal); count++; }
+    }
+    if (priceVal) {
+        document.getElementById('field-priceRange').value = priceVal;
+        for (const p of products) { applyEdit(p, 'priceRange', priceVal); count++; }
+    }
+    const regionVal = bar.dataset.region || '';
+    if (regionVal) {
+        document.getElementById('field-region').value = regionVal;
+        for (const p of products) { applyEdit(p, 'region', regionVal); count++; }
+    }
+    renderProductTable(ACTIVE_BRAND, products);
+    // 自动保存到数据库
+    await saveBrand();
+    bar.dataset.level = '';
+    bar.dataset.style = '';
+    bar.dataset.price = ''; bar.dataset.region = '';
+    document.getElementById('btn-accept-suggestion').disabled = true;
+}
+
+// ========== AI 品类检测 ==========
+const AI_CAT_BATCH_SIZE = 20;
+let _aiCatResults = []; // { idx, name, curMajor, curCat, aiMajor, aiCat, reason }
+
+async function aiDetectCategory() {
+	if (!ACTIVE_BRAND || VIEW_MODE !== 'brand') return;
+	const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+	const selIndices = getSelectedIndices();
+	if (selIndices.length === 0) { toast('请先勾选产品'); return; }
+	const btn = document.getElementById('btn-ai-detect-cat');
+	const origText = btn.textContent;
+	btn.textContent = 'AI检测中...';
+	btn.disabled = true;
+
+	const selected = selIndices.map(function(i) { return { idx: i, p: products[i] }; }).filter(function(x) { return x.p && x.p.name; });
+	if (selected.length === 0) { toast('选中的产品没有有效名称'); btn.textContent = origText; btn.disabled = false; return; }
+
+	_aiCatResults = [];
+	// 分批调用 AI
+	const batches = [];
+	for (let i = 0; i < selected.length; i += AI_CAT_BATCH_SIZE) {
+		batches.push(selected.slice(i, i + AI_CAT_BATCH_SIZE));
+	}
+	let batchNum = 0;
+	for (const batch of batches) {
+		batchNum++;
+		btn.textContent = 'AI检测中...(' + batchNum + '/' + batches.length + ')';
+		try {
+			const prompt = buildCategoryPrompt(batch);
+			const raw = await callAI(prompt);
+			const parsed = parseCategoryResponse(raw, batch);
+			for (const item of parsed) {
+				const s = batch.find(function(b) { return b.idx === item.idx; });
+				if (!s) continue;
+				const curMajor = s.p.majorCategory || '';
+				const curCat = s.p.category || '';
+				const aiMajor = item.majorCategory || '';
+				const aiCat = item.category || '';
+				// 只保留有变化的
+				if (aiMajor && (aiMajor !== curMajor || aiCat !== curCat)) {
+					_aiCatResults.push({
+						idx: s.idx, name: s.p.name,
+						curMajor: curMajor, curCat: curCat,
+						aiMajor: aiMajor, aiCat: aiCat,
+						reason: item.reason || ''
+					});
+				}
+			}
+		} catch (e) {
+			console.error('AI品类检测批次' + batchNum + '失败:', e);
+		}
+	}
+	btn.textContent = origText;
+	btn.disabled = false;
+	if (_aiCatResults.length === 0) {
+		toast('AI检测完成，所有产品的品类与当前一致，无需修改');
+		return;
+	}
+	showCategoryConfirmModal();
+}
+
+function buildCategoryPrompt(batch) {
+	// 按大类分组列出可选品类
+	const catByMajor = {};
+	for (const [cat, major] of Object.entries(SUBCATEGORY_TO_MAJOR)) {
+		if (!catByMajor[major]) catByMajor[major] = [];
+		catByMajor[major].push(cat);
+	}
+	let catList = '';
+	for (const [major, cats] of Object.entries(catByMajor)) {
+		catList += major + ': ' + cats.join('、') + '\n';
+	}
+	let prodList = '';
+	for (const s of batch) {
+		prodList += (s.idx + 1) + '. 品名：' + s.p.name + '，当前大类：' + (s.p.majorCategory || '未知') + '，当前品类：' + (s.p.category || '未知') + '\n';
+	}
+	return '你是一个商品分类专家。请根据以下产品名称，判断每个产品的大类和品类。\n\n' +
+		'可选大类：' + STANDARD_MAJORS.join('、') + '\n' +
+		'可选品类（按大类分组）：\n' + catList + '\n' +
+		'产品列表：\n' + prodList + '\n' +
+		'请以 JSON 数组格式返回，每个元素包含：\n' +
+		'{"index": ' + (batch[0].idx + 1) + ', "majorCategory": "食品饮料", "category": "坚果", "reason": "简短理由"}\n' +
+		'注意：index 必须与产品列表中的序号一致。只返回 JSON 数组，不要其他内容。';
+}
+
+function parseCategoryResponse(raw, batch) {
+	const match = raw.match(/\[[\s\S]*\]/);
+	if (!match) throw new Error('未找到 JSON 数组');
+	const arr = JSON.parse(match[0]);
+	if (!Array.isArray(arr)) throw new Error('返回不是数组');
+	const startIdx = batch[0].idx;
+	return arr.map(function(item) {
+		return {
+			idx: (item.index || item.idx) - 1, // prompt 中的序号从 batch[0].idx+1 开始
+			majorCategory: item.majorCategory || '',
+			category: item.category || '',
+			reason: item.reason || ''
+		};
+	});
+}
+
+function showCategoryConfirmModal() {
+	document.getElementById('modal-title').textContent = 'AI品类检测结果 — 确认修改 (' + _aiCatResults.length + ' 处)';
+	let html = '<div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;">' +
+		'<label style="font-size:13px;cursor:pointer;"><input type="checkbox" id="cat-confirm-all" checked onchange="toggleCatConfirmAll()"> 全选/全不选</label>' +
+		'<span style="font-size:12px;color:var(--text2);">仅显示与当前值不同的建议</span>' +
+		'</div>' +
+		'<div style="max-height:50vh;overflow-y:auto;">' +
+		'<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+		'<thead><tr style="background:#f9fafb;">' +
+		'<th style="padding:6px 8px;text-align:center;width:30px;">✓</th>' +
+		'<th style="padding:6px 8px;text-align:left;">产品名称</th>' +
+		'<th style="padding:6px 8px;text-align:left;">当前大类</th>' +
+		'<th style="padding:6px 8px;text-align:left;">当前品类</th>' +
+		'<th style="padding:6px 8px;text-align:left;color:var(--primary);">AI大类</th>' +
+		'<th style="padding:6px 8px;text-align:left;color:var(--primary);">AI品类</th>' +
+		'<th style="padding:6px 8px;text-align:left;">理由</th>' +
+		'</tr></thead><tbody>';
+	for (let i = 0; i < _aiCatResults.length; i++) {
+		const r = _aiCatResults[i];
+		html += '<tr>' +
+			'<td style="padding:4px 8px;text-align:center;"><input type="checkbox" id="cat-cb-' + i + '" checked></td>' +
+			'<td style="padding:4px 8px;">' + escHtml(r.name) + '</td>' +
+			'<td style="padding:4px 8px;">' + escHtml(r.curMajor || '—') + '</td>' +
+			'<td style="padding:4px 8px;">' + escHtml(r.curCat || '—') + '</td>' +
+			'<td style="padding:4px 8px;color:var(--primary);font-weight:500;">' + escHtml(r.aiMajor) + '</td>' +
+			'<td style="padding:4px 8px;color:var(--primary);font-weight:500;">' + escHtml(r.aiCat) + '</td>' +
+			'<td style="padding:4px 8px;font-size:12px;color:var(--text2);max-width:180px;">' + escHtml(r.reason) + '</td>' +
+			'</tr>';
+	}
+	html += '</tbody></table></div>' +
+		'<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">' +
+		'<button class="btn btn-outline btn-sm" onclick="closeModal()">取消</button>' +
+		'<button class="btn btn-primary btn-sm" onclick="applyCategoryChanges()">应用选中修改</button>' +
+		'</div>';
+	document.getElementById('modal-body').innerHTML = html;
+	document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function toggleCatConfirmAll() {
+	const checked = document.getElementById('cat-confirm-all').checked;
+	for (let i = 0; i < _aiCatResults.length; i++) {
+		const cb = document.getElementById('cat-cb-' + i);
+		if (cb) cb.checked = checked;
+	}
+}
+
+function applyCategoryChanges() {
+	const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+	let changed = 0;
+	for (let i = 0; i < _aiCatResults.length; i++) {
+		const cb = document.getElementById('cat-cb-' + i);
+		if (!cb || !cb.checked) continue;
+		const r = _aiCatResults[i];
+		const p = products[r.idx];
+		if (!p) continue;
+		if (r.aiMajor && r.aiMajor !== (p.majorCategory || '')) {
+			applyEdit(p, 'majorCategory', r.aiMajor);
+			changed++;
+		}
+		if (r.aiCat && r.aiCat !== (p.category || '')) {
+			applyEdit(p, 'category', r.aiCat);
+			changed++;
+		}
+	}
+	closeModal();
+	_aiCatResults = [];
+	if (changed > 0) {
+		renderProductTable(ACTIVE_BRAND, products);
+		toast('AI品类检测：已应用 ' + changed + ' 处修改');
+	} else {
+		toast('未选中任何修改');
+	}
+}
+
+// ========== 品牌重新识别 ==========
+function tryExtractBrand(name) {
+    if (!name || name === '产品名称') return null;
+    const t = name.replace(/^【.+?】\s*/, '').trim();
+    // 1. 品名中包含已知品牌变体 → 返回标准名
+    for (const [variant, standard] of Object.entries(BRAND_NORMALIZE)) {
+        if (t.includes(variant)) return standard;
+    }
+    // 2. 纯品牌名（≤6个中文字符，无数字规格）→ 通过 cleanBrandName
+    if (/^[一-鿿·•]{2,6}$/.test(t) && !/\d/.test(t)) {
+        const cleaned = cleanBrandName(t);
+        if (cleaned) return cleaned;
+    }
+    // 3. cleanBrandName 处理整个品名
+    const cleaned = cleanBrandName(t);
+    if (cleaned && cleaned.length <= 8) return cleaned;
+    return null;
+}
+
+function reidentifyBrand() {
+    if (!ACTIVE_BRAND) return;
+    const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    // 只对选中的产品重新识别
+    let changed = 0;
+    for (let i = 0; i < products.length; i++) {
+        const cb = document.getElementById('cb-' + i);
+        if (cb && !cb.checked) continue;
+        const p = products[i];
+        const extracted = tryExtractBrand(p.name);
+        if (extracted && extracted !== (p.brand || '')) {
+            const oldBrand = p.brand;
+            p.brand = extracted;
+            handleBrandChange(p, extracted);
+            changed++;
+        }
+    }
+    if (changed > 0) {
+        toast(`重新识别了 ${changed} 个产品的品牌名`);
+        if (BRAND_GROUPS[ACTIVE_BRAND]) {
+            renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+        } else {
+            // 当前品牌组已空，渲染新组
+            renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND] || []);
+        }
+        renderBrandList();
+    } else {
+        toast('没有可重新识别的品牌名');
+    }
+}
+
+// ========== 工具函数 ==========
+function escHtml(s) { if (!s) return ''; return String(s).replace(/&/g, '&amp;').replace(/</g, '<').replace(/>/g, '>').replace(/"/g, '&quot;'); }
+function escAttr(s) { if (!s) return ''; return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '<').replace(/>/g, '>'); }
+function toast(msg) {
+    const el = document.getElementById('toast');
+    el.textContent = msg;
+    el.classList.add('show');
+    clearTimeout(el._timeout);
+    el._timeout = setTimeout(() => el.classList.remove('show'), 2000);
+}
+function log(msg, cls) {
+    console.log('[数据修复]', msg);
+}
+
+// ========== 键盘快捷键 ==========
+document.addEventListener('keydown', (e) => {
+    if (e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT' || e.target.tagName === 'TEXTAREA') return;
+    if (e.ctrlKey && e.key === 'ArrowLeft') { e.preventDefault(); navigateBrand(-1); }
+    if (e.ctrlKey && e.key === 'ArrowRight') { e.preventDefault(); navigateBrand(1); }
+    if (e.ctrlKey && e.key === 's') { e.preventDefault(); saveBrand(); }
+    if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoBrand(); }
+});
+
+initBatchDropdowns();
+connectDB();
+</script>
+</body>
+</html>
