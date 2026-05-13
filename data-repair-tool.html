@@ -214,6 +214,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 <select id="batch-level" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">级别—</option></select>
                 <select id="batch-style" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">调性—</option></select>
                 <select id="batch-price" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">价格—</option></select> <select id="batch-region" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">区域—</option></select>
+                <span id="batch-supplier-fields" style="display:none;">
+                <select id="batch-productType" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">产品类型—</option><option value="普通">普通</option><option value="定制">定制</option><option value="包销">包销</option></select>
+                <select id="batch-supportsDropship" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">代发—</option><option value="是">是</option><option value="否">否</option></select>
+                <input id="batch-delivery" placeholder="发货地" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;width:100px;">
+                <select id="batch-stockType" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">库存类型—</option><option value="现货">现货</option><option value="代发">代发</option><option value="预售">预售</option></select>
+                <select id="batch-stockStatus" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">备货状态—</option><option value="充足">充足</option><option value="紧张">紧张</option><option value="缺货">缺货</option></select>
+                </span>
                 <button class="btn-sm btn-primary" onclick="batchApply()">应用</button>
                 <button class="btn-sm btn-outline" id="btn-delete-sel" onclick="(async()=>await deleteSelected())()" style="margin-left:4px;">🗑 删除选中</button>
                 <span id="batch-count" style="font-size:11px;color:var(--text2);"></span>
@@ -1166,9 +1173,14 @@ function switchMode() {
     document.getElementById('brand-search-btns').style.display = isBrand ? '' : 'none';
     document.getElementById('suggestion-bar').style.display = isBrand ? '' : 'none';
     if (!isBrand) document.getElementById('suggestion-bar').classList.add('hidden');
+    document.getElementById('batch-brand').style.display = isBrand ? '' : 'none';
+    document.getElementById('batch-major').style.display = isBrand ? '' : 'none';
+    document.getElementById('batch-cat').style.display = isBrand ? '' : 'none';
+    document.getElementById('batch-scene').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-level').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-style').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-price').style.display = isBrand ? '' : 'none'; document.getElementById('batch-region').style.display = isBrand ? '' : 'none';
+    document.getElementById('batch-supplier-fields').style.display = isBrand ? 'none' : '';
     // 重新渲染列表
     ACTIVE_FILTERS.clear();
     renderFilterChips();
@@ -1625,7 +1637,7 @@ async function deleteProduct(idx) {
     BRAND_DELETED[ACTIVE_BRAND].push(p);
     // 从分组和全量中移除
     products.splice(idx, 1);
-    const allIdx = ALL_PRODUCTS.indexOf(p);
+    const allIdx = ALL_PRODUCTS.findIndex(x => x.id === p.id);
     if (allIdx >= 0) ALL_PRODUCTS.splice(allIdx, 1);
     markBrandDirtyByBrand(ACTIVE_BRAND);
     BRAND_STATS[ACTIVE_BRAND] = recomputeStats(ACTIVE_BRAND, products);
@@ -1648,7 +1660,7 @@ async function deleteSelected() {
         if (!p) continue;
         BRAND_DELETED[ACTIVE_BRAND].push(p);
         products.splice(idx, 1);
-        const allIdx = ALL_PRODUCTS.indexOf(p);
+        const allIdx = ALL_PRODUCTS.findIndex(x => x.id === p.id);
         if (allIdx >= 0) ALL_PRODUCTS.splice(allIdx, 1);
     }
     markBrandDirtyByBrand(ACTIVE_BRAND);
@@ -1706,6 +1718,11 @@ async function batchApply() {
     const levelVal = document.getElementById('batch-level').value;
     const styleVal = document.getElementById('batch-style').value;
     const priceVal = document.getElementById('batch-price').value; const regionVal = document.getElementById('batch-region').value;
+    const productTypeVal = document.getElementById('batch-productType').value;
+    const dropshipVal = document.getElementById('batch-supportsDropship').value;
+    const deliveryVal = document.getElementById('batch-delivery').value.trim();
+    const stockTypeVal = document.getElementById('batch-stockType').value;
+    const stockStatusVal = document.getElementById('batch-stockStatus').value;
     const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
     const selIndices = getSelectedIndices();
     if (selIndices.length === 0) { toast('请先勾选产品'); return; }
@@ -1720,6 +1737,11 @@ async function batchApply() {
         if (levelVal) { applyEdit(p, 'brandLevel', levelVal); count++; }
         if (styleVal) { applyEdit(p, 'brandStyle', styleVal); count++; }
         if (priceVal) { applyEdit(p, 'priceRange', priceVal); count++; } if (regionVal) { applyEdit(p, 'region', regionVal); count++; }
+        if (productTypeVal) { applyEdit(p, 'productType', productTypeVal); count++; }
+        if (dropshipVal) { applyEdit(p, 'supportsDropship', dropshipVal); count++; }
+        if (deliveryVal) { applyEdit(p, 'deliveryFrom', deliveryVal); count++; }
+        if (stockTypeVal) { applyEdit(p, 'stockType', stockTypeVal); count++; }
+        if (stockStatusVal) { applyEdit(p, 'stockStatus', stockStatusVal); count++; }
     }
     // Brand migration last (mutates groups, shifts indices) — 仅品牌模式
     let newBrandName = null;
@@ -1807,11 +1829,11 @@ async function saveBrand() {
         const deleted = BRAND_DELETED[ACTIVE_BRAND] || [];
         const tx = DB.transaction('products', 'readwrite');
         const store = tx.objectStore('products');
-        for (const p of products) {
-            store.put(p);
-        }
         for (const d of deleted) {
             store.delete(d.id);
+        }
+        for (const p of products) {
+            store.put(p);
         }
         await new Promise((resolve, reject) => {
             tx.oncomplete = resolve;
@@ -1929,17 +1951,19 @@ async function saveAllToDB() {
         const tx = DB.transaction('products', 'readwrite');
         const store = tx.objectStore('products');
         for (const brand of DIRTY_BRANDS) {
+            const deleted = BRAND_DELETED[brand] || [];
+            for (const d of deleted) {
+                store.delete(d.id);
+                totalDeleted++;
+            }
+        }
+        for (const brand of DIRTY_BRANDS) {
             const prods = BRAND_GROUPS[brand];
             if (prods) {
                 for (const p of prods) {
                     store.put(p);
                     totalProducts++;
                 }
-            }
-            const deleted = BRAND_DELETED[brand] || [];
-            for (const d of deleted) {
-                store.delete(d.id);
-                totalDeleted++;
             }
         }
         await new Promise((resolve, reject) => {
