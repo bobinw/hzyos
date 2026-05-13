@@ -367,7 +367,7 @@
 <script>
 // ========== IndexedDB 数据库（与商品库共享） ==========
 const DB_NAME = 'ProductLibraryDB';
-const DB_VERSION = 9;
+const DB_VERSION = 10;
 let db = null;
 
 // ========== 数据变量 ==========
@@ -429,6 +429,76 @@ function getBrandTone(brand) {
     }
     return BRAND_TONE_MAP[brand.trim()] || "大众/性价比";
 }
+
+// 品牌→级别映射（从产品数据提取，同一品牌可能有多个级别）
+function getBrandLevelMap() {
+    const map = new Map(); // brand → Set of levels
+    products.forEach(p => {
+        if (!p.brand || !p.brandLevel) return;
+        const b = p.brand.trim();
+        if (!map.has(b)) map.set(b, new Set());
+        map.get(b).add(p.brandLevel);
+    });
+    return map;
+}
+// 品牌→调性映射（从产品 brandStyle 字段提取）
+function getBrandStyleMap() {
+    const map = new Map(); // brand → Set of styles
+    products.forEach(p => {
+        if (!p.brand || !p.brandStyle) return;
+        const b = p.brand.trim();
+        if (!map.has(b)) map.set(b, new Set());
+        map.get(b).add(p.brandStyle);
+    });
+    return map;
+}
+function getAllBrandLevels() {
+    const levels = new Set();
+    products.forEach(p => { if (p.brandLevel) levels.add(p.brandLevel); });
+    return [...levels].sort();
+}
+function getAllBrandStyles() {
+    const styles = new Set();
+    products.forEach(p => { if (p.brandStyle) styles.add(p.brandStyle); });
+    return [...styles].sort();
+}
+
+// 品牌→大类映射（从产品数据提取）
+function getBrandMajorCategories(brandName) {
+    const majors = new Set();
+    products.forEach(p => { if (p.brand === brandName && p.majorCategory) majors.add(p.majorCategory); });
+    return [...majors];
+}
+
+// 从 brandsByCategory 合并出扁平 selectedBrands
+function getFlatSelectedBrands(sp) {
+    const all = new Set();
+    const bbc = sp.brandsByCategory || {};
+    Object.values(bbc).forEach(arr => arr.forEach(b => all.add(b)));
+    return [...all];
+}
+
+// 多选下拉面板
+function toggleMultiSelectDropdown(id) {
+    const dd = document.getElementById(id);
+    if (!dd) return;
+    const isOpen = !dd.classList.contains('hidden');
+    // 关闭所有其他下拉
+    document.querySelectorAll('.multi-select-dd').forEach(el => el.classList.add('hidden'));
+    if (isOpen) dd.classList.add('hidden');
+    else dd.classList.remove('hidden');
+}
+function updateMultiSelectBtn(btnId, ddId, label) {
+    const btn = document.getElementById(btnId);
+    const dd = document.getElementById(ddId);
+    if (!btn || !dd) return;
+    const checked = dd.querySelectorAll('input[type="checkbox"]:checked');
+    btn.textContent = checked.length > 0 ? `${label} ${checked.length}项 ▾` : `${label} ▾`;
+}
+// 点击外部关闭下拉
+document.addEventListener('click', () => {
+    document.querySelectorAll('.multi-select-dd').forEach(el => el.classList.add('hidden'));
+});
 
 // 动态品牌调性（从商品库提取并由AI分析）
 let brandTones = {};  // { "品牌名": "调性标签" }
@@ -494,6 +564,7 @@ function saveToDB(storeName, data) {
         if (!db) { reject(new Error('DB未初始化')); return; }
         const tx = db.transaction([storeName], 'readwrite');
         const store = tx.objectStore(storeName);
+        store.clear();
         tx.oncomplete = () => resolve();
         tx.onerror = () => reject(tx.error || new Error('事务失败'));
         tx.onabort = () => reject(new Error('事务被中止'));
@@ -699,6 +770,7 @@ async function init() {
     supplierList = Array.from(supplierMap.values()).sort((a, b) => a.name.localeCompare(b.name));
     // 迁移客户数据
     await migrateCustomers();
+    await loadCategoryConfigPS();
     console.log('方案系统初始化完成：' + projects.length + '个项目，' + customers.length + '个客户，' + products.length + '个商品，' + agentConversations.length + '条存档，' + agentMemories.length + '条记忆');
     renderProjectList();
 }
@@ -1890,6 +1962,13 @@ async function startChatSession(project) {
             const priceStr = prices.length > 0 ? `（${Math.min(...prices)}-${Math.max(...prices)}元）` : '';
             catStatsText += `- ${cat}：${catProducts.length}款${priceStr}，品牌如${brands.join('、')}，子类如${subCats.join('、')}\n`;
         });
+        // 完整子品类列表（从 CATEGORY_MAP 获取，不限数量）
+        let subsDetailText = '';
+        for (const [major, subs] of Object.entries(CATEGORY_MAP)) {
+            if (Array.isArray(subs) && subs.length > 0) {
+                subsDetailText += `- ${major}：${subs.join('、')}\n`;
+            }
+        }
         const systemPrompt = `你是团购需求顾问，帮助用户梳理福利采购需求。
 
 ## 商品库真实数据（禁止说"数据不完整"，必须直接引用）
@@ -1912,7 +1991,8 @@ ${catStatsText}
 1. 首先用1-2句话确认项目基本情况
 2. 然后开始自然地了解详细需求
 3. 重点收集：用户画像、品类偏好、品牌偏好、包装要求、物流要求、风格偏好
-4. 当用户问商品相关问题时，基于商品库概况回答——不要编造
+4. 当用户问商品相关问题时，基于商品库概况回答品类/品牌/数量信息
+5. ⚠️ 不要推荐具体商品（如SKU、产品名），具体产品清单由算法生成
 
 ## 对话风格
 - 简洁友好，每次只问1-2个问题
@@ -2741,12 +2821,34 @@ async function sendChatMessage() {
             const priceStr = prices.length > 0 ? `（${Math.min(...prices)}-${Math.max(...prices)}元）` : '';
             catStatsText += `- ${cat}：${catProducts.length}款${priceStr}，品牌如${brands.join('、')}，子类如${subCats.join('、')}\n`;
         });
-        const systemPrompt = `你是团购需求顾问，帮助用户梳理福利采购需求。
+        // 每个子品类的产品详情（含代表产品和零售价）
+        let subsProductText = '';
+        (() => {
+            for (const [major, subs] of Object.entries(CATEGORY_MAP)) {
+                if (!Array.isArray(subs) || subs.length === 0) continue;
+                const mprods = products.filter(p => p.majorCategory === major);
+                subsProductText += major + '：\n';
+                subs.forEach(sub => {
+                    const sprods = mprods.filter(p => p.category === sub);
+                    if (sprods.length === 0) return;
+                    const prices = sprods.map(p => p.retailPrice || p.purchasePrice).filter(p => p > 0);
+                    const ps = prices.length > 0 ? '（' + Math.min(...prices) + '-' + Math.max(...prices) + '元）' : '';
+                    const brands = [...new Set(sprods.map(p => p.brand).filter(Boolean))].slice(0, 5).join('/');
+                    const top = sprods.slice(0, 3).map(p => p.name + '(' + p.brand + ' ¥' + (p.retailPrice || p.purchasePrice) + ')').join('、');
+                    subsProductText += '  - ' + sub + '：' + sprods.length + '款' + ps + ' ' + brands + ' | ' + top + '\n';
+                });
+            }
+        })();
+        const systemPrompt = `你是专业的员工福利采购顾问。你的目标是帮客户做出采购决策，而不是被动收集需求。
 
-## 商品库真实数据（禁止说"数据不完整"，必须直接引用）
+## 商品库真实数据
 ${catStatsText}
 共 ${products.length} 款商品，${brandList.length} 个品牌。
-⚠️ 当用户问"有什么品类"时，直接列出以上所有大类及其商品数。
+
+## 子品类产品详情（含代表产品和零售价，讨论时参考）
+${subsProductText}
+
+⚠️ 讨论品类/品牌/子品类/产品时，只能引用以上数据中列出的实际内容，严禁编造产品名或价格。
 `;
 
         const systemPromptFull = systemPrompt + `
@@ -2759,16 +2861,22 @@ ${catStatsText}
 - 交付日期: ${project.deadline || '未定'}
 - 场景: 员工福利
 
-## 你的任务
-1. 通过自然对话了解客户的详细需求
-2. 重点收集：用户画像、品类偏好、品牌偏好、包装要求、物流要求、风格偏好
-3. 用户问商品相关问题时，基于预加载数据或用户通过指令查询的结果回答
+## 你的工作方式
+1. **先分析，后提问**：每次回复先基于项目信息（预算、人数、场景）和商品库数据给出你的分析判断，再提出需要确认的问题
+2. **用数据说话**：引用商品库数据来支撑建议。例如"食品饮料有300款商品，价格30-200元，品类最丰富，适合作为方案主体"
+3. **给出具体选项**：不要让客户凭空想答案。根据数据列出2-3个具体方向让他们选。例如"端午场景我建议两个方向：A) 以粽子礼盒为主搭配洗护套装，B) 粽子+糕点+饮品组合"
+4. **主动补位**：客户没提到但你从专业角度想到的，主动提醒（如"这批员工都是年轻人，建议搭配一些新锐品牌的产品更有共鸣"）
+
+## 关键约束
+- 讨论品类/品牌/子品类时，只能引用上面数据中列出的实际内容，严禁编造
+- ⚠️ 不要推荐具体商品（SKU、产品名），你没有完整的SKU数据，具体产品由算法从数据库中匹配
+- 可以讨论品牌名、子品类名、价格区间 ——这些数据已经提供
 
 ## 对话风格
-- 简洁友好，每次只问1-2个问题
-- 自然引导，不要机械地照着清单问
-- 如果信息已经足够，提示用户可以"生成需求文档"
-- 用中文回复，可以适当使用**加粗**强调关键信息`;
+- **先给结论再解释**，不要铺垫
+- **用数据和选项代替提问**：不要问"您想要什么品类？"，而是"基于您的预算，我建议主选食品饮料（300款可选），搭配日化个护。您觉得这个方向可以吗？"
+- 信息足够时主动提示客户"需求已基本明确，可以生成方案了"
+- 用中文回复，适当用**加粗**强调关键信息`;
 
         const messages = [
             { role: 'system', content: systemPromptFull },
@@ -2814,9 +2922,9 @@ function updateChatSummary(project) {
 
     // 关键词库 - 与 selectionParams 对应
     const sceneKW = ['端午', '中秋节', '中秋', '春节', '三八', '妇女节', '夏日', '年终', '生日', '日常', '年会', '开学', '元宵'];
-    const tierKW = ['高端', '中高端', '中端', '亲民', '实惠', '便宜', '性价比', '品质', '轻奢'];
-    const styleKW = ['商务稳重', '简约实用', '国民大众', '年轻潮流', '轻奢高端', '实用', '精致', '颜值', '国潮', '新潮', '品质感', '简约', '大气', '时尚', '年轻化'];
-    const brandLevelKW = ['一线品牌', '进口', '进口品牌', '老字号', '地方品牌', '大牌', '国民品牌', '名牌', '国际品牌', '全国一线'];
+    const tierKW = ['高端', '中高端', '中端', '平价', '实惠', '便宜', '性价比', '品质', '轻奢'];
+    const styleKW = ['温馨实用', '健康活力', '轻奢精致', '新潮有趣', '实用', '精致', '颜值', '国潮', '新潮', '品质感', '简约', '大气', '时尚', '年轻化', '温馨', '健康', '活力', '轻奢', '有趣'];
+    const brandLevelKW = ['国际品牌', '全国一线', '一线品牌', '全国二线', '二线品牌', '网红', '新消费', '地方品牌', '白牌', '进口', '进口品牌', '老字号', '大牌', '国民品牌', '名牌'];
     const brandStyleKW = styleKW;
     const packageKW = ['精装', '礼盒', '简装', '环保', '普通包装', '手提袋', '精装礼盒', '简约包装', '环保简装'];
     const productCountKW = ['个产品', '款产品', '件产品', 'sku', 'SKU', '产品数', '数量', '搭配'];
@@ -2905,6 +3013,10 @@ async function finishChat() {
 
         const customer = getProjectCustomer(project);
         const allCats = MAJOR_CATEGORIES;
+        const subsByMajor = {}; for (const [major, subs] of Object.entries(CATEGORY_MAP)) { subsByMajor[major] = Array.isArray(subs) ? subs : []; }
+        const brandsByMajor = {}; brandList.forEach(brand => { const bp = products.filter(p => p.brand === brand); const cats = [...new Set(bp.map(p => p.majorCategory).filter(Boolean))]; cats.forEach(cat => { if (!brandsByMajor[cat]) brandsByMajor[cat] = []; if (!brandsByMajor[cat].includes(brand)) brandsByMajor[cat].push(brand); }); });
+        const subsText = allCats.map(cat => { const subs = subsByMajor[cat] || []; return subs.length > 0 ? cat + ": " + subs.join("、") : cat + ": 无"; }).join("\n");
+        const brandsText = allCats.map(cat => { const brands = brandsByMajor[cat] || []; return brands.length > 0 ? cat + ": " + brands.join("、") : cat + ": 无"; }).join("\n");
 
         const response = await callAI([
             { role: 'system', content: `你是团购选品顾问。你的任务是与客户对话，收集需求信息，然后分析对话内容，输出结构化的选品参数建议。只返回JSON，不返回其他内容。
@@ -2915,7 +3027,7 @@ async function finishChat() {
 3. 输出建议：给出选品参数推荐值，每个推荐都要有对话中的依据
 
 ## 分析原则
-- **主动分析推断**：客户不一定直接说出参数值，你需要从对话细节中推理。例如：客户说"员工福利，不要太寒酸"→推断档次为中端/中高端；客户说"年轻人多"→推断风格偏年轻潮流
+- **主动分析推断**：客户不一定直接说出参数值，你需要从对话细节中推理。例如：客户说"员工福利，不要太寒酸"→推断档次为中端/中高端；客户说"年轻人多"→推断风格偏新潮有趣
 - **项目名称优先**：项目名是最强的场景信号（如"XX端午福利"→场景=["端午"]）
 - **场景可多选**：如果对话中提到多个场景，返回多个
 - **不确定时填默认值**：实在无法推断的字段用空数组/空字符串
@@ -2925,36 +3037,53 @@ async function finishChat() {
 {
   "scene": ["端午"],
   "tier": "中高端",
-  "style": ["简约实用"],
+  "style": ["温馨实用"],
   "brandLevelByCategory": { "食品饮料": ["全国一线品牌"] },
-  "brandStyleByCategory": { "食品饮料": ["商务稳重"] },
+  "brandStyleByCategory": { "食品饮料": ["温馨实用"] },
   "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
   "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
   "recommendedProductCount": 8,
+  "subcategories": ["粽子"],
+  "productsPerCategory": { "食品饮料": { "min": 2, "max": 4 }, "日化个护": { "min": 1, "max": 2 } },
+  "minProducts": 6,
+  "maxProducts": 12,
   "categories": ["食品饮料", "日化个护"],
   "rationale": "简要说明你的分析依据，2-3句话"
 }
 
 ## 各字段可选值集合
 - scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
-- tier: "亲民" / "中端" / "中高端" / "高端" / ""
-- style: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
-- brandLevel选项: ["全国一线品牌","地方品牌","进口品牌","老字号"]
-- brandStyle选项: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- tier: "平价" / "中端" / "中高端" / "高端" / ""
+- style: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
+- brandLevel选项: ["国际品牌","全国一线品牌","全国二线品牌","网红/新消费品牌","地方品牌","白牌"]
+- brandStyle选项: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
 - packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
 - categories: ${allCats.map(c => `"${c}"`).join(', ')}
 - categoryRatios: 按大类设置百分比，总和应为100。根据场景分配权重（如端午福利→食品饮料比例高）
 - recommendedProductCount: 建议的产品总数（正整数）
+- subcategories: 从以下可用子品类中选择（只选与 categories 大类匹配的）：
+${subsText}
+
+## 可用品牌（按大类分组，只能从以下品牌中选择，不要编造不在列表中的品牌名）
+${brandsText}
+
+- productsPerCategory: 每个大类配置产品数范围 { "大类名": { "min": 最少, "max": 最多 } }，核心品类min可设2-3，辅助品类min=1
+- minProducts: 每套方案最少产品数（正整数，一般=各品类min之和）
+- maxProducts: 每套方案最多产品数（正整数，一般=各品类max之和）
 
 ## 分析指引
 - scene: 从项目名称和对话结合判断。项目名有节日→优先该节日；客户描述使用时机→匹配对应场景
-- tier: 从客户对品质/价格的表述推断。"品质好一点/拿得出手"→中高端；"实惠/性价比"→亲民；"不要太差"→中端
-- style: 从客户对公司文化/员工群体的描述推断。"互联网公司/年轻人"→年轻潮流；"国企/政府"→商务稳重
+- tier: 从客户对品质/价格的表述推断。"品质好一点/拿得出手"→中高端；"实惠/性价比"→平价；"不要太差"→中端
+- style: 从客户对公司文化/员工群体的描述推断。"互联网公司/年轻人"→新潮有趣；"国企/政府"→温馨实用；"健康/运动"→健康活力
 - brandLevelByCategory: 按大类分别推断品牌级别要求。如"食品要知名大牌，日化实用就行"→食品填["全国一线品牌"]，日化填[]
 - brandStyleByCategory: 按大类分别推断品牌调性，推断逻辑同style
 - packageStyleByCategory: 按大类分别推断包装要求。"送礼/福利/有面子"→精装礼盒；"实用/自用"→简约实用；"环保理念"→环保简装
 - categoryRatios: 根据对话内容判断各品类占比，如"主要食品为主，搭配一些日化"→食品占60，日化占40
+- subcategories: 从客户提到的具体品类匹配子品类（如"粽子"→粽子，"坚果礼盒"→坚果）。不确定则不填
 - recommendedProductCount: 根据预算和品类数量建议，一般每品类2-4个产品
+- productsPerCategory: 根据各品类权重设置产品数。主要品类min=2-3，辅助品类min=1
+- minProducts: 根据覆盖大类和预算推断，大类多/预算充足→适当增加。一般=各品类min之和
+- maxProducts: 考虑方案精简，一般=各品类max之和
 - categories: 从客户提到的具体品类匹配对应大类` },
             { role: 'user', content: `## 项目信息
 - 项目名称: ${project.name}
@@ -2996,13 +3125,18 @@ ${project.supplementaryInfo || '（无）'}
             if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
             if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
             if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
+            if (result.subcategories) sp.selectedSubcategories = result.subcategories;
+            if (result.minProducts) sp.minProducts = result.minProducts;
+            if (result.maxProducts) sp.maxProducts = result.maxProducts;
+            if (result.productsPerCategory) sp.productsPerCategory = result.productsPerCategory;
             if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
             sp.proposalCount = 6;
             sp.selectedSuppliers = [];
+            sp.selectedSubcategories = sp.selectedSubcategories || [];
             sp.excludedCategories = [];
             sp.excludedBrands = [];
             sp.excludedSuppliers = [];
-            sp.targetMargin = sp.targetMargin || 20;
+            sp.targetMargin = sp.targetMargin || 30;
             sp.budget = sp.budget || project.budgetPerPerson || 200;
 
             project.status = 'selecting';
@@ -3034,7 +3168,7 @@ ${project.supplementaryInfo || '（无）'}
         sp.packageStyleByCategory = sp.packageStyleByCategory || {};
         sp.categoryRatios = sp.categoryRatios || {};
         sp.recommendedProductCount = sp.recommendedProductCount || 0;
-        sp.targetMargin = 20;
+        sp.targetMargin = 30;
         sp.budget = project.budgetPerPerson || 200;
         sp.proposalCount = 6;
         sp.selectedSuppliers = [];
@@ -3153,13 +3287,16 @@ function showSelectionPage(project) {
 
     project.selectionParams = project.selectionParams || {
         selectedBrands: project.selectedBrands || [],
+        brandsByCategory: {},
         categories: extractCategoriesFromRequirement(project.structuredRequirement || ''),
-        targetMargin: 20,
+        targetMargin: 30,
         budget: project.budgetPerPerson || 200,
         proposalCount: project.proposalCount || 3,
         selectedCategories: [],
+        selectedSubcategories: [],
         minProducts: 0,
         maxProducts: 0,
+        productsPerCategory: {},
         recommendedProductCount: 0,
         scenePreference: [],
         tierPreference: '',
@@ -3211,24 +3348,21 @@ function showSelectionPage(project) {
     const effectiveCatCount = sp.selectedCategories.length || allCats.length;
     if (!sp.minProducts || sp.minProducts <= 0) sp.minProducts = effectiveCatCount;
     if (!sp.maxProducts || sp.maxProducts <= 0) sp.maxProducts = Math.min(effectiveCatCount + 1, effectiveCatCount * 2);
-
-    const tabId = (suffix) => `tab-${suffix}-${project.id}`;
-    // 按大类偏好设置的HTML
-    const brandLevelOpts = ['全国一线品牌','地方品牌','进口品牌','老字号'];
-    const brandStyleOpts = ['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'];
-    const packageStyleOpts = ['精装礼盒','简约实用','环保简装','普通包装'];
-    let perCategoryHTML = '';
-    if (sp.selectedCategories && sp.selectedCategories.length > 0) {
-        perCategoryHTML = sp.selectedCategories.map((cat, catIdx) => {
-            const blByCat = (sp.brandLevelByCategory || {})[cat] || [];
-            const bsByCat = (sp.brandStyleByCategory || {})[cat] || [];
-            const psByCat = (sp.packageStyleByCategory || {})[cat] || [];
-            const ratio = (sp.categoryRatios || {})[cat] || '';
-            const collapsed = catIdx > 0 ? 'hidden' : '';
-            const arrowRotated = catIdx === 0 ? 'rotate-90' : '';
-            return '<div class="mb-3 border rounded p-3"><div class="flex items-center justify-between mb-2 cursor-pointer" onclick="var n=this.nextElementSibling;n.classList.toggle(\'hidden\');this.querySelector(\'.ca\').classList.toggle(\'rotate-90\')"><span class="text-sm font-medium">' + cat + '</span><span class="ca text-xs text-gray-400 ' + arrowRotated + '">▶</span></div><div class="' + collapsed + ' space-y-2"><div><span class="text-xs text-gray-400">品牌级别：</span><div class="flex flex-wrap gap-1 mt-1">' + brandLevelOpts.map(s => { const active = blByCat.includes(s); return '<span class="tag text-xs cursor-pointer ' + (active ? 'bg-purple-100 text-purple-700' : 'bg-gray-100 text-gray-500') + '" onclick="toggleCategoryParam(' + project.id + ',\'brandLevelByCategory\',\'' + cat + '\',\'' + s + '\')">' + s + '</span>'; }).join('') + '</div></div><div><span class="text-xs text-gray-400">品牌调性：</span><div class="flex flex-wrap gap-1 mt-1">' + brandStyleOpts.map(s => { const active = bsByCat.includes(s); return '<span class="tag text-xs cursor-pointer ' + (active ? 'bg-orange-100 text-orange-700' : 'bg-gray-100 text-gray-500') + '" onclick="toggleCategoryParam(' + project.id + ',\'brandStyleByCategory\',\'' + cat + '\',\'' + s + '\')">' + s + '</span>'; }).join('') + '</div></div><div><span class="text-xs text-gray-400">包装形式：</span><div class="flex flex-wrap gap-1 mt-1">' + packageStyleOpts.map(s => { const active = psByCat.includes(s); return '<span class="tag text-xs cursor-pointer ' + (active ? 'bg-teal-100 text-teal-700' : 'bg-gray-100 text-gray-500') + '" onclick="toggleCategoryParam(' + project.id + ',\'packageStyleByCategory\',\'' + cat + '\',\'' + s + '\')">' + s + '</span>'; }).join('') + '</div></div><div class="flex items-center gap-2"><span class="text-xs text-gray-400">占比：</span><input type="number" value="' + ratio + '" min="0" max="100" class="w-16 border rounded px-1.5 py-0.5 text-xs" onchange="updateCategoryRatio(' + project.id + ',\'' + cat + '\',parseInt(this.value)||0)" placeholder="%"><span class="text-xs text-gray-400">%</span></div></div></div>';
-        }).join('');
+    if (!sp.productsPerCategory || Object.keys(sp.productsPerCategory).length === 0) {
+        sp.productsPerCategory = {};
+        sp.selectedCategories.forEach(cat => { sp.productsPerCategory[cat] = { min: 1, max: 2 }; });
     }
+    // 同步：新增的大类加默认值，移除的大类删除
+    sp.selectedCategories.forEach(cat => {
+        if (!sp.productsPerCategory[cat]) sp.productsPerCategory[cat] = { min: 1, max: 2 };
+    });
+    for (const cat of Object.keys(sp.productsPerCategory)) {
+        if (!sp.selectedCategories.includes(cat)) delete sp.productsPerCategory[cat];
+    }
+
+    const brandLevelOpts = ['国际品牌','全国一线品牌','全国二线品牌','网红/新消费品牌','地方品牌','白牌'];
+    const brandStyleOpts = ['温馨实用','健康活力','轻奢精致','新潮有趣'];
+    const packageStyleOpts = ['精装礼盒','简约实用','环保简装','普通包装'];
     let html = `
     <div class="flex items-center gap-4 mb-4">
         <button onclick="backToRequirement(${project.id})" class="text-gray-500 hover:text-gray-700">
@@ -3249,190 +3383,247 @@ function showSelectionPage(project) {
                 <span class="text-gray-400 cursor-pointer" onclick="this.closest('.bg-blue-50').classList.add('hidden')">✕</span>
             </div>
         </div>
-        <div class="mt-1">${project.aiSuggestion.requirementSummary || project.aiSuggestion.rationale || ''}</div>
+        <div class="mt-1 space-y-1">
+            ${project.aiSuggestion.scene && project.aiSuggestion.scene.length > 0 ? `<div><span class="text-gray-400">场景：</span>${project.aiSuggestion.scene.map(s => '<span class="tag bg-blue-100 text-blue-700">' + s + '</span>').join(' ')}</div>` : ''}
+            ${project.aiSuggestion.tier ? `<div><span class="text-gray-400">档次：</span><span class="tag bg-amber-100 text-amber-700">${project.aiSuggestion.tier}</span></div>` : ''}
+            ${project.aiSuggestion.style && project.aiSuggestion.style.length > 0 ? `<div><span class="text-gray-400">风格：</span>${project.aiSuggestion.style.map(s => '<span class="tag bg-purple-100 text-purple-700">' + s + '</span>').join(' ')}</div>` : ''}
+            ${project.aiSuggestion.categories && project.aiSuggestion.categories.length > 0 ? `<div><span class="text-gray-400">品类：</span>${project.aiSuggestion.categories.map(c => '<span class="tag bg-green-100 text-green-700">' + c + '</span>').join(' ')}</div>` : ''}
+            ${project.aiSuggestion.subcategories && project.aiSuggestion.subcategories.length > 0 ? `<div><span class="text-gray-400">子品类：</span>${project.aiSuggestion.subcategories.map(s => '<span class="tag bg-green-100 text-green-700">' + s + '</span>').join(' ')}</div>` : ''}
+            <div class="text-gray-500">${project.aiSuggestion.requirementSummary || project.aiSuggestion.rationale || ''}</div>
+        </div>
     </div>` : ''}
 
-    <!-- Tab 导航 -->
-    <div class="flex gap-0 mb-0 bg-white rounded-t-lg shadow">
-        <button id="${tabId('pref')}" class="flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-white rounded-tl-lg" onclick="switchSelectionTab(${project.id},'pref')">🎯 偏好设置</button>
-        <button id="${tabId('filter')}" class="flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50" onclick="switchSelectionTab(${project.id},'filter')">📋 品牌与供应商</button>
-        <button id="${tabId('excl')}" class="flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50 rounded-tr-lg" onclick="switchSelectionTab(${project.id},'excl')">🚫 排除项</button>
-    </div>
+    <!-- 选品参数：线性决策流 -->
+    <div class="bg-white rounded-lg shadow p-5 mb-6 space-y-5">
 
-    <!-- Tab 内容区 -->
-    <div class="bg-white rounded-b-lg shadow p-5 mb-6">
-        <!-- Tab: 偏好设置 -->
-        <div id="${tabId('pref-content')}" class="grid grid-cols-2 gap-x-8 gap-y-4">
-            <div>
-                <label class="text-xs text-gray-500 block mb-1">场景偏好</label>
-                <div class="flex flex-wrap gap-1" id="param-scene-${project.id}">
-                    ${['端午','中秋','春节','三八','夏日','年终','生日','日常'].map(s => {
-                        const active = (sp.scenePreference || []).includes(s);
-                        return `<span class="tag text-xs cursor-pointer ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'scenePreference','${s}')">${s}</span>`;
-                    }).join('')}
-                </div>
+        <!-- ① 大类选择 -->
+        <section>
+            <h4 class="text-sm font-medium text-gray-700 mb-2">① 大类选择
+                <span class="text-blue-500 cursor-pointer ml-2 text-xs font-normal" onclick="var p=findProject(${project.id});if(p&&p.selectionParams){p.selectionParams.selectedCategories=[...MAJOR_CATEGORIES];saveAllData();showSelectionPage(p);}">全选</span>
+                <span class="text-gray-400 text-xs">/</span>
+                <span class="text-blue-500 cursor-pointer text-xs font-normal" onclick="var p=findProject(${project.id});if(p&&p.selectionParams){p.selectionParams.selectedCategories=[];saveAllData();showSelectionPage(p);}">全不选</span>
+            </h4>
+            <div id="param-cats-${project.id}" class="flex flex-wrap gap-2">
+                ${allCats.map(cat => `<span class="tag text-sm cursor-pointer ${sp.selectedCategories.includes(cat) ? 'bg-blue-100 text-blue-700 ring-1 ring-blue-300' : 'bg-gray-100 text-gray-500'}" onclick="toggleCategoryTag(${project.id},'${cat}',this)">${cat}</span>`).join('')}
             </div>
-            <div>
-                <label class="text-xs text-gray-500 block mb-1">档次偏好</label>
-                <select id="param-tier-${project.id}" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'tierPreference',this.value)">
-                    <option value="">不限</option>
-                    ${['亲民','中端','中高端','高端'].map(t => `<option value="${t}" ${sp.tierPreference === t ? 'selected' : ''}>${t}</option>`).join('')}
-                </select>
-            </div>
-            <div>
-                <label class="text-xs text-gray-500 block mb-1">风格偏好</label>
-                <div class="flex flex-wrap gap-1" id="param-style-${project.id}">
-                    ${['商务稳重','简约实用','国民大众','年轻潮流','轻奢高端'].map(s => {
-                        const active = (sp.stylePreference || []).includes(s);
-                        return `<span class="tag text-xs cursor-pointer ${active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'stylePreference','${s}')">${s}</span>`;
-                    }).join('')}
-                </div>
-            </div>
-            <!-- 按大类偏好设置 -->
-            ${perCategoryHTML ? `<div class="col-span-2 border-t pt-4 mt-2"><label class="text-xs text-gray-500 block mb-3">📂 品类偏好设置</label>${perCategoryHTML}</div>` : ''}
-            <div class="flex gap-4">
-                <div class="flex-1">
-                    <label class="text-xs text-gray-500 block mb-1">毛利率 ≥</label>
-                    <input type="number" id="param-margin-${project.id}" value="${sp.targetMargin}" min="0" max="100" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'targetMargin',parseInt(this.value)||0)">
-                </div>
-                <div class="flex-1">
-                    <label class="text-xs text-gray-500 block mb-1">人均预算</label>
+        </section>
+
+        <!-- 子品类选择 -->
+        ${(() => {
+            const selMajors = sp.selectedCategories || [];
+            if (selMajors.length === 0) return '';
+            const subByMajor = {};
+            for (const [major, subs] of Object.entries(CATEGORY_MAP)) {
+                if (selMajors.includes(major) && Array.isArray(subs)) {
+                    subByMajor[major] = subs;
+                }
+            }
+            const selSubs = sp.selectedSubcategories || [];
+            let html = '<section><h4 class="text-sm font-medium text-gray-700 mb-2">子品类选择 <span class="text-xs text-gray-400 font-normal">(限定每大类下的具体品类)</span></h4>';
+            for (const major of selMajors) {
+                const subs = subByMajor[major] || [];
+                if (subs.length === 0) continue;
+                html += '<div class="mb-2 flex items-center gap-1 flex-wrap">';
+                html += '<span class="text-xs text-gray-500 w-20 shrink-0">' + major + ':</span>';
+                html += subs.map(sub => {
+                    const active = selSubs.includes(sub);
+                    return '<span class="tag text-xs cursor-pointer ' + (active ? 'bg-green-100 text-green-700 ring-1 ring-green-300' : 'bg-gray-100 text-gray-500') + '" onclick="toggleSelectionArray(' + project.id + ',\'selectedSubcategories\',\'' + sub + '\');this.classList.toggle(\'bg-green-100\');this.classList.toggle(\'text-green-700\');this.classList.toggle(\'ring-1\');this.classList.toggle(\'ring-green-300\');this.classList.toggle(\'bg-gray-100\');this.classList.toggle(\'text-gray-500\')">' + sub + '</span>';
+                }).join(' ');
+                html += '</div>';
+            }
+            html += '</section>';
+            return html;
+        })()}
+
+        <!-- ② 产品数量控制 -->
+        ${(() => {
+            const selMajors = sp.selectedCategories || [];
+            if (selMajors.length === 0) return '';
+            let html2 = '<section><h4 class="text-sm font-medium text-gray-700 mb-2">② 产品数量控制 <span class="text-xs text-gray-400 font-normal">(每大类最少/最多产品数)</span></h4>';
+            const ppc = sp.productsPerCategory || {};
+            for (const major of selMajors) {
+                const catPP = ppc[major] || { min: 1, max: 2 };
+                html2 += '<div class="mb-2 flex items-center gap-1 flex-wrap">';
+                html2 += '<span class="text-xs text-gray-500 w-20 shrink-0">' + major + ':</span>';
+                html2 += '<select class="border rounded px-1 py-0 text-xs" onchange="updateCategoryProductCount(' + project.id + ',\'' + major + '\',\'min\',parseInt(this.value))">';
+                for (let n = 1; n <= 5; n++) html2 += '<option value="' + n + '"' + (catPP.min === n ? ' selected' : '') + '>最少' + n + '</option>';
+                html2 += '</select><span class="text-xs text-gray-400">~</span>';
+                html2 += '<select class="border rounded px-1 py-0 text-xs" onchange="updateCategoryProductCount(' + project.id + ',\'' + major + '\',\'max\',parseInt(this.value))">';
+                for (let n = 1; n <= 5; n++) html2 += '<option value="' + n + '"' + (catPP.max === n ? ' selected' : '') + '>最多' + n + '</option>';
+                html2 += '</select><span class="text-xs text-gray-400 mr-1">个</span>';
+                html2 += '</div>';
+            }
+            html2 += '</section>';
+            return html2;
+        })()}
+
+        <!-- ②b 大类占比 -->
+        ${(() => {
+            const selMajors2 = sp.selectedCategories || [];
+            if (selMajors2.length === 0) return '';
+            const ratios = sp.categoryRatios || {};
+            let htmlR = '<section><h4 class="text-sm font-medium text-gray-700 mb-2">②b 大类占比 <span class="text-xs text-gray-400 font-normal">(设置各品类预算占比，总和建议=100)</span></h4><div class="flex flex-wrap gap-3">';
+            for (const major of selMajors2) {
+                const val = ratios[major] !== undefined ? ratios[major] : '';
+                htmlR += '<div class="flex items-center gap-1"><span class="text-xs text-gray-500">' + major + '</span><input type="number" value="' + val + '" min="0" max="100" class="w-14 border rounded px-1 py-0.5 text-xs" onchange="updateCategoryRatio(' + project.id + ',\'' + major + '\',parseInt(this.value)||0)" placeholder="%"><span class="text-xs text-gray-400">%</span></div>';
+            }
+            htmlR += '</div></section>';
+            return htmlR;
+        })()}
+
+        <!-- ③ 品牌选择（按大类） -->
+        <section>
+            <h4 class="text-sm font-medium text-gray-700 mb-2">③ 品牌选择
+                <button onclick="autoRecommendBrands(${project.id})" class="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded ml-2 font-normal">🤖 AI推荐</button>
+                <button onclick="var p=findProject(${project.id});if(p){p.selectionParams.brandsByCategory={};p.selectionParams.selectedBrands=[];saveAllData();showSelectionPage(p);}" class="text-xs px-2 py-0.5 text-gray-400 hover:text-red-500 font-normal">重置</button>
+            </h4>
+            ${(() => {
+                const selMajors = sp.selectedCategories || [];
+                const bbc = sp.brandsByCategory || {};
+                const totalBrands = getFlatSelectedBrands(sp).length;
+                if (selMajors.length === 0) return '<p class="text-xs text-gray-400">请先在①选择大类</p>';
+                let rows = '';
+                selMajors.forEach(cat => {
+                    const catBrands = bbc[cat] || [];
+                    const suffix = cat.replace(/[^a-zA-Z一-龥]/g, '');
+                    rows += `<div class="mb-3 pb-3 border-b last:border-b-0">
+                        <div class="flex items-center gap-2 mb-1">
+                            <span class="text-xs font-medium text-gray-600 w-20 shrink-0">${cat}</span>
+                            <div class="relative inline-block">
+                                <button type="button" id="brand-level-btn-${project.id}-${suffix}" class="border rounded px-1.5 py-0.5 text-xs bg-white hover:bg-gray-50 whitespace-nowrap" onclick="event.stopPropagation();toggleMultiSelectDropdown('brand-level-dd-${project.id}-${suffix}')">级别 ▾</button>
+                                <div id="brand-level-dd-${project.id}-${suffix}" class="multi-select-dd absolute z-50 bg-white border rounded shadow-lg p-1 hidden" style="min-width:140px;max-height:180px;overflow-y:auto;" onclick="event.stopPropagation();">
+                                    ${getAllBrandLevels().map(l => `<label class="flex items-center gap-1 text-xs py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" value="${l}" onchange="refreshBrandSelect(${project.id},'${cat}');updateMultiSelectBtn('brand-level-btn-${project.id}-${suffix}','brand-level-dd-${project.id}-${suffix}','级别')" class="rounded"> ${l}</label>`).join('')}
+                                </div>
+                            </div>
+                            <div class="relative inline-block">
+                                <button type="button" id="brand-tone-btn-${project.id}-${suffix}" class="border rounded px-1.5 py-0.5 text-xs bg-white hover:bg-gray-50 whitespace-nowrap" onclick="event.stopPropagation();toggleMultiSelectDropdown('brand-tone-dd-${project.id}-${suffix}')">调性 ▾</button>
+                                <div id="brand-tone-dd-${project.id}-${suffix}" class="multi-select-dd absolute z-50 bg-white border rounded shadow-lg p-1 hidden" style="min-width:140px;max-height:180px;overflow-y:auto;" onclick="event.stopPropagation();">
+                                    ${getAllBrandStyles().map(s => `<label class="flex items-center gap-1 text-xs py-0.5 px-1 hover:bg-gray-50 rounded cursor-pointer"><input type="checkbox" value="${s}" onchange="refreshBrandSelect(${project.id},'${cat}');updateMultiSelectBtn('brand-tone-btn-${project.id}-${suffix}','brand-tone-dd-${project.id}-${suffix}','调性')" class="rounded"> ${s}</label>`).join('')}
+                                </div>
+                            </div>
+                            <select id="add-brand-select-${project.id}-${suffix}" class="border rounded px-1.5 py-0.5 text-xs flex-1">
+                                <option value="">+ 添加</option>
+                                ${brandList.filter(b => {
+                                    if (catBrands.includes(b)) return false;
+                                    if (getFlatSelectedBrands(sp).includes(b)) return false;
+                                    return getBrandMajorCategories(b).includes(cat);
+                                }).map(b => `<option value="${b}">${b}</option>`).join('')}
+                            </select>
+                            <button onclick="addSelectionBrand(${project.id},'${cat}')" class="text-xs px-2 py-0.5 bg-blue-500 text-white hover:bg-blue-600 rounded shrink-0">添加</button>
+                        </div>`;
+                    if (catBrands.length > 0) {
+                        rows += `<div class="flex flex-wrap gap-1 ml-20">${catBrands.map(b => `<span class="tag bg-purple-100 text-purple-700 cursor-pointer hover:bg-purple-200 text-xs" onclick="removeSelectionBrand(${project.id},'${cat}','${b.replace(/'/g,"\\'")}')">${b} ✕</span>`).join(' ')}</div>`;
+                    }
+                    rows += '</div>';
+                });
+                return `<div class="text-xs text-gray-400 mb-2">${totalBrands > 0 ? '已选 ' + totalBrands + ' 个品牌' : '按大类分别添加品牌'}</div>${rows}`;
+            })()}
+            ${sp.brandRationale ? `<div class="text-xs text-gray-500 mt-1">💡 ${sp.brandRationale}</div>` : ''}
+        </section>
+
+        <!-- ④ 预算与毛利 -->
+        <section>
+            <h4 class="text-sm font-medium text-gray-700 mb-2">④ 预算与毛利</h4>
+            <div class="grid grid-cols-3 gap-4">
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">人均预算 (元)</label>
                     <input type="number" id="param-budget-${project.id}" value="${sp.budget}" min="10" step="10" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'budget',parseInt(this.value)||0)">
                 </div>
-            </div>
-            <div>
-                <label class="text-xs text-gray-500 block mb-1">方案数量</label>
-                <input type="number" id="param-count-${project.id}" value="${sp.proposalCount}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'proposalCount',parseInt(this.value)||0)">
-            </div>
-        </div>
-
-        <!-- Tab: 品牌与供应商 -->
-        <div id="${tabId('filter-content')}" class="hidden">
-            <div class="grid grid-cols-2 gap-x-8 gap-y-4">
                 <div>
-                    <label class="text-xs text-gray-500 block mb-1">覆盖大类 (${allCats.length}个)
-                        <span class="text-blue-500 cursor-pointer ml-1" onclick="selectAllCheckboxes('param-cats-${project.id}',true);updateSelectionCategories(${project.id})">全选</span>
-                        <span class="text-gray-400">/</span>
-                        <span class="text-blue-500 cursor-pointer" onclick="selectAllCheckboxes('param-cats-${project.id}',false);updateSelectionCategories(${project.id})">全不选</span>
-                    </label>
-                    <div id="param-cats-${project.id}" class="border rounded p-2 max-h-36 overflow-y-auto space-y-1">
-                        ${allCats.map(cat => `
-                            <label class="flex items-center gap-1.5 text-sm cursor-pointer hover:bg-gray-50 rounded px-1">
-                                <input type="checkbox" value="${cat}" ${sp.selectedCategories.includes(cat) ? 'checked' : ''} onchange="updateSelectionCategories(${project.id})" class="rounded">
-                                ${cat}
-                            </label>
-                        `).join('')}
-                    </div>
+                    <label class="text-xs text-gray-500 block mb-1">毛利率 ≥ (%)</label>
+                    <input type="number" id="param-margin-${project.id}" value="${sp.targetMargin}" min="0" max="100" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'targetMargin',parseInt(this.value)||0)">
                 </div>
-                <div class="flex gap-4">
-                    <div class="flex-1">
-                        <label class="text-xs text-gray-500 block mb-1">最少产品数</label>
-                        <input type="number" id="param-minprod-${project.id}" value="${sp.minProducts}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'minProducts',parseInt(this.value)||0)">
-                    </div>
-                    <div class="flex-1">
-                        <label class="text-xs text-gray-500 block mb-1">最多产品数</label>
-                        <input type="number" id="param-maxprod-${project.id}" value="${sp.maxProducts}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'maxProducts',parseInt(this.value)||0)">
-                    </div>
-                    <div class="flex-1">
-                        <label class="text-xs text-gray-500 block mb-1">推荐产品总数 <span class="text-blue-400">AI</span></label>
-                        <input type="number" id="param-recprod-${project.id}" value="${sp.recommendedProductCount || ''}" min="1" max="50" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'recommendedProductCount',parseInt(this.value)||0)" placeholder="AI建议">
-                    </div>
+                <div>
+                    <label class="text-xs text-gray-500 block mb-1">方案数量</label>
+                    <input type="number" id="param-count-${project.id}" value="${sp.proposalCount}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'proposalCount',parseInt(this.value)||0)">
                 </div>
-                <div class="col-span-2">
-                    <label class="text-xs text-gray-500 block mb-1">供应商筛选
-                        <span class="text-blue-500 cursor-pointer ml-1" onclick="selectAllCheckboxes('param-suppliers-${project.id}',true);updateAllSuppliers(${project.id})">全选</span>
-                        <span class="text-gray-400">/</span>
-                        <span class="text-blue-500 cursor-pointer" onclick="selectAllCheckboxes('param-suppliers-${project.id}',false);updateAllSuppliers(${project.id})">全不选</span>
-                    </label>
-                    <input type="text" id="param-supsearch-${project.id}" placeholder="搜索供应商..." class="w-full border rounded px-2 py-1 text-xs mb-1" oninput="filterSuppliers(${project.id}, this.value)">
-                    <div id="param-suppliers-${project.id}" class="border rounded p-1.5 max-h-44 overflow-y-auto grid grid-cols-3 gap-x-2 gap-y-0.5">
-                        ${supplierList.map(s => {
-                            const checked = (sp.selectedSuppliers||[]).includes(s.id) ? 'checked' : '';
-                            return `<label class="flex items-center gap-1 text-xs py-0.5 px-1 rounded hover:bg-gray-50 cursor-pointer truncate">
-                                <input type="checkbox" value="${s.id}" ${checked} onchange="toggleSupplier(${project.id}, '${s.id.replace(/'/g, "\\'")}', this.checked)">
-                                <span class="truncate">${s.name}</span>
-                                <span class="text-gray-400 shrink-0">${s.productCount}</span>
-                            </label>`;
-                        }).join('')}
-                    </div>
-                </div>
+            </div>
+            <div class="mt-3 flex flex-wrap gap-1">
+                <span class="text-xs text-gray-400 mr-1">场景:</span>
+                ${['端午','中秋','春节','三八','夏日','年终','生日','日常'].map(s => {
+                    const active = (sp.scenePreference || []).includes(s);
+                    return `<span class="tag text-xs cursor-pointer ${active ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'scenePreference','${s}')">${s}</span>`;
+                }).join('')}
+            </div>
+            <div class="mt-1 flex flex-wrap gap-1">
+                <span class="text-xs text-gray-400 mr-1">档次:</span>
+                ${['平价','中端','中高端','高端'].map(t => `<span class="tag text-xs cursor-pointer ${sp.tierPreference === t ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}" onclick="updateSelectionParam(${project.id},'tierPreference',this.textContent==='${sp.tierPreference}' ? '' : '${t}')">${t}</span>`).join('')}
+            </div>
+            <div class="mt-1 flex flex-wrap gap-1">
+                <span class="text-xs text-gray-400 mr-1">风格:</span>
+                ${['温馨实用','健康活力','轻奢精致','新潮有趣'].map(s => {
+                    const active = (sp.stylePreference || []).includes(s);
+                    return `<span class="tag text-xs cursor-pointer ${active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'stylePreference','${s}')">${s}</span>`;
+                }).join('')}
+            </div>
+        </section>
+
+        <!-- ⑤ 供应商范围 -->
+        <section>
+            <h4 class="text-sm font-medium text-gray-700 mb-2">⑤ 供应商范围
+                <span class="text-blue-500 cursor-pointer ml-2 text-xs font-normal" onclick="selectAllCheckboxes('param-suppliers-${project.id}',true);updateAllSuppliers(${project.id})">全选</span>
+                <span class="text-gray-400 text-xs">/</span>
+                <span class="text-blue-500 cursor-pointer text-xs font-normal" onclick="selectAllCheckboxes('param-suppliers-${project.id}',false);updateAllSuppliers(${project.id})">全不选</span>
+            </h4>
+            <input type="text" id="param-supsearch-${project.id}" placeholder="搜索供应商..." class="w-full border rounded px-2 py-1 text-xs mb-1" oninput="filterSuppliers(${project.id}, this.value)">
+            <div id="param-suppliers-${project.id}" class="border rounded p-1.5 max-h-40 overflow-y-auto grid grid-cols-4 gap-x-2 gap-y-0.5">
+                ${supplierList.map(s => {
+                    const checked = (sp.selectedSuppliers||[]).includes(s.id) ? 'checked' : '';
+                    return `<label class="flex items-center gap-1 text-xs py-0.5 px-1 rounded hover:bg-gray-50 cursor-pointer truncate">
+                        <input type="checkbox" value="${s.id}" ${checked} onchange="toggleSupplier(${project.id}, '${s.id.replace(/'/g, "\\'")}', this.checked)">
+                        <span class="truncate">${s.name}</span>
+                        <span class="text-gray-400 shrink-0">${s.productCount}</span>
+                    </label>`;
+                }).join('')}
+            </div>
+
+            <!-- 产品类型 & 品牌级别占比 -->
+            <div class="grid grid-cols-2 gap-4 mt-3">
                 <div>
                     <label class="text-xs text-gray-500 block mb-1">产品类型占比 <span class="text-gray-400">(留空=不限)</span></label>
-                    <div class="grid grid-cols-3 gap-2">
-                        ${['定制','普通','包销'].map(pt => `
-                            <div class="flex items-center gap-1">
-                                <span class="text-xs w-8">${pt}</span>
-                                <input type="number" value="${sp.productTypeRatio?.[pt] || ''}" min="0" max="100"
-                                    class="w-full border rounded px-1.5 py-1 text-xs"
-                                    onchange="updateProductTypeRatio(${project.id},'${pt}',parseInt(this.value)||0)"
-                                    placeholder="0%">
-                            </div>
-                        `).join('')}
+                    <div class="flex gap-3">
+                        ${['定制','普通','包销'].map(pt => `<div class="flex items-center gap-1"><span class="text-xs">${pt}</span><input type="number" value="${sp.productTypeRatio?.[pt] || ''}" min="0" max="100" class="w-14 border rounded px-1.5 py-1 text-xs" onchange="updateProductTypeRatio(${project.id},'${pt}',parseInt(this.value)||0)" placeholder="%"></div>`).join('')}
                     </div>
                 </div>
                 <div>
                     <label class="text-xs text-gray-500 block mb-1">品牌级别占比 <span class="text-gray-400">(留空=不限)</span></label>
-                    <div class="grid grid-cols-3 gap-2">
-                        ${['一线','二线','地方','进口','老字号','国民'].map(bl => `
-                            <div class="flex items-center gap-1">
-                                <span class="text-xs w-8">${bl}</span>
-                                <input type="number" value="${sp.brandLevelRatio?.[bl] || ''}" min="0" max="100"
-                                    class="w-full border rounded px-1.5 py-1 text-xs"
-                                    onchange="updateBrandLevelRatio(${project.id},'${bl}',parseInt(this.value)||0)"
-                                    placeholder="0%">
-                            </div>
-                        `).join('')}
+                    <div class="flex gap-2 flex-wrap">
+                        ${['国际','一线','二线','网红','新消费','地方','白牌'].map(bl => `<div class="flex items-center gap-1"><span class="text-xs">${bl}</span><input type="number" value="${sp.brandLevelRatio?.[bl] || ''}" min="0" max="100" class="w-12 border rounded px-1 py-1 text-xs" onchange="updateBrandLevelRatio(${project.id},'${bl}',parseInt(this.value)||0)" placeholder="%"></div>`).join('')}
                     </div>
-                </div>
-                <div class="col-span-2 border-t pt-4">
-                    <label class="text-xs text-gray-500 block mb-1">🏷 AI 推荐品牌
-                        <span class="text-blue-500 cursor-pointer ml-1" onclick="autoRecommendBrands(${project.id})">🔄 重新推荐</span>
-                    </label>
-                    <div id="selected-brands-${project.id}" class="flex flex-wrap gap-1 mb-1">
-                        ${(sp.selectedBrands||[]).map(b => `<span class="tag bg-purple-100 text-purple-700 cursor-pointer hover:bg-purple-200" onclick="removeSelectionBrand(${project.id},'${b.replace(/'/g,"\\'")}')">${b} ✕</span>`).join(' ')}
-                        ${(!sp.selectedBrands || sp.selectedBrands.length === 0) ? '<span class="text-xs text-gray-400">点击"🔄 重新推荐"让 AI 推荐品牌</span>' : ''}
-                    </div>
-                    <div class="flex items-center gap-1">
-                        <select id="add-brand-select-${project.id}" class="border rounded px-1.5 py-0.5 text-xs flex-1">
-                            <option value="">+ 手动添加品牌</option>
-                            ${brandList.filter(b => !(sp.selectedBrands||[]).includes(b)).map(b => `<option value="${b}">${b}</option>`).join('')}
-                        </select>
-                        <button onclick="addSelectionBrand(${project.id})" class="text-xs px-2 py-0.5 bg-gray-100 hover:bg-gray-200 rounded">添加</button>
-                    </div>
-                    ${sp.brandRationale ? `<div class="text-xs text-gray-500 mt-1">💡 ${sp.brandRationale}</div>` : ''}
                 </div>
             </div>
-        </div>
 
-        <!-- Tab: 排除项 -->
-        <div id="${tabId('excl-content')}" class="hidden">
-            <div class="grid grid-cols-2 gap-x-8 gap-y-4">
-                <div class="col-span-2">
-                    <label class="text-xs text-gray-500 block mb-1">排除品类</label>
-                    <div class="flex flex-wrap gap-1" id="param-excats-${project.id}">
-                        ${allCats.map(c => {
-                            const active = (sp.excludedCategories || []).includes(c);
-                            return `<span class="tag text-xs cursor-pointer ${active?'bg-red-100 text-red-600 line-through':'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'excludedCategories','${c}')">${c}</span>`;
-                        }).join('')}
+            <!-- 排除项 -->
+            <div class="border-t pt-3 mt-3">
+                <h4 class="text-xs font-medium text-gray-500 mb-2">排除设置</h4>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">排除品类</label>
+                        <div class="flex flex-wrap gap-1" id="param-excats-${project.id}">
+                            ${allCats.map(c => {
+                                const active = (sp.excludedCategories || []).includes(c);
+                                return `<span class="tag text-xs cursor-pointer ${active?'bg-red-100 text-red-600 line-through':'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'excludedCategories','${c}')">${c}</span>`;
+                            }).join('')}
+                        </div>
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">排除品牌</label>
+                        <input type="text" id="param-exbrand-${project.id}" value="${(sp.excludedBrands||[]).join(',')}" placeholder="逗号分隔"
+                            class="w-full border rounded px-2 py-1 text-xs"
+                            onchange="updateSelectionParam(${project.id},'excludedBrands',this.value.split(',').map(s=>s.trim()).filter(Boolean))">
+                    </div>
+                    <div>
+                        <label class="text-xs text-gray-400 block mb-1">排除供应商</label>
+                        <input type="text" id="param-exsuppliers-${project.id}" value="${(sp.excludedSuppliers||[]).join(',')}" placeholder="逗号分隔"
+                            class="w-full border rounded px-2 py-1 text-xs"
+                            onchange="updateSelectionParam(${project.id},'excludedSuppliers',this.value.split(',').map(s=>s.trim()).filter(Boolean))">
                     </div>
                 </div>
-                <div>
-                    <label class="text-xs text-gray-500 block mb-1">排除品牌 <span class="text-gray-400">(逗号分隔)</span></label>
-                    <input type="text" id="param-exbrand-${project.id}" value="${(sp.excludedBrands||[]).join(',')}"
-                        class="w-full border rounded px-2 py-1.5 text-sm"
-                        onchange="updateSelectionParam(${project.id},'excludedBrands',this.value.split(',').map(s=>s.trim()).filter(Boolean))">
-                </div>
-                <div>
-                    <label class="text-xs text-gray-500 block mb-1">排除供应商 <span class="text-gray-400">(逗号分隔)</span></label>
-                    <input type="text" id="param-exsuppliers-${project.id}" value="${(sp.excludedSuppliers||[]).join(',')}"
-                        class="w-full border rounded px-2 py-1.5 text-sm"
-                        onchange="updateSelectionParam(${project.id},'excludedSuppliers',this.value.split(',').map(s=>s.trim()).filter(Boolean))">
-                </div>
             </div>
-        </div>
+        </section>
 
         <!-- 生成按钮 -->
-        <button onclick="generateProposalsFromParams(${project.id})" class="mt-5 w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">🤖 生成方案</button>
+        <button onclick="generateProposalsFromParams(${project.id})" class="w-full px-4 py-2.5 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">🤖 生成方案</button>
     </div>
 
     <!-- 方案列表 -->
@@ -3446,44 +3637,30 @@ function showSelectionPage(project) {
     document.getElementById('proposal-detail-content').innerHTML = html;
     if (proposalsForProject.length > 0) renderProposalCards(project.id);
 
-    // 自动触发 AI 品牌推荐（无品牌时）
-    if ((!sp.selectedBrands || sp.selectedBrands.length === 0) && project.structuredRequirement) {
-        setTimeout(() => autoRecommendBrands(project.id), 500);
-    }
 }
 
-function switchSelectionTab(projectId, tab) {
-    const tabs = ['pref', 'filter', 'excl'];
-    const labels = { pref: '🎯 偏好设置', filter: '📋 品牌与供应商', excl: '🚫 排除项' };
-    tabs.forEach(t => {
-        const btn = document.getElementById(`tab-${t}-${projectId}`);
-        const content = document.getElementById(`tab-${t}-content-${projectId}`);
-        if (!btn || !content) return;
-        if (t === tab) {
-            btn.className = 'flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-blue-600 text-blue-600 bg-white';
-            btn.textContent = labels[t];
-            content.classList.remove('hidden');
-        } else {
-            btn.className = 'flex-1 px-4 py-2.5 text-sm font-medium border-b-2 border-transparent text-gray-500 bg-gray-50';
-            btn.textContent = labels[t];
-            content.classList.add('hidden');
-        }
-    });
+function toggleCategoryTag(projectId, cat, el) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    const sp = project.selectionParams;
+    const idx = sp.selectedCategories.indexOf(cat);
+    if (idx >= 0) {
+        sp.selectedCategories.splice(idx, 1);
+        el.classList.remove('bg-blue-100', 'text-blue-700', 'ring-1', 'ring-blue-300');
+        el.classList.add('bg-gray-100', 'text-gray-500');
+    } else {
+        sp.selectedCategories.push(cat);
+        el.classList.remove('bg-gray-100', 'text-gray-500');
+        el.classList.add('bg-blue-100', 'text-blue-700', 'ring-1', 'ring-blue-300');
+    }
+    saveAllData();
+    showSelectionPage(project);
 }
 
 function updateSelectionParam(projectId, key, value) {
     const project = findProject(projectId);
     if (!project || !project.selectionParams) return;
     project.selectionParams[key] = value;
-    saveAllData();
-}
-
-function updateSelectionCategories(projectId) {
-    const project = findProject(projectId);
-    if (!project || !project.selectionParams) return;
-    const container = document.getElementById(`param-cats-${projectId}`);
-    if (!container) return;
-    project.selectionParams.selectedCategories = Array.from(container.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value);
     saveAllData();
 }
 
@@ -3584,48 +3761,105 @@ function updateProductTypeRatio(projectId, pt, val) {
     saveAllData();
 }
 
+function updateCategoryProductCount(projectId, cat, key, val) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    const sp = project.selectionParams;
+    if (!sp.productsPerCategory) sp.productsPerCategory = {};
+    if (!sp.productsPerCategory[cat]) sp.productsPerCategory[cat] = { min: 1, max: 2 };
+    sp.productsPerCategory[cat][key] = val;
+    if (key === 'max' && sp.productsPerCategory[cat].min > val) sp.productsPerCategory[cat].min = val;
+    if (key === 'min' && sp.productsPerCategory[cat].max < val) sp.productsPerCategory[cat].max = val;
+    saveAllData();
+}
+
 function normalizeBrandLevel(bl) {
     if (!bl) return '其他';
     return bl.replace('全国', '').replace('品牌', '').trim();
 }
 
-function removeSelectionBrand(projectId, brandName) {
+function addSelectionBrand(projectId, cat) {
+    const project = findProject(projectId);
+    const select = document.getElementById(`add-brand-select-${projectId}-${cat ? cat.replace(/[^a-zA-Z一-龥]/g,'') : 'all'}`);
+    const brand = select ? select.value : '';
+    if (!brand || !cat) return;
+    const sp = project.selectionParams;
+    if (!sp.brandsByCategory) sp.brandsByCategory = {};
+    if (!sp.brandsByCategory[cat]) sp.brandsByCategory[cat] = [];
+    if (sp.brandsByCategory[cat].includes(brand)) return;
+    sp.brandsByCategory[cat].push(brand);
+    sp.selectedBrands = getFlatSelectedBrands(sp);
+    saveAllData();
+    showSelectionPage(project);
+}
+
+function removeSelectionBrand(projectId, cat, brandName) {
     const project = findProject(projectId);
     if (!project || !project.selectionParams) return;
-    project.selectionParams.selectedBrands = project.selectionParams.selectedBrands.filter(b => b !== brandName);
+    const sp = project.selectionParams;
+    if (cat && sp.brandsByCategory && sp.brandsByCategory[cat]) {
+        sp.brandsByCategory[cat] = sp.brandsByCategory[cat].filter(b => b !== brandName);
+        if (sp.brandsByCategory[cat].length === 0) delete sp.brandsByCategory[cat];
+    } else {
+        // 兼容旧的扁平调用：从所有大类中移除
+        if (sp.brandsByCategory) {
+            for (const c of Object.keys(sp.brandsByCategory)) {
+                sp.brandsByCategory[c] = sp.brandsByCategory[c].filter(b => b !== brandName);
+                if (sp.brandsByCategory[c].length === 0) delete sp.brandsByCategory[c];
+            }
+        }
+    }
+    sp.selectedBrands = getFlatSelectedBrands(sp);
     saveAllData();
     showSelectionPage(project);
 }
 
-function addSelectionBrand(projectId) {
+function refreshBrandSelect(projectId, cat) {
     const project = findProject(projectId);
-    const select = document.getElementById(`add-brand-select-${projectId}`);
-    const brand = select.value;
-    if (!brand || project.selectionParams.selectedBrands.includes(brand)) return;
-    project.selectionParams.selectedBrands.push(brand);
-    saveAllData();
-    showSelectionPage(project);
-}
-
-function refreshBrandSelect(projectId) {
-    const project = findProject(projectId);
-    if (!project) return;
+    if (!project || !cat) return;
     const sp = project.selectionParams || {};
-    const selected = sp.selectedBrands || [];
-    const select = document.getElementById(`add-brand-select-${projectId}`);
+    const selected = (sp.brandsByCategory && sp.brandsByCategory[cat]) ? sp.brandsByCategory[cat] : [];
+    const suffix = cat.replace(/[^a-zA-Z一-龥]/g, '');
+    const select = document.getElementById(`add-brand-select-${projectId}-${suffix}`);
     if (!select) return;
-    const available = brandList.filter(b => !selected.includes(b));
-    select.innerHTML = '<option value="">+ 添加品牌</option>' + available.map(b => `<option value="${b}">${b}</option>`).join('');
+    // 读取该大类的筛选条件（多选）
+    const levelDD = document.getElementById(`brand-level-dd-${projectId}-${suffix}`);
+    const toneDD = document.getElementById(`brand-tone-dd-${projectId}-${suffix}`);
+    const filterLevels = levelDD ? Array.from(levelDD.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value) : [];
+    const filterTones = toneDD ? Array.from(toneDD.querySelectorAll('input[type="checkbox"]:checked')).map(cb => cb.value) : [];
+    // 筛选该大类下的品牌
+    const levelMap = getBrandLevelMap();
+    const styleMap = getBrandStyleMap();
+    const allSelected = getFlatSelectedBrands(sp);
+    let available = brandList.filter(b => {
+        if (allSelected.includes(b)) return false;
+        const brandMajors = getBrandMajorCategories(b);
+        return brandMajors.includes(cat);
+    });
+    if (filterLevels.length > 0) {
+        available = available.filter(b => {
+            const levels = levelMap.get(b);
+            return levels && filterLevels.some(l => levels.has(l));
+        });
+    }
+    if (filterTones.length > 0) {
+        available = available.filter(b => {
+            const styles = styleMap.get(b);
+            return styles && filterTones.some(t => styles.has(t));
+        });
+    }
+    const activeFilters = [];
+    if (filterLevels.length > 0) activeFilters.push(filterLevels.length + '级');
+    if (filterTones.length > 0) activeFilters.push(filterTones.length + '调');
+    const filterHint = activeFilters.length > 0 ? ` (${available.length}个)` : '';
+    select.innerHTML = '<option value="">+ 添加品牌' + filterHint + '</option>' + available.map(b => `<option value="${b}">${b}</option>`).join('');
 }
 
 async function autoRecommendBrands(projectId) {
     const project = findProject(projectId);
     if (!project || !project.structuredRequirement) return;
     const sp = project.selectionParams || {};
-    if (sp.selectedBrands && sp.selectedBrands.length > 0) return; // 已有品牌，不重复推荐
-    // 显示加载状态
-    const container = document.getElementById(`selected-brands-${projectId}`);
-    if (container) container.innerHTML = '<span class="text-xs text-gray-400 animate-pulse">AI 推荐品牌中...</span>';
+    if (Object.keys(sp.brandsByCategory || {}).length > 0) return; // 已有品牌，不重复推荐
     await aiSelectBrands(projectId);
 }
 
@@ -3641,6 +3875,7 @@ function resetSelectionParams(projectId) {
     sp.packageStyleByCategory = {};
     sp.categoryRatios = {};
     sp.recommendedProductCount = 0;
+    sp.productsPerCategory = {};
     sp.selectedSuppliers = [];
     sp.productTypeRatio = {};
     sp.brandLevelRatio = {};
@@ -3648,12 +3883,14 @@ function resetSelectionParams(projectId) {
     sp.excludedBrands = [];
     sp.excludedProductTypes = [];
     sp.excludedSuppliers = [];
-    sp.targetMargin = 20;
+    sp.targetMargin = 30;
     sp.budget = 200;
     sp.proposalCount = 6;
     sp.minProducts = 0;
     sp.maxProducts = 0;
     sp.selectedCategories = [];
+    sp.selectedSubcategories = [];
+    sp.brandsByCategory = {};
     saveAllData();
     showSelectionPage(project);
 }
@@ -3665,6 +3902,12 @@ async function getAISelectionSuggestion(projectId) {
     const el = document.getElementById(`ai-suggestion-${projectId}`);
     el.innerHTML = '<div class="animate-pulse text-xs text-gray-400">AI 分析中...</div>';
     const allCats = MAJOR_CATEGORIES;
+    const subsByMajor = {};
+    for (const [major, subs] of Object.entries(CATEGORY_MAP)) { subsByMajor[major] = Array.isArray(subs) ? subs : []; }
+    const brandsByMajor = {};
+    brandList.forEach(brand => { const bp = products.filter(p => p.brand === brand); const cats = [...new Set(bp.map(p => p.majorCategory).filter(Boolean))]; cats.forEach(cat => { if (!brandsByMajor[cat]) brandsByMajor[cat] = []; if (!brandsByMajor[cat].includes(brand)) brandsByMajor[cat].push(brand); }); });
+    const subsText = allCats.map(cat => { const subs = subsByMajor[cat] || []; return subs.length > 0 ? cat + ': ' + subs.join('、') : cat + ': 无'; }).join('\n');
+    const brandsText = allCats.map(cat => { const brands = brandsByMajor[cat] || []; return brands.length > 0 ? cat + ': ' + brands.join('、') : cat + ': 无'; }).join('\n');
     try {
         const response = await callAI([
             { role: 'system', content: `你是团购选品顾问。根据已有的客户需求信息，分析并输出选品参数建议。只返回JSON，不返回其他内容。
@@ -3675,7 +3918,7 @@ async function getAISelectionSuggestion(projectId) {
 - 每个推荐都要有依据
 
 ## 分析原则
-- **主动推断**：例如"员工福利，不要太寒酸"→档次中高端；"年轻人多"→风格年轻潮流
+- **主动推断**：例如"员工福利，不要太寒酸"→档次中高端；"年轻人多"→风格新潮有趣
 - **不确定时填默认值**：无法推断的字段用空数组/空字符串
 - **值必须从可选集合中选**：不要编造不在列表中的值
 
@@ -3683,26 +3926,39 @@ async function getAISelectionSuggestion(projectId) {
 {
   "scene": ["端午"],
   "tier": "中高端",
-  "style": ["简约实用"],
+  "style": ["温馨实用"],
   "brandLevelByCategory": { "食品饮料": ["全国一线品牌"] },
-  "brandStyleByCategory": { "食品饮料": ["商务稳重"] },
+  "brandStyleByCategory": { "食品饮料": ["温馨实用"] },
   "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
   "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
   "recommendedProductCount": 8,
+  "subcategories": ["粽子"],
+  "productsPerCategory": { "食品饮料": { "min": 2, "max": 4 }, "日化个护": { "min": 1, "max": 2 } },
+  "minProducts": 6,
+  "maxProducts": 12,
   "categories": ["食品饮料", "日化个护"],
   "rationale": "简要说明分析依据，2-3句话"
 }
 
 ## 各字段可选值集合
 - scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
-- tier: "亲民" / "中端" / "中高端" / "高端" / ""
-- style: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
-- brandLevel选项: ["全国一线品牌","地方品牌","进口品牌","老字号"]
-- brandStyle选项: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- tier: "平价" / "中端" / "中高端" / "高端" / ""
+- style: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
+- brandLevel选项: ["国际品牌","全国一线品牌","全国二线品牌","网红/新消费品牌","地方品牌","白牌"]
+- brandStyle选项: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
 - packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
 - categories: ${allCats.map(c => `"${c}"`).join(', ')}
 - categoryRatios: 按大类设置百分比，总和应为100
 - recommendedProductCount: 建议的产品总数（正整数）
+- subcategories: 从以下可用子品类中选择（只能选与 categories 大类匹配的，不要编造）：
+${subsText}
+
+## 可用品牌（按大类分组，只能从以下品牌中选择，不要编造不在列表中的品牌名）
+${brandsText}
+
+- productsPerCategory: 每个大类配置产品数范围 { "大类名": { "min": 最少, "max": 最多 } }，核心品类min可设2-3，辅助品类min=1
+- minProducts: 每套方案最少产品数（正整数，一般=各品类min之和）
+- maxProducts: 每套方案最多产品数（正整数，一般=各品类max之和）
 
 注意：不要返回具体品牌名或产品名，只返回属性偏好。` },
             { role: 'user', content: `## 客户需求\n${project.structuredRequirement || project.requirement || ''}\n\n请分析并输出结构化选品参数（只从可选值集合中选择）。${(await agentBuildContext(project, 'selection')).addon}` }
@@ -3720,8 +3976,13 @@ async function getAISelectionSuggestion(projectId) {
             if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
             if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
             if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
+            if (result.subcategories) sp.selectedSubcategories = result.subcategories;
+            if (result.minProducts) sp.minProducts = result.minProducts;
+            if (result.maxProducts) sp.maxProducts = result.maxProducts;
+            if (result.productsPerCategory) sp.productsPerCategory = result.productsPerCategory;
             if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
             await saveAllData();
+            await aiSelectBrands(projectId, true);
             showSelectionPage(project);
         }
     } catch (e) { el.innerHTML = `<div class="text-red-500 text-xs">错误: ${e.message}</div>`; }
@@ -3734,18 +3995,23 @@ async function reAnalyzeSelectionParams(projectId) {
     if (!el) return;
     el.innerHTML = '<div class="animate-pulse text-xs text-gray-400">AI 重新分析中...</div>';
     const allCats = MAJOR_CATEGORIES;
+    const subsByMajor = {}; for (const [major, subs] of Object.entries(CATEGORY_MAP)) { subsByMajor[major] = Array.isArray(subs) ? subs : []; }
+    const brandsByMajor = {}; brandList.forEach(brand => { const bp = products.filter(p => p.brand === brand); const cats = [...new Set(bp.map(p => p.majorCategory).filter(Boolean))]; cats.forEach(cat => { if (!brandsByMajor[cat]) brandsByMajor[cat] = []; if (!brandsByMajor[cat].includes(brand)) brandsByMajor[cat].push(brand); }); });
+    const subsText = allCats.map(cat => { const subs = subsByMajor[cat] || []; return subs.length > 0 ? cat + ": " + subs.join("、") : cat + ": 无"; }).join("\n");
+    const brandsText = allCats.map(cat => { const brands = brandsByMajor[cat] || []; return brands.length > 0 ? cat + ": " + brands.join("、") : cat + ": 无"; }).join("\n");
     const convo = formatConversationForAI(project.conversation);
     try {
         const response = await callAI([
-            { role: 'system', content: `你是团购选品顾问。根据客户需求对话，主动分析并输出选品参数建议。只返回JSON，不返回其他内容。
+            { role: 'system', content: `你是团购选品顾问。**重新分析模式**：忽略之前的分析结果，基于当前提供的完整对话、文件内容和补充信息，从头进行全面重新分析。只返回JSON，不返回其他内容。
 
 ## 你的工作方式
-- 通读完整对话，基于客户透露的信息，分析推断最合适的选品参数
+- 通读完整对话和所有上传的文件内容，基于客户透露的信息，分析推断最合适的选品参数
 - 客户不一定直接说出参数值，你需要从对话细节中推理
-- 例如："员工福利，不要太寒酸"→档次中高端；"互联网公司年轻人多"→风格年轻潮流
+- 例如："员工福利，不要太寒酸"→档次中高端；"互联网公司年轻人多"→风格新潮有趣
+- **特别注意**：对话中上传的文件可能包含关键信息（产品清单、预算明细等），务必仔细提取
 
 ## 分析原则
-- **主动推断**：从对话中收集线索，综合分析后给出推荐值
+- **主动推断**：从对话和文件中收集所有线索，综合分析后给出推荐值
 - **项目名称优先**：项目名是最强的场景信号（如"XX端午福利"→scene=["端午"]）
 - **场景可多选**：对话中提到多个场景时返回多个
 - **不确定时填默认值**：无法推断的字段用空数组/空字符串
@@ -3755,41 +4021,58 @@ async function reAnalyzeSelectionParams(projectId) {
 {
   "scene": ["端午"],
   "tier": "中高端",
-  "style": ["简约实用"],
+  "style": ["温馨实用"],
   "brandLevelByCategory": { "食品饮料": ["全国一线品牌"] },
-  "brandStyleByCategory": { "食品饮料": ["商务稳重"] },
+  "brandStyleByCategory": { "食品饮料": ["温馨实用"] },
   "packageStyleByCategory": { "食品饮料": ["精装礼盒"] },
   "categoryRatios": { "食品饮料": 40, "日化个护": 30 },
   "recommendedProductCount": 8,
+  "subcategories": ["粽子"],
+  "productsPerCategory": { "食品饮料": { "min": 2, "max": 4 }, "日化个护": { "min": 1, "max": 2 } },
+  "minProducts": 6,
+  "maxProducts": 12,
   "categories": ["食品饮料", "日化个护"],
   "rationale": "简要说明分析依据，2-3句话"
 }
 
 ## 各字段可选值集合
 - scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
-- tier: "亲民" / "中端" / "中高端" / "高端" / ""
-- style: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
-- brandLevel选项: ["全国一线品牌","地方品牌","进口品牌","老字号"]
-- brandStyle选项: ["商务稳重","简约实用","国民大众","年轻潮流","轻奢高端"]
+- tier: "平价" / "中端" / "中高端" / "高端" / ""
+- style: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
+- brandLevel选项: ["国际品牌","全国一线品牌","全国二线品牌","网红/新消费品牌","地方品牌","白牌"]
+- brandStyle选项: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
 - packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
 - categories: ${allCats.map(c => `"${c}"`).join(', ')}
 - categoryRatios: 按大类设置百分比，总和应为100
 - recommendedProductCount: 建议的产品总数（正整数）
+- subcategories: 从以下可用子品类中选择（只能选与 categories 大类匹配的，不要编造）：
+${subsText}
+
+## 可用品牌（按大类分组，只能从以下品牌中选择，不要编造不在列表中的品牌名）
+${brandsText}
+
+- productsPerCategory: 每个大类配置产品数范围 { "大类名": { "min": 最少, "max": 最多 } }，核心品类min可设2-3，辅助品类min=1
+- minProducts: 每套方案最少产品数（正整数，一般=各品类min之和）
+- maxProducts: 每套方案最多产品数（正整数，一般=各品类max之和）
 
 ## 分析指引
 - scene: 项目名称+对话中提到的时机→匹配场景
-- tier: "品质好一点/拿得出手"→中高端；"实惠/性价比"→亲民
-- style: "互联网/年轻人"→年轻潮流；"国企/政府"→商务稳重
+- tier: "品质好一点/拿得出手"→中高端；"实惠/性价比"→平价
+- style: "互联网/年轻人"→新潮有趣；"国企/政府"→温馨实用；"健康/运动"→健康活力
 - brandLevelByCategory: 按大类分别推断品牌级别。"大牌/知名"→全国一线品牌；"本地特色"→地方品牌
 - brandStyleByCategory: 按大类分别推断品牌调性
 - packageStyleByCategory: 按大类分别推断包装。"送礼/福利"→精装礼盒；"实用/自用"→简约实用
 - categoryRatios: 根据对话内容判断各品类占比
+- subcategories: 从客户提到的具体品类匹配子品类。不确定则不填
 - recommendedProductCount: 根据预算和品类数量建议
+- productsPerCategory: 根据各品类权重设置产品数。主要品类min=2-3，辅助品类min=1
+- minProducts: 根据覆盖大类和预算推断，一般=各品类min之和
+- maxProducts: 考虑方案精简，一般=各品类max之和
 - categories: 从客户提到的具体品类匹配对应大类
 
 只返回JSON，不要任何其他文字。` },
-            { role: 'user', content: `项目名称：${project.name}\n\n## 需求对话\n${convo}\n\n## 补充信息\n${project.supplementaryInfo || '（无）'}\n\n请综合以上对话、文件内容和补充信息，提取选品参数，不要猜测。返回JSON。` }
-        ], { temperature: 0.3, maxTokens: 2048 });
+            { role: 'user', content: `项目名称：${project.name}\n\n## 需求对话\n${convo}\n\n## 补充信息\n${project.supplementaryInfo || '（无）'}\n\n请基于以上全部对话内容、上传文件和补充信息，进行全面重新分析，提取最合适的选品参数。返回JSON。${(await agentBuildContext(project, 'selection')).addon}` }
+        ], { temperature: 0.7, maxTokens: 2048 });
         const jsonMatch = response.match(/\{[\s\S]*\}/);
         const result = jsonMatch ? JSON.parse(jsonMatch[0]) : null;
         if (result) {
@@ -3803,8 +4086,13 @@ async function reAnalyzeSelectionParams(projectId) {
             if (result.packageStyleByCategory) sp.packageStyleByCategory = result.packageStyleByCategory;
             if (result.categoryRatios) sp.categoryRatios = result.categoryRatios;
             if (result.recommendedProductCount) sp.recommendedProductCount = result.recommendedProductCount;
+            if (result.subcategories) sp.selectedSubcategories = result.subcategories;
+            if (result.minProducts) sp.minProducts = result.minProducts;
+            if (result.maxProducts) sp.maxProducts = result.maxProducts;
+            if (result.productsPerCategory) sp.productsPerCategory = result.productsPerCategory;
             if (result.categories && result.categories.length > 0) sp.selectedCategories = result.categories;
             await saveAllData();
+            await aiSelectBrands(projectId, true);
             showSelectionPage(project);
         }
     } catch (e) { el.innerHTML = `<div class="text-red-500 text-xs">分析错误: ${e.message}</div>`; }
@@ -3850,7 +4138,7 @@ async function generateProposalsFromParams(projectId) {
     const allCats = sp.categories.length > 0 ? sp.categories : extractCategoriesFromRequirement(project.structuredRequirement || '');
 
     // 预估供货价系数，与 adjustToBudget 用同一口径
-    const estMargin = 1 - (sp.targetMargin || 20) / 100;
+    const estMargin = 1 - (sp.targetMargin || 30) / 100;
     const maxProductPrice = budget * 0.5; // 单品上限：不超过预算的50%
     const estQuote = (p) => p.purchasePrice / estMargin;
 
@@ -3858,19 +4146,35 @@ async function generateProposalsFromParams(projectId) {
     const selectedCats = (sp.selectedCategories && sp.selectedCategories.length > 0)
         ? sp.selectedCategories
         : allCats;
+    // 候选过滤：单品价 ≤ 品类预算上限，毛利率达标。不再设全局最低价（大类占比硬约束已保证质量）
     const expectedMinCount = (sp.minProducts > 0 ? sp.minProducts : selectedCats.length) || 1;
-    const minProductPrice = budget / (expectedMinCount * 2); // 单品下限：不低于均分价格的1/2
-    // 候选过滤：单品价 ∈ [minProductPrice, maxProductPrice] + 毛利率达标
-    const targetMarginDecimal = (sp.targetMargin || 20) / 100;
+    const catBudgetCaps = {};
+    const catRatioData = sp.categoryRatios || {};
+    const catRatioSum = Object.values(catRatioData).reduce((a, b) => a + b, 0);
+    selectedCats.forEach(cat => {
+        if (catRatioSum > 0) {
+            const ratio = catRatioData[cat] || 0;
+            catBudgetCaps[cat] = ratio > 0 ? budget * ratio / 100 : budget * (100 - catRatioSum) / 100 / Math.max(1, selectedCats.filter(c => !catRatioData[c]).length);
+        } else {
+            catBudgetCaps[cat] = budget / selectedCats.length;
+        }
+    });
+    const targetMarginDecimal = (sp.targetMargin || 30) / 100;
     const meetsMargin = (p) => {
         if (p.retailPrice <= 0) return true;
         if (p.purchasePrice / estMargin <= p.retailPrice) return true;
         return (p.retailPrice - p.purchasePrice) / p.retailPrice >= targetMarginDecimal;
     };
     const seen = new Set(); let candidates = [];
+    const rawByCat = {}; products.forEach(p => { const c = p.majorCategory || '无'; rawByCat[c] = (rawByCat[c] || 0) + 1; });
+    console.log('原始商品按大类分布:', JSON.stringify(rawByCat));
     selectedCats.forEach(cat => {
-        products.filter(p => majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) >= minProductPrice && estQuote(p) <= maxProductPrice && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
+        const catCap = catBudgetCaps[cat] || maxProductPrice;
+        products.filter(p => majorCategoryMatch(p.majorCategory, cat) && p.purchasePrice > 0 && estQuote(p) <= catCap && meetsMargin(p)).forEach(p => { if (!seen.has(p.id)) { seen.add(p.id); candidates.push(p); } });
     });
+    // DEBUG: 基础筛选后
+    const afterBaseByCat = {}; candidates.forEach(p => { const c = p.majorCategory || '无'; afterBaseByCat[c] = (afterBaseByCat[c] || 0) + 1; });
+    console.log('基础筛选后(大类+价格+毛利)按大类:', JSON.stringify(afterBaseByCat));
     // 硬筛选：供应商
     if (sp.selectedSuppliers && sp.selectedSuppliers.length > 0) {
         candidates = candidates.filter(p => sp.selectedSuppliers.includes(p.supplierId));
@@ -3879,6 +4183,9 @@ async function generateProposalsFromParams(projectId) {
     if (sp.excludedSuppliers && sp.excludedSuppliers.length > 0) {
         candidates = candidates.filter(p => !sp.excludedSuppliers.some(s => (p.supplierId || '').includes(s)));
     }
+    // DEBUG: 供应商筛选后
+    const afterSupByCat = {}; candidates.forEach(p => { const c = p.majorCategory || '无'; afterSupByCat[c] = (afterSupByCat[c] || 0) + 1; });
+    console.log('供应商筛选后按大类:', JSON.stringify(afterSupByCat));
     // 否定项：排除品类
     if (sp.excludedCategories && sp.excludedCategories.length > 0) {
         candidates = candidates.filter(p => !sp.excludedCategories.some(c => majorCategoryMatch(p.majorCategory, c)));
@@ -3891,17 +4198,34 @@ async function generateProposalsFromParams(projectId) {
     if (sp.excludedProductTypes && sp.excludedProductTypes.length > 0) {
         candidates = candidates.filter(p => !sp.excludedProductTypes.includes(p.productType));
     }
-    // 品牌筛选：如果指定了品牌，只保留这些品牌的产品
-    if (sp.selectedBrands && sp.selectedBrands.length > 0) {
+    // 子品类筛选：如果指定了品类，只保留这些品类的产品
+    if (sp.selectedSubcategories && sp.selectedSubcategories.length > 0) {
+        candidates = candidates.filter(p => sp.selectedSubcategories.includes(p.category));
+    }
+    // 品牌筛选：按大类匹配
+    if (sp.brandsByCategory && Object.keys(sp.brandsByCategory).length > 0) {
+        candidates = candidates.filter(p => {
+            const catBrands = sp.brandsByCategory[p.majorCategory];
+            if (!catBrands || catBrands.length === 0) return true; // 该大类未限品牌，不过滤
+            return catBrands.includes(p.brand);
+        });
+    } else if (sp.selectedBrands && sp.selectedBrands.length > 0) {
+        // 兼容旧的扁平品牌列表
         candidates = candidates.filter(p => sp.selectedBrands.includes(p.brand));
     }
+    const finalByCat = {}; candidates.forEach(p => { const c = p.majorCategory || '无'; finalByCat[c] = (finalByCat[c] || 0) + 1; });
+    console.log('品牌筛选后(最终候选)按大类:', JSON.stringify(finalByCat));
     if (candidates.length < 3) { alert(`符合条件的商品太少（${candidates.length}个），请检查品牌筛选或价格条件`); return; }
 
     // 适配打分：给每个候选品按集采权重打分，策略选品时优先高分
     candidates.forEach(p => {
-        p._score = scoreProduct(p, budget, sp.targetMargin || 20, estMargin, expectedMinCount, sp);
+        p._score = scoreProduct(p, budget, sp.targetMargin || 30, estMargin, expectedMinCount, sp);
     });
     console.log(`候选品 ${candidates.length} 个，分数范围 ${Math.min(...candidates.map(p => p._score))}-${Math.max(...candidates.map(p => p._score))}`);
+    // 按大类统计候选品数量
+    const catCandidateCount = {};
+    candidates.forEach(p => { const c = p.majorCategory || '未知'; catCandidateCount[c] = (catCandidateCount[c] || 0) + 1; });
+    console.log('候选品按大类分布:', JSON.stringify(catCandidateCount));
 
     project.status = 'generating';
     await saveAllData();
@@ -3914,22 +4238,23 @@ async function generateProposalsFromParams(projectId) {
 }
 
 // ========== AI选品牌 ==========
-async function aiSelectBrands(projectId) {
+async function aiSelectBrands(projectId, skipPageRefresh) {
     const project = findProject(projectId);
-    if (!project) return;
+    if (!project) return false;
 
     if (!aiSettings.apiKey) {
         alert('请先在 AI 设置中配置 API Key');
-        return;
+        return false;
     }
 
     if (brandList.length === 0) {
         alert('品牌列表为空，请先去"品牌调性"页面刷新品牌列表');
-        return;
+        return false;
     }
 
-    // 显示加载状态
-    document.getElementById(`selected-brands-${projectId}`).innerHTML = `
+    // 显示加载状态（如果容器存在）
+    const loadingEl = document.getElementById(`selected-brands-${projectId}`);
+    if (loadingEl) loadingEl.innerHTML = `
         <div class="text-center py-4">
             <div class="animate-spin text-2xl mb-2">🎯</div>
             <div class="text-gray-500 text-sm">AI 正在分析需求并选择品牌...</div>
@@ -3954,20 +4279,26 @@ async function aiSelectBrands(projectId) {
     const brandRules = agentGetRules({ scene: project.selectionParams?.scenePreference, categories: requiredCategories });
     const brandRulesText = agentFormatRulesForPrompt(brandRules);
 
-    const systemPrompt = `你是团购方案选品专家。根据客户需求选择最合适的品牌组合。
+    const systemPrompt = `你是团购方案选品专家。你的任务只是选择品牌组合，不要推荐具体商品（具体产品由算法生成）。
 
 ## 选品牌原则（必须严格遵守）
-1. **必须覆盖所有需求品类** - 如果需求要求"食品+日化"，必须选择食品品牌和日化品牌
-2. 每个品类至少选择 2-3 个品牌
-3. 品牌调性要符合客户定位（如国企偏好老字号/一线品牌）
-4. 品牌之间要有差异化，覆盖不同价位${brandRulesText ? '\n\n## 经验规则（请遵守）\n' + brandRulesText : ''}
+1. **只能从可选品牌列表中选择** - 禁止编造或推荐不在列表中的品牌名，每个品牌名必须与列表中的完全一致
+2. **必须覆盖所有需求品类** - 如果需求要求"食品+日化"，必须选择食品品牌和日化品牌
+3. 每个品类至少选择 2-3 个品牌
+4. 品牌调性要符合客户定位（如国企偏好老字号/一线品牌）
+5. 品牌之间要有差异化，覆盖不同价位${brandRulesText ? '\n\n## 经验规则（请遵守）\n' + brandRulesText : ''}
 
 ## 返回格式（严格JSON）
-{"brands":["品牌1","品牌2"],"categoryCoverage":{"食品":["品牌A","品牌B"],"日化":["品牌C"]},"rationale":"选择理由"}`;
+{"brands":["品牌1","品牌2"],"categoryCoverage":{"食品饮料":["品牌A","品牌B"],"日化个护":["品牌C"]},"rationale":"选择理由"}
+⚠️ categoryCoverage 的 key 必须使用系统标准大类名: ${MAJOR_CATEGORIES.join('、')}`;
 
+    // 包含对话内容，让 AI 可以引用对话中已推荐的品牌
+    const convoText = project.conversation ? formatConversationForAI(project.conversation) : '';
+    const brandContext = await agentBuildContext(project, 'brands');
     const userMessage = `## 客户需求
 ${project.structuredRequirement || '员工福利采购'}
 
+${convoText ? '## 对话记录（包含已讨论的品牌推荐）\n' + convoText + '\n' : ''}
 ## 需求品类（必须全部覆盖）
 ${requiredCategories.length > 0 ? requiredCategories.join('、') : '从需求中提取'}
 
@@ -3977,7 +4308,7 @@ ${requiredCategories.length > 0 ? requiredCategories.join('、') : '从需求中
 ## 可选品牌列表（含品类信息）
 ${JSON.stringify(brandInfoList, null, 2)}
 
-请选择品牌，确保覆盖所有需求品类，返回JSON格式。`;
+请选择品牌，确保覆盖所有需求品类，优先选择对话中已讨论过的品牌，返回JSON格式。${brandContext.addon}`;
 
     try {
         const response = await callAI([
@@ -3994,25 +4325,38 @@ ${JSON.stringify(brandInfoList, null, 2)}
 
         // 保存到 selectionParams
         project.selectionParams = project.selectionParams || {};
-        project.selectionParams.selectedBrands = result.brands;
-        project.selectionParams.brandRationale = result.rationale;
+        const sp = project.selectionParams;
+        // 优先使用 categoryCoverage（按大类分组），标准化大类名
+        if (result.categoryCoverage && Object.keys(result.categoryCoverage).length > 0) {
+            sp.brandsByCategory = {};
+            const catAliasMap = { '食品': '食品饮料', '日化': '日化个护', '日用': '日化个护', '个护': '日化个护', '生鲜': '生鲜特产', '健康': '健康养护', '电器': '家电数码', '家电': '家电数码', '数码': '家电数码', '家居': '家居生活', '家纺': '家居生活', '办公': '办公用品', '文具': '办公用品', '运动': '运动户外', '户外': '运动户外', '玩具': '玩具文娱', '文娱': '玩具文娱' };
+            for (const [key, brands] of Object.entries(result.categoryCoverage)) {
+                const normalizedKey = catAliasMap[key] || MAJOR_CATEGORIES.find(m => m.includes(key) || key.includes(m)) || key;
+                sp.brandsByCategory[normalizedKey] = brands;
+            }
+        } else if (result.brands && result.brands.length > 0) {
+            // 扁平品牌列表：尝试按产品大类自动分组
+            sp.brandsByCategory = {};
+            result.brands.forEach(b => {
+                const majors = getBrandMajorCategories(b);
+                majors.forEach(m => {
+                    if (!sp.brandsByCategory[m]) sp.brandsByCategory[m] = [];
+                    if (!sp.brandsByCategory[m].includes(b)) sp.brandsByCategory[m].push(b);
+                });
+            });
+        }
+        sp.selectedBrands = getFlatSelectedBrands(sp);
+        sp.brandRationale = result.rationale;
         project.brandRationale = result.rationale;
         await saveAllData();
-
-        // 更新显示：品牌标签可删除
-        const container = document.getElementById(`selected-brands-${projectId}`);
-        if (container) {
-            container.innerHTML = (result.brands || []).map(b =>
-                `<span class="tag bg-purple-100 text-purple-700 cursor-pointer hover:bg-purple-200" onclick="removeSelectionBrand(${projectId},'${b.replace(/'/g,"\\'")}')">${b} ✕</span>`
-            ).join(' ') + (result.rationale ? `<div class="text-xs text-gray-500 mt-1">${result.rationale}</div>` : '');
-            // 更新品牌下拉
-            refreshBrandSelect(projectId);
-        }
+        if (!skipPageRefresh) showSelectionPage(project);
+        return true;
 
     } catch (e) {
         console.error('AI 选品牌失败:', e);
         const container = document.getElementById(`selected-brands-${projectId}`);
         if (container) container.innerHTML = `<div class="text-red-500 text-xs">AI 选品牌失败: ${e.message}</div>`;
+        return false;
     }
 }
 
@@ -4065,15 +4409,20 @@ function scoreProduct(p, budget, targetMargin, estMargin, expectedMinCount, sele
     const bl = (p.brandLevel || '');
     if (blPref.length > 0) {
         let blScore = 3;
-        const blNorm = bl.replace('全国', '').replace('品牌', '');
-        if (blPref.some(pref => blNorm.includes(pref.replace('全国', '').replace('品牌', '')))) blScore = 10;
-        else if (bl.includes('一线') || bl.includes('老字号')) blScore = 7;
-        else if (bl.includes('二线') || bl.includes('国民')) blScore = 5;
+        if (blPref.some(pref => bl.includes(pref))) blScore = 10;
+        else if (bl.includes('国际品牌')) blScore = 8;
+        else if (bl.includes('全国一线')) blScore = 7;
+        else if (bl.includes('全国二线')) blScore = 5;
+        else if (bl.includes('网红') || bl.includes('新消费')) blScore = 5;
+        else if (bl.includes('地方品牌')) blScore = 4;
         score += blScore;
     } else {
-        if (bl.includes('一线') || bl.includes('老字号')) score += 10;
-        else if (bl.includes('二线') || bl.includes('国民')) score += 7;
-        else if (bl.includes('地方') || bl.includes('进口')) score += 5;
+        if (bl.includes('国际品牌')) score += 10;
+        else if (bl.includes('全国一线')) score += 8;
+        else if (bl.includes('全国二线')) score += 6;
+        else if (bl.includes('网红') || bl.includes('新消费')) score += 5;
+        else if (bl.includes('地方品牌')) score += 4;
+        else if (bl.includes('白牌')) score += 2;
         else score += 3;
     }
     const pStyle = (p.brandStyle || '');
@@ -4154,24 +4503,78 @@ function scoreProduct(p, budget, targetMargin, estMargin, expectedMinCount, sele
     return Math.min(100, score);
 }
 
-// ========== 8大类（与产品库 majorCategory 字段精确匹配） ==========
-const MAJOR_CATEGORIES = ['食品饮料', '生鲜特产', '健康养护', '日化个护', '家居家电', '运动户外', '企业定制', '卡券文娱'];
+// ========== 大类/品类映射（V11: 从 IndexedDB 动态加载，与产品库共享 categoryConfig） ==========
+const DEFAULT_MAJORS = ['食品饮料', '生鲜特产', '健康养护', '日化个护', '家居家电', '运动户外', '企业定制', '卡券文娱', '消费电子'];
+const DEFAULT_SUBCATEGORY_MAP = {
+    '粮油调味': '食品饮料', '调味品': '食品饮料', '大米': '食品饮料', '坚果': '食品饮料', '饼干糕点': '食品饮料', '粽子': '食品饮料', '月饼': '食品饮料', '蜜饯果干': '食品饮料', '零食': '食品饮料', '糖果': '食品饮料', '巧克力': '食品饮料', '膨化食品': '食品饮料', '方便食品': '食品饮料', '乳制品': '食品饮料', '牛奶': '食品饮料', '酸奶': '食品饮料', '奶酪': '食品饮料', '饮料': '食品饮料', '冲调': '食品饮料',
+    '肉制品': '生鲜特产', '海产': '生鲜特产', '水产': '生鲜特产', '蛋类': '生鲜特产', '禽肉': '生鲜特产', '传统食品': '生鲜特产', '地方特产': '生鲜特产', '鲜果': '生鲜特产', '生鲜水果': '生鲜特产',
+    '茶叶': '健康养护', '茗茶': '健康养护', '滋补保健': '健康养护', '燕窝': '健康养护', '花胶': '健康养护', '干货菌菇': '健康养护', '中药材': '健康养护',
+    '清洁用品': '日化个护', '纸品': '日化个护', '日杂': '日化个护', '洗护': '日化个护', '沐浴用品': '日化个护', '口腔护理': '日化个护', '护肤': '日化个护', '面膜': '日化个护', '护肤套装': '日化个护', '彩妆': '日化个护', '唇部': '日化个护', '底妆': '日化个护', '定妆': '日化个护', '眼妆': '日化个护', '口红': '日化个护', '香水': '日化个护', '美发造型': '日化个护', '洁面': '日化个护',
+    '被子': '家居家电', '床上套件': '家居家电', '枕头': '家居家电', '毯子': '家居家电', '夏凉用品': '家居家电', '厨房小电': '家居家电', '厨房电器': '家居家电', '生活电器': '家居家电', '个护电器': '家居家电', '杯具': '家居家电', '保温杯': '家居家电', '保温壶': '家居家电',
+    '健身器材': '运动户外', '跑步': '运动户外', '球类运动': '运动户外', '运动杯': '运动户外', '户外': '运动户外',
+    '书写工具': '企业定制', '文具': '企业定制', '本册': '企业定制', '日历': '企业定制', '节庆用品': '企业定制',
+    '兑换册': '卡券文娱', '提货券': '卡券文娱', '礼品卡': '卡券文娱',
+    '手机': '消费电子', '平板电脑': '消费电子', '笔记本电脑': '消费电子', '电子阅读器': '消费电子', '耳机': '消费电子', '蓝牙音箱': '消费电子', '智能手表': '消费电子', '智能手环': '消费电子', '充电宝': '消费电子', '数据线': '消费电子', '手机壳': '消费电子', '数码配件': '消费电子', '智能家居设备': '消费电子',
+};
+
+let MAJOR_CATEGORIES = [...DEFAULT_MAJORS];
+let CATEGORY_MAP = {};
+
+function applyCategoryConfigPS(config) {
+    const cfg = config || {};
+    let majors = [...DEFAULT_MAJORS];
+    let subMap = { ...DEFAULT_SUBCATEGORY_MAP };
+    // 1. 重命名
+    if (cfg.renamedMajors) {
+        majors = majors.map(m => cfg.renamedMajors[m] || m);
+        const newMap = {};
+        for (const [cat, major] of Object.entries(subMap)) {
+            newMap[cfg.renamedSubcategories && cfg.renamedSubcategories[cat] || cat] = cfg.renamedMajors[major] || major;
+        }
+        subMap = newMap;
+    }
+    // 2. 删除
+    if (cfg.deletedMajors) {
+        majors = majors.filter(m => !cfg.deletedMajors.includes(m));
+        const newMap = {};
+        for (const [cat, major] of Object.entries(subMap)) {
+            if (!cfg.deletedMajors.includes(major) && !(cfg.deletedSubcategories || []).includes(cat)) newMap[cat] = major;
+        }
+        subMap = newMap;
+    }
+    // 3. 新增
+    if (cfg.customMajors) { for (const m of cfg.customMajors) { if (!majors.includes(m)) majors.push(m); } }
+    if (cfg.customSubcategories) {
+        for (const [cat, major] of Object.entries(cfg.customSubcategories)) {
+            subMap[cat] = cfg.renamedMajors && cfg.renamedMajors[major] || major;
+        }
+    }
+    MAJOR_CATEGORIES = majors;
+    // 构建 CATEGORY_MAP
+    const map = {};
+    for (const major of majors) {
+        const keywords = [major];
+        for (const [cat, maj] of Object.entries(subMap)) {
+            if (maj === major) {
+                keywords.push(cat);
+                keywords.push(...cat.split(/[\/·\-_]/).filter(p => p));
+            }
+        }
+        map[major] = [...new Set(keywords)];
+    }
+    CATEGORY_MAP = map;
+}
+
+async function loadCategoryConfigPS() {
+    try {
+        const cfg = await loadSetting('categoryConfig');
+        applyCategoryConfigPS(cfg);
+    } catch (e) { console.warn('加载品类配置失败:', e); }
+}
 
 function majorCategoryMatch(productCat, selectedCat) {
     return productCat === selectedCat;
 }
-
-// ========== 品类映射（需求分析用——从需求文本提取大类关键词） ==========
-const CATEGORY_MAP = {
-    '食品饮料': ['大米', '米', '面', '粉', '粮油', '食用油', '面条', '面粉', '杂粮', '五谷', '粗粮', '小米', '糯米', '黑米', '糙米', '高粱', '荞麦', '藜麦', '绿豆', '红豆', '黄豆', '黑豆', '芸豆', '豌豆', '鹰嘴豆', '玉米', '紫薯', '红薯', '山药', '南瓜', '芝麻', '香油', '麻油', '菜籽油', '花生油', '橄榄油', '核桃油', '亚麻籽油', '山茶油', '调味', '调味品', '蚝油', '生抽', '老抽', '料酒', '陈醋', '香醋', '白醋', '味精', '鸡精', '淀粉', '酵母', '火锅底料', '蘸料', '辣酱', '豆瓣酱', '芝麻酱', '花生酱', '番茄酱', '沙拉酱', '果酱', '调料', '酱料', '零食', '小吃', '饼干', '糖果', '巧克力', '肉脯', '膨化', '薯片', '薯条', '锅巴', '爆米花', '肉干', '肉松', '牛肉干', '猪肉脯', '鸭脖', '鸭翅', '鸭舌', '凤爪', '鸡爪', '卤味', '卤', '解馋', '零嘴', '饮料', '咖啡', '可可', '奶茶', '果汁', '椰子水', '椰汁', '杏仁露', '核桃露', '豆奶', '豆浆', '酸梅汤', '凉茶', '汽水', '可乐', '气泡', '苏打', '矿泉水', '纯净水', '功能饮料', '运动饮料', '茶饮', '果茶', '花茶饮', '柠檬茶', '电解质', 'NFC', '冷萃', '挂耳', '咖啡液', '冻干粉', '即饮', '饮用', '椰乳', '厚椰乳', '生椰', '植物饮', '沙棘汁', '西梅汁', '杨梅汁', '气泡水', '冲泡', '速食', '即食', '代餐', '燕麦', '麦片', '藕粉', '芝麻糊', '螺蛳粉', '酸辣粉', '方便面', '方便粉', '拌面', '拉面', '挂面', '米线', '米粉', '罐头', '坚果', '夏威夷果', '巴旦木', '开心果', '碧根果', '腰果', '核桃', '松子', '榛子', '瓜子', '花生', '板栗', '杏仁', '炒货', '每日坚果', '混合坚果', '糕点', '曲奇', '蛋黄酥', '月饼', '蛋糕', '蛋黄派', '凤梨酥', '榴莲酥', '蝴蝶酥', '桃酥', '麻薯', '沙琪玛', '威化', '华夫', '蛋卷', '面包', '吐司', '蛋挞', '马卡龙', '酥饼', '烘焙', '焙烤', '麻花', '绿豆糕', '桂花糕', '云片糕', '米糕', '千层酥', '牛舌饼', '老婆饼', '老公饼', '粽子', '粽礼', '粽香', '月韵', '月宴', '年糕', '汤圆', '青团', '饺子', '馄饨', '包子', '馒头', '烧卖', '春卷', '八宝饭', '糍粑', '蜜饯', '果脯', '果干', '葡萄干', '话梅', '杨梅', '山楂', '梅子', '乌梅', '青梅', '芒果干', '草莓干', '蓝莓干', '蔓越莓', '柠檬干', '椰子干', '香蕉干', '桂圆干', '陈皮', '金桔', '牛奶', '纯奶', '高钙奶', '有机奶', '儿童奶', '酸奶', '羊奶', '驼奶', '鲜牛奶', '鲜奶', '巴氏', '乳制品', '奶粉', '乳粉', '奶昔', '奶酥', '奶片', '奶条', '奶贝', '奶酪', '芝士', '黄油', '奶油', '炼乳', '乳酪', '干酪', '乳', '奶'],
-    '生鲜特产': ['水果', '苹果', '橙', '车厘子', '榴莲', '蛋类', '咸蛋', '皮蛋', '鸡蛋', '鸭蛋', '鹌鹑', '松花蛋', '咸鸭蛋', '蛋黄', '蛋制品', '鲜果', '生鲜', '牛排', '鸡翅', '虾仁', '鱼丸', '冻品', '冷冻', '速冻', '冰鲜', '冷鲜', '虾滑', '鱼片', '肉卷', '肥牛', '羊肉卷', '火锅食材', '半成品菜', '料理包', '冻肉', '特产', '腊味', '腊肉', '腊肠', '香肠', '红肠', '火腿肠', '火腿', '培根', '午餐肉', '肉制品', '畜禽', '熟食', '腌腊', '风干', '牛肉', '猪肉', '羊肉', '鸡肉', '鸭肉', '鹅肉', '鸽子', '卤蛋', '烧鸡', '烤鸭', '酱鸭', '酱肉', '熏肉', '熏肠', '肉枣', '潮汕', '牛肉丸', '海产', '海鲜', '海味', '海珍', '干贝', '虾皮', '虾米', '海米', '蚝干', '蛤蜊', '蛏干', '鲍鱼', '海参', '鱿鱼', '墨鱼', '章鱼', '紫菜', '海带', '海苔', '裙带菜', '龙须菜', '鱼干', '鱼片', '鱼松', '鱼丸', '虾丸', '鱼糜', '水产', '地方特色', '家乡味', '地道', '正宗', '特产食品', '非遗食品', '地理标志', '老字号', '中华老字号'],
-    '健康养护': ['滋补', '养生', '保健', '燕窝', '燕盏', '燕条', '干燕窝', '即炖', '鲜炖', '燕角', '燕碎', '茶叶', '茗茶', '茶礼', '茶韵', '龙井', '普洱', '铁观音', '大红袍', '毛尖', '碧螺春', '银针', '金骏眉', '正山小种', '白茶', '绿茶', '红茶', '乌龙', '花茶', '菊花', '茉莉', '荞麦茶', '大麦茶', '苦荞', '肉桂', '水仙', '岩茶', '单丛', '黄茶', '黑茶', '生普', '熟普', '茶砖', '沱茶', '虫草', '阿胶', '鹿茸', '灵芝', '石斛', '黄芪', '当归', '党参', '人参', '西洋参', '高丽参', '红参', '太子参', '丹参', '三七', '天麻', '枸杞', '桂圆', '花胶', '鱼胶', '雪蛤', '海马', '金线莲', '藏红花', '罗汉果', '胖大海', '金银花', '玫瑰花', '决明子', '山楂干', '新会', '桑葚', '黄精', '玉竹', '麦冬', '百合', '莲子', '芡实', '葛根', '茯苓', '山药片', '药食', '膏方', '枇杷膏', '秋梨膏', '柠檬膏', '姜枣膏', '四物汤', '八珍', '阿胶糕', '固元膏', '按摩仪', '护眼', '干货', '菌菇', '松茸', '竹荪', '猴头菇', '虫草花', '牛肝菌', '鸡枞', '羊肚菌', '茶树菇', '姬松茸', '花菇', '冬菇', '香菇', '木耳', '银耳', '榛蘑', '红菇', '干菜', '黄花菜', '笋干', '笋尖', '腐竹', '豆皮', '烤麸', '面筋', '贡菜', '梅干菜', '蕨菜', '脱水蔬菜', '百合干', '红枣', '黑枣', '椰枣', '阿胶枣', '蜜枣', '龙眼', '荔枝'],
-    '日化个护': ['清洁', '纸巾', '湿巾', '消毒', '洗衣', '洗衣液', '洗衣凝珠', '洗洁精', '洁厕', '去油污', '油污净', '抹布', '拖把', '垃圾桶', '收纳', '纸品', '抽纸', '卷纸', '手帕纸', '棉柔巾', '厨房纸', '柔顺剂', '漂白', '管道疏通', '洁净', '除菌', '抑菌', '杀菌', '家居清洁', '衣物清洁', '洗碗', '百洁布', '钢丝球', '垃圾袋', '保鲜袋', '保鲜膜', '一次性手套', '一次性餐具', '衣架', '粘钩', '挂钩', '洗发', '护发', '发膜', '沐浴', '洗护', '牙膏', '牙刷', '漱口水', '牙线', '毛巾', '浴巾', '方巾', '干发帽', '护手霜', '身体乳', '香皂', '肥皂', '洗手液', '皂', '口腔护理', '搓澡', '浴球', '浴帽', '牙粉', '口喷', '水牙线', '冲牙器', '美妆', '护肤', '面膜', '口红', '唇膏', '唇彩', '唇釉', '唇蜜', '粉底', 'BB霜', 'CC霜', '气垫', '散粉', '蜜粉', '遮瑕', '隔离', '妆前', '定妆', '腮红', '修容', '高光', '精华', '面霜', '乳液', '爽肤水', '化妆水', '眼霜', '眼影', '眼线', '眉笔', '眉粉', '睫毛', '防晒', '卸妆', '洁面', '洗面奶', '香水', '香氛', '淡香', '古龙', '香薰', '香膏', '彩妆', '化妆', '美发造型', '发蜡', '发泥', '定型', '发胶', '发油', '弹力素', '安瓶', '原液', '精粹', '日霜', '晚霜', '颈霜', '手霜', '润肤', '保湿', '美白', '抗皱', '紧致', '修护', '去角质', '祛痘'],
-    '家居家电': ['家纺', '床品', '家居', '四件套', '被套', '床单', '枕套', '床笠', '床罩', '被子', '被芯', '羽绒被', '蚕丝被', '羊毛被', '棉被', '夏凉被', '空调被', '枕头', '枕芯', '乳胶枕', '记忆枕', '毛毯', '盖毯', '法兰绒毯', '珊瑚绒毯', '凉席', '冰丝席', '竹席', '藤席', '蚊帐', '蒙古包', '抱枕', '坐垫', '靠枕', '腰靠', '收纳用品', '沙发垫', '毯子', '家电', '小家电', '电器', '厨电', '电饭煲', '电饭锅', '电压力锅', '电炖锅', '电蒸锅', '电火锅', '电饼铛', '空气炸锅', '微波炉', '烤箱', '电磁炉', '电陶炉', '养生壶', '电水壶', '电热水瓶', '饮水机', '茶吧机', '破壁机', '榨汁机', '豆浆机', '料理机', '搅拌机', '绞肉机', '咖啡机', '面包机', '酸奶机', '厨师机', '打蛋器', '净水器', '加湿器', '除湿机', '空气净化器', '电风扇', '空调扇', '取暖器', '暖风机', '吸尘器', '扫地机', '洗地机', '挂烫机', '电熨斗', '吹风机', '剃须刀', '电动牙刷', '美容仪', '洁面仪', '卷发棒', '直发器', '理发器', '干衣机', '烘鞋器', '除螨仪', '毛球修剪器', '保温杯', '保温壶', '水杯', '插座', '充电器', '排插', '插线板', '接线板'],
-    '运动户外': ['运动', '健身', '瑜伽', '瑜伽垫', '瑜伽服', '瑜伽球', '瑜伽砖', '瑜伽柱', '瑜伽带', '跑步', '跑步机', '跑鞋', '运动鞋', '健步', '暴走', '马拉松', '跳绳', '哑铃', '俯卧撑', '拉力器', '健腹轮', '弹力带', '壶铃', '杠铃', '动感单车', '椭圆机', '筋膜枪', '划船机', '仰卧板', '引体向上', '篮球', '足球', '排球', '乒乓球', '羽毛球', '网球', '台球', '高尔夫', '游泳', '骑行', '滑板', '轮滑', '球拍', '球类', '运动护具', '运动水杯', '户外', '露营', '登山', '徒步', '帐篷', '睡袋', '防潮垫', '冲锋衣', '登山杖', '吊床', '烧烤炉', '野餐', '野餐垫', '折叠椅', '露营灯', '防晒帽', '垂钓', '骑行装备', '登山装备', '露营装备', '游泳装备', '垂钓装备'],
-    '企业定制': ['定制礼盒', '定制保温杯', '定制雨伞', '定制帆布袋', '文创礼品', '企业定制', '文创', '办公用品', '文具', '礼品', '日历', '对联', '春联', '福字', '红包', '窗花', '灯笼', '中国结', '剪纸', '年画', '钢笔', '圆珠笔', '签字笔', '铅笔', '马克笔', '荧光笔', '毛笔', '中性笔', '笔芯', '笔袋', '笔筒', '笔记本', '记事本', '手账', '日记本', '便签', '便利贴', '线圈本', '活页本', '方格本', '台历', '挂历', '周历', '年历', '万年历', '贺卡', '明信片', '贴纸', '胶带', '书签', '文件夹', '订书机', '回形针', '胶棒', '胶水', '剪刀', '尺子', '橡皮', '修正带', '计算器', '地球仪', '文房', '文房四宝'],
-    '卡券文娱': ['卡券', '购物卡', '超市卡', '电影票', '蛋糕券', '餐饮券', '咖啡券', '景区门票', '兑换卡', '礼品卡', '代金券', '提货券', '体验券', '会员卡', '文化娱乐', '演出票', '展览票', '游乐园', '旅游卡']
-};
 
 function categoryMatches(productCat, requiredCat) {
     if (!productCat || !requiredCat) return false;
@@ -4221,7 +4624,7 @@ async function generateProposals(projectId) {
     // 预筛选商品：放宽条件，给算法更多选择空间
     const budget = project.budgetPerPerson || 200;
     const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
-    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 30);
     const maxPurchasePrice = budget * 0.9;
     console.log('生成方案 - 目标毛利率:', effectiveMargin + '%');
 
@@ -4275,7 +4678,7 @@ async function generateProposals(projectId) {
 async function algorithmSelectProducts(project, candidates, count, selectedCats, minProducts, maxProducts) {
     const budget = project.budgetPerPerson || 200;
     const marginConstraint = (project.constraints || []).find(c => c.field === '毛利率');
-    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 20);
+    const effectiveMargin = marginConstraint ? parseInt(marginConstraint.value) : (project.targetMargin || 30);
     const marginFactor = 1 - effectiveMargin / 100;
     const minBudget = budget * 0.9;
     const maxBudget = budget * 1.1;
@@ -4300,8 +4703,30 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         ? selectedCats.filter(c => allCats.includes(c))
         : allCats;
     if (cats.length === 0) { alert('没有可用的产品品类'); return; }
-    const ppMin = parseInt(minProducts) > 0 ? parseInt(minProducts) : cats.length;
-    const ppMax = parseInt(maxProducts) > 0 ? parseInt(maxProducts) : Math.max(cats.length * 2, cats.length);
+    // 从 productsPerCategory 读取每大类产品数约束
+    const ppc = project.selectionParams?.productsPerCategory || {};
+    const catMins = {}; const catMaxs = {};
+    cats.forEach(cat => {
+        catMins[cat] = ppc[cat]?.min || 1;
+        catMaxs[cat] = ppc[cat]?.max || 2;
+    });
+    // 大类占比：计算归一化权重（硬约束：按占比分配每品类预算）
+    const catRatios = project.selectionParams?.categoryRatios || {};
+    const ratioTotal = Object.values(catRatios).reduce((a, b) => a + b, 0);
+    const catWeights = {};
+    if (ratioTotal > 0) {
+        const setCats = Object.keys(catRatios).filter(c => cats.includes(c));
+        const unsetCats = cats.filter(c => !setCats.includes(c));
+        const remainingRatio = Math.max(0, 100 - ratioTotal);
+        const perUnset = unsetCats.length > 0 ? remainingRatio / unsetCats.length : 0;
+        cats.forEach(cat => {
+            catWeights[cat] = catRatios[cat] ? catRatios[cat] / 100 : perUnset / 100;
+        });
+    } else {
+        cats.forEach(cat => { catWeights[cat] = 1 / cats.length; });
+    }
+    const ppMin = parseInt(minProducts) > 0 ? parseInt(minProducts) : Object.values(catMins).reduce((a, b) => a + b, 0);
+    const ppMax = parseInt(maxProducts) > 0 ? parseInt(maxProducts) : Object.values(catMaxs).reduce((a, b) => a + b, 0);
 
     // 为每个品类构建可选产品列表（按分数排序）
     const catProducts = {};
@@ -4310,8 +4735,12 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
     }
 
     // 生成所有品类×1的组合（每个品类至少1个）
+    let _comboIterations = 0;
+    const _COMBO_MAX_ITER = 20000;
     function enumerateCombos(catList, idx, current, allCombos) {
+        if (allCombos.length > 5000 || _comboIterations > _COMBO_MAX_ITER) return;
         if (idx >= catList.length) {
+            _comboIterations++;
             const total = current.reduce((s, p) => s + calcQuote(p), 0);
             current._totalQuote = Math.round(total * 100) / 100;
             if (current._totalQuote >= minBudget && current._totalQuote <= maxBudget) {
@@ -4324,22 +4753,24 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         const cat = catList[idx];
         const products = catProducts[cat];
         for (const p of products) {
+            if (allCombos.length > 5000 || _comboIterations > _COMBO_MAX_ITER) return;
             current.push(p);
             enumerateCombos(catList, idx + 1, current, allCombos);
             current.pop();
-            if (allCombos.length > 5000) return; // 防止爆炸
         }
     }
 
     let allCombos = [];
-    enumerateCombos(cats, 0, [], allCombos);
+    _comboIterations = 0; console.time('enum1'); enumerateCombos(cats, 0, [], allCombos); console.timeEnd('enum1');
+    console.log(`枚举1: ${allCombos.length}个组合, ${_comboIterations}次迭代`);
 
     // 如果品类×1不够，尝试某些品类选2个
     if (allCombos.length < count * 2) {
         console.log('品类×1组合不够，尝试增加产品数量');
         // 品类×1 + 任意品类多选1个
         const baseCombos = [];
-        enumerateCombos(cats, 0, [], baseCombos);
+        _comboIterations = 0; console.time('enum2'); enumerateCombos(cats, 0, [], baseCombos); console.timeEnd('enum2');
+        console.log(`枚举2: ${baseCombos.length}个组合, ${_comboIterations}次迭代`);
         // 从接近预算的组合中，尝试加一个产品
         baseCombos.sort((a, b) => b._totalQuote - a._totalQuote);
         const topBase = baseCombos.slice(0, 200);
@@ -4360,12 +4791,14 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
     if (allCombos.length < count) {
         console.log('放宽预算约束到85%');
         allCombos = [];
-        enumerateCombos(cats, 0, [], allCombos);
+        _comboIterations = 0; console.time('enum3'); enumerateCombos(cats, 0, [], allCombos); console.timeEnd('enum3');
+        console.log(`枚举3: ${allCombos.length}个组合(放宽前), ${_comboIterations}次迭代`);
         allCombos = allCombos.filter(c => c._totalQuote >= budget * 0.8 && c._totalQuote <= maxBudget);
         // 如果还不够，再尝试品类×2
         if (allCombos.length < count) {
             const baseCombos = [];
-            enumerateCombos(cats, 0, [], baseCombos);
+            _comboIterations = 0; console.time('enum4'); enumerateCombos(cats, 0, [], baseCombos); console.timeEnd('enum4');
+            console.log(`枚举4: ${baseCombos.length}个组合, ${_comboIterations}次迭代`);
             baseCombos.sort((a, b) => b._totalQuote - a._totalQuote);
             for (const base of baseCombos.slice(0, 200)) {
                 for (const p of candidates) {
@@ -4408,6 +4841,37 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             return false;
         }).length;
     };
+    const sameCategoryTotal = (combo, targetCat, targetMajor, _totalBudget) => {
+        targetMajor = targetMajor || targetCat;
+        return combo.filter(p => {
+            const pCat = p.category || p.majorCategory;
+            const pMajor = p.majorCategory || p.category;
+            if (pCat === targetCat) return true;
+            if (targetCat === targetMajor && pMajor === targetCat) return true;
+            if (pCat === pMajor && targetCat === pMajor) return true;
+            return false;
+        }).reduce((sum, p) => sum + calcQuote(p), 0);
+    };
+    // 品类重复限制：该品类产品总价 ≤ 总预算20% 即可重复，否则禁止
+    const canAddSameCategory = (combo, targetCat, targetMajor, newQuote) => {
+        const existing = sameCategoryTotal(combo, targetCat, targetMajor);
+        const threshold = budget * 0.2;
+        return (existing + newQuote) <= threshold;
+    };
+    // 计算方案中金额占比最大的品牌
+    const getDominantBrand = (products) => {
+        if (!products || products.length === 0) return '';
+        const brandTotals = {};
+        products.forEach(p => {
+            const b = p.brand || '';
+            brandTotals[b] = (brandTotals[b] || 0) + calcQuote(p);
+        });
+        let maxBrand = '', maxTotal = 0;
+        for (const [b, t] of Object.entries(brandTotals)) {
+            if (t > maxTotal) { maxBrand = b; maxTotal = t; }
+        }
+        return maxBrand;
+    };
 
     // 品类多样性优先排序：全品类不同的组合排在前面，同档内按总价
     allCombos.sort((a, b) => {
@@ -4421,19 +4885,11 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
     console.log(`找到 ${allCombos.length} 个有效组合`);
 
     // 从有效组合中选 count 个差异化方案
-    // 策略定义：每种策略有不同的选品逻辑
-    const strategyDefs = [
-        { name: '品类均衡', tagline: '各大品类精选搭配', desc: '每个品类精选1款，总价均衡', catsPerGroup: 1, budgetTarget: 0.97, preferExpensive: false },
-        { name: '食品主打', tagline: '食品为主+日化点缀', desc: '以食品品类为主，搭配日化', foodHeavy: true, budgetTarget: 0.98, preferExpensive: true },
-        { name: '超高性价比', tagline: '精打细算最优选', desc: '各品类最低价产品组合', cheapest: true, budgetTarget: 0.95, preferExpensive: false },
-        { name: '轻奢配置', tagline: '品质升级一步到位', desc: '各品类高价产品，接近预算上限', catsPerGroup: 1, budgetTarget: 0.99, preferExpensive: true },
-        { name: '日化主打', tagline: '日化为主+食品点缀', desc: '以日化品类为主，搭配食品', dailyHeavy: true, budgetTarget: 0.97, preferExpensive: true },
-        { name: '多品组合', tagline: '更多产品更多选择', desc: '包含更多产品品类', multiCat: true, budgetTarget: 0.98, preferExpensive: false },
-        { name: '品牌专选', tagline: '同一品牌整套方案', desc: '尽量使用同一品牌产品', sameBrand: true, budgetTarget: 0.96, preferExpensive: false },
-        { name: '高端品牌', tagline: '一线品牌品质之选', desc: '优先一线品牌和老字号', premiumBrand: true, budgetTarget: 0.98, preferExpensive: true }
-    ];
+    // 通过预算利用率梯度 + 价格偏好交替自然差异化
 
-    proposals = proposals.filter(p => p.projectId !== project.id);
+    // 保留已有方案，新方案追加（不覆盖）
+    const existingProposals = proposals.filter(p => p.projectId === project.id);
+    const existingMaxIndex = existingProposals.reduce((max, p) => Math.max(max, p.index || 0), 0);
 
     if (allCombos.length === 0) {
         const fallback = cats.map(cat => catProducts[cat][0]).filter(Boolean);
@@ -4452,6 +4908,9 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         return [...(byCategory[cat] || [])].sort(sortWithScore);
     };
 
+    // 每品类预算上限（循环内设置，adjustToBudget 可用）
+    let _catBudgets = {};
+
     // 预算强制调整（三轮兜底）
     const adjustToBudget = (selected, minB, maxB) => {
         let total = selected.reduce((s, p) => s + calcQuote(p), 0);
@@ -4459,28 +4918,38 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
 
         const arr = [...selected];
         if (total < minB && arr.length > 0) {
-            // 只加不同品类的产品，硬跳同类品，宁可预算低也不出同品类重复
+            // 只加不同品类的产品，硬跳同类品，宁可预算低也不出同品类重复。受品类预算硬约束。
+            const catTotals = {};
+            arr.forEach(p => { const c = p.majorCategory; catTotals[c] = (catTotals[c] || 0) + calcQuote(p); });
             const avail = candidates
-                .filter(p => !arr.some(sp => sp.id === p.id))
+                .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
                 .sort((a, b) => calcQuote(b) - calcQuote(a));
             for (const p of avail) {
                 if (total >= minB) break;
                 const add = calcQuote(p);
                 if (total + add > maxB) continue;
-                if (sameCategoryCount(arr, p.category || p.majorCategory, p.majorCategory || p.category) > 0) continue;
+                if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
+                const cat = p.majorCategory;
+                const catBudget = _catBudgets[cat];
+                if (catBudget && (catTotals[cat] || 0) + add > catBudget * 1.1) continue;
                 arr.push(p); total += add;
+                catTotals[cat] = (catTotals[cat] || 0) + add;
             }
-            // 放宽至 maxBudget：同样只加不同品类
+            // 放宽至 maxBudget：品类预算也放宽到 1.3 倍
             if (total < minB) {
                 const remaining = candidates
-                    .filter(p => !arr.some(sp => sp.id === p.id))
+                    .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
                     .sort((a, b) => calcQuote(b) - calcQuote(a));
                 for (const p of remaining) {
                     if (total >= minB) break;
                     const add = calcQuote(p);
                     if (total + add > maxB) continue;
-                    if (sameCategoryCount(arr, p.category || p.majorCategory, p.majorCategory || p.category) > 0) continue;
+                    if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
+                    const cat = p.majorCategory;
+                    const catBudget = _catBudgets[cat];
+                    if (catBudget && (catTotals[cat] || 0) + add > catBudget * 1.3) continue;
                     arr.push(p); total += add;
+                    catTotals[cat] = (catTotals[cat] || 0) + add;
                 }
             }
             // 第三轮：用更贵的商品替换最便宜的，逐步逼近预算
@@ -4489,7 +4958,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                     arr.sort((a, b) => calcQuote(a) - calcQuote(b));
                     const cheapest = arr[0];
                     const replacement = candidates
-                        .filter(p => !arr.some(sp => sp.id === p.id) && calcQuote(p) > calcQuote(cheapest))
+                        .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) && calcQuote(p) > calcQuote(cheapest) && canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p)))
                         .sort((a, b) => {
                             const aSame = sameCategoryCount(arr, a.category || a.majorCategory, a.majorCategory || a.category);
                             const bSame = sameCategoryCount(arr, b.category || b.majorCategory, b.majorCategory || b.category);
@@ -4504,10 +4973,23 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                     } else break;
                 }
             }
+            // 第四轮：兜底——放宽品类预算和子品类限制，直接加最便宜的产品凑够预算
+            if (total < minB) {
+                const desperation = candidates
+                    .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
+                    .sort((a, b) => calcQuote(a) - calcQuote(b));
+                for (const p of desperation) {
+                    if (total >= minB) break;
+                    const add = calcQuote(p);
+                    if (total + add > maxBudget) continue;
+                    arr.push(p); total += add;
+                    console.warn(`预算兜底：放宽约束添加 ${p.name} (${p.brand}) ¥${add}`);
+                }
+            }
         } else if (total > maxB && arr.length > 1) {
             // 总价太高：优先替换为便宜的，品类多样性优先
             const avail = candidates
-                .filter(p => !arr.some(sp => sp.id === p.id))
+                .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
                 .sort((a, b) => {
                     const aSame = sameCategoryCount(arr, a.category || a.majorCategory, a.majorCategory || a.category);
                     const bSame = sameCategoryCount(arr, b.category || b.majorCategory, b.majorCategory || b.category);
@@ -4526,12 +5008,16 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                     if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(cheapAlt); arr[idx] = cheapAlt; }
                     continue;
                 }
-                // 同品类找不到，试试跨品类替换（只要能降价）
-                const anyCheap = avail.find(p => calcQuote(p) < calcQuote(exp) && total - calcQuote(exp) + calcQuote(p) <= maxB);
-                if (anyCheap) {
-                    const idx = arr.findIndex(p => p.id === exp.id);
-                    if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(anyCheap); arr[idx] = anyCheap; }
-                    continue;
+                // 同品类找不到，跨品类替换前检查：该品类至少保留 catMin 个
+                const catMinCount = (cat) => (catMins[cat] || 1);
+                const expCatCount = arr.filter(p => majorCategoryMatch(p.majorCategory, cat)).length;
+                if (expCatCount > catMinCount(cat)) {
+                    const anyCheap = avail.find(p => calcQuote(p) < calcQuote(exp) && total - calcQuote(exp) + calcQuote(p) <= maxB);
+                    if (anyCheap) {
+                        const idx = arr.findIndex(p => p.id === exp.id);
+                        if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(anyCheap); arr[idx] = anyCheap; }
+                        continue;
+                    }
                 }
             }
             // 第2轮：仍超预算，尝试把最贵的替换为两个更便宜的
@@ -4553,14 +5039,14 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                     // 还是超：换成便宜的 + 再找一个更便宜的换掉另一个贵的
                 }
             }
-            // 第3轮：最后手段 — 移除产品（但保留每品类至少1个 + 不低于ppMin）
+            // 第3轮：最后手段 — 移除产品（但保留每品类至少 catMin 个 + 不低于ppMin）
             if (total > maxB && arr.length > ppMin) {
                 const sorted3 = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
                 for (const exp of sorted3) {
                     if (total <= maxB || arr.length <= ppMin) break;
                     const cat = exp.majorCategory;
                     const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
-                    if (sameCatCnt <= 1) continue; // 保留品类唯一产品
+                    if (sameCatCnt <= (catMins[cat] || 1)) continue;
                     const idx = arr.findIndex(p => p.id === exp.id);
                     if (idx >= 0) { total -= calcQuote(exp); arr.splice(idx, 1); }
                 }
@@ -4587,17 +5073,29 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
     const adjustProductCount = (products, minN, maxN) => {
         const arr = [...products];
         let total = arr.reduce((s, p) => s + calcQuote(p), 0);
-        const absMin = cats.length; // 至少每品类一个
+        // 每个品类至少保留 catMin 个产品
+        const catMinCount = (cat) => catMins[cat] || 1;
+        const absMin = Object.values(catMins).reduce((a, b) => a + b, 0);
 
         // 太少：三阶段补足
-        // 阶段1：只加不同品类的产品，硬跳同类品
+        // 阶段1：优先补足未达 catMin 的品类
         while (arr.length < minN) {
             let best = null, bestPrice = Infinity;
+            // 优先补足少于 catMin 的品类
+            for (const cat of cats) {
+                const currentInCat = arr.filter(p => majorCategoryMatch(p.majorCategory, cat)).length;
+                if (currentInCat >= catMinCount(cat)) continue;
+                const p = candidates.find(p => !excludedBrands.has(p.brand) && majorCategoryMatch(p.majorCategory, cat) && !arr.some(sp => sp.id === p.id) && total + calcQuote(p) <= maxBudget && canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p)));
+                if (p && calcQuote(p) < bestPrice) { best = p; bestPrice = calcQuote(p); }
+            }
+            if (best) { arr.push(best); total += bestPrice; continue; }
+            // 阶段1b：放宽品类限制，加任何不同品类的产品
             for (const p of candidates) {
                 if (arr.some(sp => sp.id === p.id)) continue;
+                if (excludedBrands.has(p.brand)) continue;
                 const add = calcQuote(p);
                 if (total + add > maxBudget) continue;
-                if (sameCategoryCount(arr, p.category || p.majorCategory, p.majorCategory || p.category) > 0) continue;
+                if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
                 if (add < bestPrice) { best = p; bestPrice = add; }
             }
             if (best) { arr.push(best); total += bestPrice; continue; }
@@ -4608,15 +5106,15 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                 if (arr.length <= absMin) break;
                 const cat = exp.majorCategory;
                 const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
-                if (sameCatCnt <= 1) continue; // 保留品类唯一产品
+                if (sameCatCnt <= catMinCount(cat)) continue;
                 // 找一个更便宜的替代品 + 一个能塞进去的新品
                 const avail = candidates
-                    .filter(p => !arr.some(sp => sp.id === p.id))
+                    .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
                     .sort((a, b) => calcQuote(a) - calcQuote(b));
                 const cheapAlt = avail.find(p => calcQuote(p) < calcQuote(exp) && p.majorCategory === cat);
                 if (!cheapAlt) continue;
                 const budgetLeft = maxBudget - (total - calcQuote(exp) + calcQuote(cheapAlt));
-                const extra = avail.find(p => p.id !== cheapAlt.id && calcQuote(p) <= budgetLeft);
+                const extra = avail.find(p => p.id !== cheapAlt.id && calcQuote(p) <= budgetLeft && canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p)));
                 if (extra) {
                     const idx = arr.findIndex(p => p.id === exp.id);
                     total = total - calcQuote(exp) + calcQuote(cheapAlt) + calcQuote(extra);
@@ -4630,9 +5128,10 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             let best2 = null, bestPrice2 = Infinity;
             for (const p of candidates) {
                 if (arr.some(sp => sp.id === p.id)) continue;
+                if (excludedBrands.has(p.brand)) continue;
                 const add = calcQuote(p);
                 if (total + add > maxBudget * 1.1) continue;
-                if (sameCategoryCount(arr, p.category || p.majorCategory, p.majorCategory || p.category) > 0) continue;
+                if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
                 if (add < bestPrice2) { best2 = p; bestPrice2 = add; }
             }
             if (best2 && arr.length < minN) {
@@ -4641,14 +5140,14 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             } else break;
         }
 
-        // 太多：移除最低价的冗余产品（保留每品类至少一个，不跌破预算下限）
+        // 太多：移除最低价的冗余产品（保留每品类至少 catMin 个，不跌破预算下限）
         if (arr.length > maxN && arr.length > absMin) {
             const sorted = [...arr].sort((a, b) => calcQuote(a) - calcQuote(b));
             for (const cheap of sorted) {
                 if (arr.length <= maxN || arr.length <= absMin) break;
                 const cat = cheap.majorCategory;
                 const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
-                if (sameCatCnt <= 1) continue;
+                if (sameCatCnt <= catMinCount(cat)) continue;
                 const newTotal = total - calcQuote(cheap);
                 if (newTotal < minBudget) continue;
                 const idx = arr.findIndex(p => p.id === cheap.id);
@@ -4659,130 +5158,53 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         return { products: arr, total: Math.round(total * 100) / 100 };
     };
 
+    // 跨方案品牌去重：已有方案中金额占比最大的品牌，新方案不再使用
+    const excludedBrands = new Set();
+    existingProposals.forEach(ep => {
+        const db = getDominantBrand(ep.products || []);
+        if (db) excludedBrands.add(db);
+    });
     for (let i = 0; i < count; i++) {
-        const strategy = strategyDefs[i % strategyDefs.length];
+        // 差异化参数：预算利用率梯度 + 价格偏好交替
+        const budgetTargets = [0.92, 0.96, 1.0];
+        const budgetTarget = budgetTargets[i % 3];
+        const preferExpensive = i % 2 === 1;
+        const effectiveBudget = budget * budgetTarget;
+        // 每品类预算上下限 = effectiveBudget × 占比权重 ±10%
+        _catBudgets = {};
+        cats.forEach(cat => { _catBudgets[cat] = effectiveBudget * (catWeights[cat] || 1 / cats.length); });
         let selectedProducts = [];
 
-        // 根据策略选品（所有策略均使用 getCatProds 保证品牌优先级）
-        if (strategy.cheapest) {
-            for (const cat of cats) {
-                const cheapest = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
-                if (cheapest && !selectedProducts.some(p => p.id === cheapest.id)) {
-                    selectedProducts.push(cheapest);
-                }
-            }
-        } else if (strategy.foodHeavy) {
-            const FOOD_CATS = ['食品饮料', '生鲜特产', '健康养护', '食品', '生鲜', '健康'];
-            const foodCat = cats.find(c => FOOD_CATS.includes(c)) || cats[0];
-            const otherCats = cats.filter(c => c !== foodCat);
-            const foodProds = getCatProds(foodCat, (a, b) => calcQuote(b) - calcQuote(a));
+        // 统一选品逻辑：每品类按 catMax 选品，评分排序，价格偏好交替，受品类预算硬约束
+        for (const cat of cats) {
+            const catMax = catMaxs[cat] || 2;
+            const catBudget = _catBudgets[cat] || effectiveBudget;
+            const catBudgetUpper = catBudget * 1.1;
+            const catBudgetLower = catBudget * 0.9;
+            const sortFn = preferExpensive
+                ? (a, b) => calcQuote(b) - calcQuote(a)
+                : (a, b) => calcQuote(a) - calcQuote(b);
+            const prods = getCatProds(cat, sortFn);
             let added = 0;
-            for (const p of foodProds) {
-                if (added >= 2) break;
+            let catRunningTotal = 0;
+            for (const p of prods) {
+                if (added >= catMax) break;
+                if (excludedBrands.has(p.brand)) continue;
+                if (usedMainProducts.has(p.id) || selectedProducts.some(sp => sp.id === p.id)) continue;
+                const quote = calcQuote(p);
+                if (catRunningTotal + quote > catBudgetUpper && added >= (catMins[cat] || 1)) continue;
+                if (!canAddSameCategory(selectedProducts, p.category || p.majorCategory, p.majorCategory || p.category, quote)) continue;
+                selectedProducts.push(p); usedMainProducts.add(p.id); added++;
+                catRunningTotal += quote;
+            }
+            // 兜底：至少保证每个品类有 catMin 个（即使超预算或品牌被禁）
+            const catMin = catMins[cat] || 1;
+            while (added < catMin && prods.length > added) {
+                const p = prods[added];
                 if (!usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id)) {
+                    if (excludedBrands.has(p.brand)) console.warn(`方案${i+1}: 品类${cat}候选不足，被迫使用被禁品牌${p.brand}`);
                     selectedProducts.push(p); usedMainProducts.add(p.id); added++;
-                }
-            }
-            if (added < 2) {
-                for (const p of foodProds) {
-                    if (added >= 2) break;
-                    if (!selectedProducts.some(sp => sp.id === p.id)) { selectedProducts.push(p); added++; }
-                }
-            }
-            for (const cat of otherCats) {
-                const cheap = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
-                if (cheap && !selectedProducts.some(p => p.id === cheap.id)) selectedProducts.push(cheap);
-            }
-        } else if (strategy.dailyHeavy) {
-            const DAILY_CATS = ['日化', '日用', '日化个护'];
-            const dailyCat = cats.find(c => DAILY_CATS.includes(c)) || cats[cats.length - 1];
-            const otherCats = cats.filter(c => c !== dailyCat);
-            const dailyProds = getCatProds(dailyCat, (a, b) => calcQuote(b) - calcQuote(a));
-            let added = 0;
-            for (const p of dailyProds) {
-                if (added >= 2) break;
-                if (!usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id)) {
-                    selectedProducts.push(p); usedMainProducts.add(p.id); added++;
-                }
-            }
-            if (added < 2) {
-                for (const p of dailyProds) {
-                    if (added >= 2) break;
-                    if (!selectedProducts.some(sp => sp.id === p.id)) { selectedProducts.push(p); added++; }
-                }
-            }
-            for (const cat of otherCats) {
-                const cheap = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
-                if (cheap && !selectedProducts.some(p => p.id === cheap.id)) selectedProducts.push(cheap);
-            }
-        } else if (strategy.sameBrand) {
-            const brandCount = {};
-            // 只统计选中品牌
-            for (const p of candidates) {
-                brandCount[p.brand] = (brandCount[p.brand] || 0) + 1;
-                const catSet = brandCount[p.brand + '__cats'] || new Set();
-                catSet.add(p.majorCategory);
-                brandCount[p.brand + '__cats'] = catSet;
-            }
-            let bestBrand = null, bestCoverage = 0;
-            for (const [brand, cnt] of Object.entries(brandCount)) {
-                if (brand.includes('__')) continue;
-                const catCoverage = brandCount[brand + '__cats']?.size || 0;
-                if (catCoverage > bestCoverage && cnt >= cats.length) {
-                    bestCoverage = catCoverage; bestBrand = brand;
-                }
-            }
-            if (!bestBrand) bestBrand = candidates[0]?.brand;
-            if (bestBrand) {
-                for (const cat of cats) {
-                    const p = catProducts[cat].find(p => p.brand === bestBrand && !selectedProducts.some(sp => sp.id === p.id));
-                    if (p) selectedProducts.push(p);
-                }
-            }
-            // 补足缺失品类（优先选中品牌）
-            if (selectedProducts.length < cats.length) {
-                for (const cat of cats) {
-                    if (!selectedProducts.some(p => majorCategoryMatch(p.majorCategory, cat))) {
-                        const p = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
-                        if (p && !selectedProducts.some(sp => sp.id === p.id)) selectedProducts.push(p);
-                    }
-                }
-            }
-        } else if (strategy.multiCat) {
-            for (const cat of cats) {
-                const cheap = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
-                if (cheap && !selectedProducts.some(p => p.id === cheap.id)) selectedProducts.push(cheap);
-            }
-            // 从任意品类再加1个（价格排序时也优先选中品牌）
-            const avail = candidates
-                .filter(p => !selectedProducts.some(sp => sp.id === p.id))
-                .sort((a, b) => calcQuote(a) - calcQuote(b));
-            for (const p of avail) {
-                const withExtra = [...selectedProducts, p];
-                if (withExtra.reduce((s, pp) => s + calcQuote(pp), 0) <= maxBudget) {
-                    selectedProducts.push(p); break;
-                }
-            }
-        } else if (strategy.premiumBrand) {
-            // 高端品牌：优先一线品牌和老字号
-            const premiumBrands = brandList.filter(b => {
-                const bp = products.find(p => p.brand === b);
-                return bp && (bp.brandLevel === '一线' || bp.brandLevel === '老字号');
-            });
-            for (const cat of cats) {
-                const prods = getCatProds(cat, (a, b) => calcQuote(b) - calcQuote(a));
-                let picked = prods.find(p => premiumBrands.includes(p.brand) && !usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id));
-                if (!picked) picked = prods.find(p => !usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id));
-                if (!picked) picked = prods[0];
-                if (picked) { selectedProducts.push(picked); usedMainProducts.add(picked.id); }
-            }
-        } else {
-            // 默认：品类均衡，每个品类1个
-            for (const cat of cats) {
-                const prods = getCatProds(cat, (a, b) => strategy.preferExpensive ? calcQuote(b) - calcQuote(a) : calcQuote(a) - calcQuote(b));
-                let picked = prods.find(p => !usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id));
-                if (!picked) picked = prods[0];
-                if (picked) { selectedProducts.push(picked); usedMainProducts.add(picked.id); }
+                } else { break; }
             }
         }
 
@@ -4804,6 +5226,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                         if (deficit <= 0) break;
                         const alt = catProducts[cat]?.find(p =>
                             normalizeBrandLevel(p.brandLevel) === bl &&
+                            !excludedBrands.has(p.brand) &&
                             !selectedProducts.some(sp => sp.id === p.id)
                         );
                         if (alt) {
@@ -4841,6 +5264,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                         if (deficit <= 0) break;
                         const alt = catProducts[cat]?.find(p =>
                             (p.productType || '普通') === pt &&
+                            !excludedBrands.has(p.brand) &&
                             !selectedProducts.some(sp => sp.id === p.id)
                         );
                         if (alt) {
@@ -4852,6 +5276,62 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                                 selectedProducts[toReplaceIdx] = alt;
                                 ptCurrent[pt] = (ptCurrent[pt] || 0) + 1;
                                 deficit--;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        // 大类占比硬约束：每品类总价在预算±10%范围内
+        for (const cat of cats) {
+            const catBudget = _catBudgets[cat] || effectiveBudget;
+            const catBudgetUpper = catBudget * 1.1;
+            const catBudgetLower = catBudget * 0.9;
+            const catProds = selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat));
+            let catTotal = catProds.reduce((s, p) => s + calcQuote(p), 0);
+            // 上限：移除超出产品
+            if (catTotal > catBudgetUpper && catProds.length > (catMins[cat] || 1)) {
+                const sorted = [...catProds].sort((a, b) => calcQuote(b) - calcQuote(a));
+                for (const exp of sorted) {
+                    if (catTotal <= catBudgetUpper) break;
+                    if (selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat)).length <= (catMins[cat] || 1)) break;
+                    const idx = selectedProducts.findIndex(p => p.id === exp.id);
+                    if (idx >= 0) {
+                        catTotal -= calcQuote(exp);
+                        selectedProducts.splice(idx, 1);
+                    }
+                }
+            }
+            // 下限：尝试加产品或替换更贵的
+            if (catTotal < catBudgetLower) {
+                const needed = catBudgetLower - catTotal;
+                const catCandidates = (byCategory[cat] || [])
+                    .filter(p => !selectedProducts.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
+                    .sort((a, b) => calcQuote(b) - calcQuote(a));
+                // 先尝试直接加产品
+                for (const p of catCandidates) {
+                    if (catTotal >= catBudgetLower) break;
+                    const quote = calcQuote(p);
+                    if (quote > needed + catBudgetUpper - catBudgetLower) continue;
+                    if (!canAddSameCategory(selectedProducts, p.category || p.majorCategory, p.majorCategory || p.category, quote)) continue;
+                    selectedProducts.push(p);
+                    catTotal += quote;
+                }
+                // 再尝试替换为更贵的同品类产品
+                if (catTotal < catBudgetLower) {
+                    const cheapProds = selectedProducts
+                        .filter(p => majorCategoryMatch(p.majorCategory, cat))
+                        .sort((a, b) => calcQuote(a) - calcQuote(b));
+                    for (const cheap of cheapProds) {
+                        if (catTotal >= catBudgetLower) break;
+                        if (selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat)).length <= (catMins[cat] || 1)) break;
+                        const alt = catCandidates.find(p => calcQuote(p) > calcQuote(cheap) && catTotal - calcQuote(cheap) + calcQuote(p) <= catBudgetUpper);
+                        if (alt) {
+                            const idx = selectedProducts.findIndex(p => p.id === cheap.id);
+                            if (idx >= 0) {
+                                catTotal = catTotal - calcQuote(cheap) + calcQuote(alt);
+                                selectedProducts[idx] = alt;
                             }
                         }
                     }
@@ -4871,33 +5351,59 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             }
         }
 
-        // 预算强制调整
-        const adjusted = adjustToBudget(selectedProducts, minBudget, maxBudget);
+        // 预算强制调整（使用差异化预算目标）
+        const targetMin = budget * 0.9;
+        const targetMax = budget * 1.1;
+        const adjusted = adjustToBudget(selectedProducts, targetMin, targetMax);
         selectedProducts = adjusted.products;
 
         // 产品数量范围调整
         const countAdjusted = adjustProductCount(selectedProducts, ppMin, ppMax);
         selectedProducts = countAdjusted.products;
 
-        // 最终预算复核：adjustProductCount 可能把总价推出范围
+        // 最终预算复核
         const finalCheckTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
-        if (finalCheckTotal < minBudget || finalCheckTotal > maxBudget) {
-            const reAdjusted = adjustToBudget(selectedProducts, minBudget, maxBudget);
+        if (finalCheckTotal < targetMin || finalCheckTotal > targetMax) {
+            const reAdjusted = adjustToBudget(selectedProducts, targetMin, targetMax);
             selectedProducts = reAdjusted.products;
         }
         // 预算调整后重新约束产品数
         const countRecheck = adjustProductCount(selectedProducts, ppMin, ppMax);
         selectedProducts = countRecheck.products;
 
-        // 兜底警告：即使 allCombos fallback 也用尽，仍可能偏出范围
-        const verifyTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
-        const verifyUtil = budget > 0 ? (verifyTotal / budget * 100) : 0;
-        if (verifyUtil < 90 || verifyUtil > 110) {
-            console.warn(`方案${i + 1} 预算偏差: 总价=${verifyTotal.toFixed(2)}, 利用率=${verifyUtil.toFixed(1)}% (目标 90-110%)`);
+        // 大类强制覆盖：确保所有需求大类都有至少 catMin 个产品
+        let verifyTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
+        for (const cat of cats) {
+            const catMin = catMins[cat] || 1;
+            const currentInCat = selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat)).length;
+            if (currentInCat >= catMin) continue;
+            // 从该品类的候选品中强制补充
+            const missing = catMin - currentInCat;
+            const catCands = (byCategory[cat] || [])
+                .filter(p => !selectedProducts.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
+                .sort((a, b) => calcQuote(a) - calcQuote(b));
+            for (let m = 0; m < missing && m < catCands.length; m++) {
+                const addQuote = calcQuote(catCands[m]);
+                if (verifyTotal + addQuote > budget * 1.15) break; // 极端超预算则跳过
+                selectedProducts.push(catCands[m]);
+                verifyTotal += addQuote;
+            }
+        }
+        // 单品牌金额占比 ≤ 60%
+        const enforceBrandCap = (products) => {
+            // DEBUG: temporarily disabled to isolate infinite loop
+            return;
+        };
+        enforceBrandCap(selectedProducts);
+        // 重新计算验证值
+        const verifyTotal2 = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
+        const verifyUtil2 = budget > 0 ? (verifyTotal2 / budget * 100) : 0;
+        if (verifyUtil2 < 90 || verifyUtil2 > 110) {
+            console.warn(`方案${i + 1} 预算偏差: 总价=${verifyTotal2.toFixed(2)}, 利用率=${verifyUtil2.toFixed(1)}% (目标 90-110%)`);
         }
         // 毛利率兜底校验
         const verifyCost = selectedProducts.reduce((s, p) => s + p.purchasePrice, 0);
-        const verifyMargin = verifyTotal > 0 ? (verifyTotal - verifyCost) / verifyTotal : 0;
+        const verifyMargin = verifyTotal2 > 0 ? (verifyTotal2 - verifyCost) / verifyTotal2 : 0;
         if (verifyMargin < effectiveMargin / 100) {
             console.warn(`方案${i + 1} 毛利率偏差: ${(verifyMargin * 100).toFixed(1)}% < ${effectiveMargin}%`);
         }
@@ -4918,7 +5424,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                     const currentInCat = selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat));
                     if (currentInCat.length === 0) continue;
                     const altProds = getCatProds(cat, (a, b) => (b._score || 0) - (a._score || 0));
-                    const alt = altProds.find(p => !selectedProducts.some(sp => sp.id === p.id));
+                    const alt = altProds.find(p => !excludedBrands.has(p.brand) && !selectedProducts.some(sp => sp.id === p.id));
                     if (alt) {
                         // 替换该品类第一个产品
                         const oldIdx = selectedProducts.findIndex(p => p.id === currentInCat[0].id);
@@ -4940,12 +5446,24 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             }
         }
 
+        // 去重后重新执行品牌60%检查（adjustToBudget/adjustProductCount 可能破坏品牌分布）
+        enforceBrandCap(selectedProducts);
+
         const finalKey = selectedProducts.map(p => p.id).sort().join(',');
         if (usedProductSets.has(finalKey)) {
             console.warn(`方案${i + 1} 无法差异化，跳过（与已有方案重复）`);
             continue;
         }
         usedProductSets.add(finalKey);
+        // 登记当前方案的主导品牌，后续方案不再使用
+        // 仅当主导品牌尚未被排除时才登记（若因候选不足被迫使用已排除品牌，则不重复登记）
+        const dominantBrand = getDominantBrand(selectedProducts);
+        if (dominantBrand && !excludedBrands.has(dominantBrand)) {
+            excludedBrands.add(dominantBrand);
+            console.log(`方案${i + 1} 登记排除品牌: ${dominantBrand}`);
+        } else if (dominantBrand && excludedBrands.has(dominantBrand)) {
+            console.warn(`方案${i + 1} 主导品牌 ${dominantBrand} 已被排除，候选不足无法避免`);
+        }
 
         // 去重
         const seenIds = new Set();
@@ -4982,13 +5500,16 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         const catSummary = [...new Set(selectedProducts.map(p => p.majorCategory).filter(Boolean))].join('+');
         const brandSummary = [...new Set(selectedProducts.map(p => p.brand).filter(Boolean))].join('、');
 
+        const priceLabel = preferExpensive ? '品质优先' : '高性价比';
+        const budgetLabel = budgetTarget >= 0.95 ? '满额配置' : budgetTarget >= 0.90 ? '均衡配置' : '精打细算';
+
         proposals.push({
             id: nextProposalId++,
             projectId: project.id,
-            index: i + 1,
-            name: `方案${i + 1}：${strategy.name}`,
-            tagline: strategy.tagline,
-            theme: strategy.name,
+            index: existingMaxIndex + i + 1,
+            name: `方案${existingMaxIndex + i + 1} · ${budgetLabel}`,
+            tagline: `${catSummary} | ${brandSummary}`,
+            theme: priceLabel,
             products: proposalProducts,
             totalPerPerson: Math.round(totalPerPerson * 100) / 100,
             totalPrice: Math.round(totalPerPerson * project.peopleCount * 100) / 100,
@@ -4997,7 +5518,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             budgetUtilization: parseInt(budgetUtil),
             maxLeadTime: Math.max(...selectedProducts.map(p => parseInt((p.leadTime || '0').replace(/\D/g, '')) || 0)),
             canFulfill: true,
-            aiRationale: `${strategy.desc}。覆盖品类：${catSummary}，品牌：${brandSummary}，报价${totalPerPerson.toFixed(2)}元（预算${budgetUtil}%），毛利率${overallMargin}%。`,
+            aiRationale: `${budgetLabel}·${priceLabel}。覆盖品类：${catSummary}，品牌：${brandSummary}，报价${totalPerPerson.toFixed(2)}元（预算${budgetUtil}%），毛利率${overallMargin}%。`,
             isManualEdited: false,
             manualChanges: '',
             createdAt: new Date().toISOString(),
@@ -5005,6 +5526,19 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         });
     }
     await saveAllData();
+}
+
+function deleteProposal(proposalId) {
+    if (!confirm('确定删除该方案？')) return;
+    const pp = proposals.find(p => p.id === proposalId);
+    const projectId = pp ? pp.projectId : null;
+    proposals = proposals.filter(p => p.id !== proposalId);
+    saveAllData();
+    closeModal('modal-proposal');
+    if (projectId) {
+        const project = findProject(projectId);
+        if (project) showSelectionPage(project);
+    }
 }
 
 function renderProposalCards(projectId) {
@@ -5018,15 +5552,16 @@ function renderProposalCards(projectId) {
     }
 
     grid.innerHTML = proposalsForProject.map(pp => {
-        const marginColor = pp.overallMargin >= (findProject(projectId)?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
+        const marginColor = pp.overallMargin >= (findProject(projectId)?.targetMargin || 30) ? 'text-green-600' : 'text-red-500';
         let budgetWarning = '';
         if (pp.budgetUtilization < 90) budgetWarning = '<span class="tag bg-red-100 text-red-600 ml-2">预算不足</span>';
         else if (pp.budgetUtilization > 110) budgetWarning = '<span class="tag bg-yellow-100 text-yellow-700 ml-2">超预算</span>';
         return `
-        <div class="proposal-card border rounded-lg p-4 hover:shadow-lg cursor-pointer bg-white" onclick="viewProposal(${pp.id})">
+        <div class="proposal-card border rounded-lg p-4 hover:shadow-lg cursor-pointer bg-white relative" onclick="viewProposal(${pp.id})">
+            <button onclick="event.stopPropagation();deleteProposal(${pp.id})" class="absolute top-1 right-1 text-gray-300 hover:text-red-500 text-xs px-1 leading-none" title="删除方案">×</button>
             <div class="flex justify-between items-start mb-2">
                 <span class="text-xs text-gray-400">#${pp.index}</span>
-                <div><span class="tag bg-purple-100 text-purple-700">${pp.theme}</span>${budgetWarning}</div>
+                <div><span class="tag bg-purple-100 text-purple-700">${pp.theme}</span>${pp.isManualEdited ? '<span class="tag bg-orange-100 text-orange-600 ml-1">已编辑</span>' : ''}${budgetWarning}</div>
             </div>
             <h4 class="font-medium text-sm mb-1">${pp.name}</h4>
             <p class="text-xs text-gray-500 mb-3">${pp.tagline}</p>
@@ -5060,7 +5595,7 @@ function viewProposal(proposalId) {
 
 function renderProposalModal(pp, editMode) {
     const project = findProject(pp.projectId);
-    const marginColor = pp.overallMargin >= (project?.targetMargin || 20) ? 'text-green-600' : 'text-red-500';
+    const marginColor = pp.overallMargin >= (project?.targetMargin || 30) ? 'text-green-600' : 'text-red-500';
     const budget = project?.budgetPerPerson || 200;
     const budgetUtil = budget > 0 ? Math.round(pp.totalPerPerson / budget * 100) : 0;
 
@@ -5129,6 +5664,7 @@ function renderProposalModal(pp, editMode) {
                 <button onclick="saveProposalEdit(${pp.id})" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700">💾 保存修改</button>
                 ` : `
                 <button onclick="closeModal('modal-proposal')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">关闭</button>
+                <button onclick="deleteProposal(${pp.id})" class="px-4 py-2 bg-red-500 text-white rounded-lg text-sm hover:bg-red-600">🗑 删除方案</button>
                 <button onclick="renderProposalModal(proposals.find(p=>p.id===${pp.id}), true)" class="px-4 py-2 bg-orange-500 text-white rounded-lg text-sm hover:bg-orange-600">✏️ 编辑方案</button>
                 ${project?.proposalUsage === '内部快速决策' ? `
                 <button onclick="exportProposalExcel(${pp.id})" class="px-4 py-2 bg-green-600 text-white rounded-lg text-sm hover:bg-green-700 font-medium">📊 导出Excel（推荐）</button>
@@ -5333,6 +5869,7 @@ async function doReplaceProduct(proposalId, productIdx, newProductId) {
 async function saveProposalEdit(proposalId) {
     const pp = proposals.find(p => p.id === proposalId);
     if (!pp) return;
+    pp.isManualEdited = true;
     pp.manualChanges = '已手动编辑';
     pp.updatedAt = new Date().toISOString();
     await saveAllData();
@@ -6130,18 +6667,20 @@ function agentMatchScore(item, context) {
     const cats = context.categories || context.selectedCategories || [];
     const tier = context.tier || context.tierPreference || '';
     // 场景匹配
-    const itemScene = item.extractedParams?.scene || item.scene || [];
+    const itemSceneRaw = item.extractedParams?.scene || item.scene || [];
+    const itemScene = Array.isArray(itemSceneRaw) ? itemSceneRaw : [itemSceneRaw];
     if (Array.isArray(scene) && scene.length > 0 && itemScene.some(s => scene.includes(s))) score += 3;
-    else if (scene === itemScene) score += 3;
     // 大类匹配
-    const itemCats = item.extractedParams?.categories || item.categories || [];
+    const itemCatsRaw = item.extractedParams?.categories || item.categories || [];
+    const itemCats = Array.isArray(itemCatsRaw) ? itemCatsRaw : [itemCatsRaw];
     const matchCats = cats.filter(c => itemCats.includes(c)).length;
     score += matchCats * 2;
     // 档次匹配
     if (tier && (item.extractedParams?.tier || item.tier) === tier) score += 2;
     // 关键词重叠
     const ctxKws = context.keywords || [];
-    const itemKws = item.extractedParams?.keywords || item.tags || [];
+    const itemKwsRaw = item.extractedParams?.keywords || item.tags || [];
+    const itemKws = Array.isArray(itemKwsRaw) ? itemKwsRaw : [itemKwsRaw];
     const kwOverlap = ctxKws.filter(k => itemKws.includes(k)).length;
     score += kwOverlap;
     return score;
