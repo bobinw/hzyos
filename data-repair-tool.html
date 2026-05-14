@@ -218,11 +218,11 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 <select id="batch-style" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">调性—</option></select>
                 <select id="batch-price" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">价格—</option></select> <select id="batch-region" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">区域—</option></select>
                 <span id="batch-supplier-fields" style="display:none;">
-                <select id="batch-productType" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">产品类型—</option><option value="普通">普通</option><option value="定制">定制</option><option value="包销">包销</option></select>
+                <select id="batch-productType" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">产品类型—</option></select>
                 <select id="batch-supportsDropship" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">代发—</option><option value="是">是</option><option value="否">否</option></select>
                 <input id="batch-delivery" placeholder="发货地" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;width:100px;">
-                <select id="batch-stockType" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">库存类型—</option><option value="现货">现货</option><option value="代发">代发</option><option value="预售">预售</option></select>
-                <select id="batch-stockStatus" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">备货状态—</option><option value="充足">充足</option><option value="紧张">紧张</option><option value="缺货">缺货</option></select>
+                <select id="batch-stockType" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">库存类型—</option></select>
+                <select id="batch-stockStatus" style="padding:3px 6px;font-size:12px;border:1px solid var(--border);border-radius:4px;"><option value="">备货状态—</option></select>
                 </span>
                 <button class="btn-sm btn-primary" onclick="batchApply()">应用</button>
                 <button class="btn-sm btn-outline" id="btn-delete-sel" onclick="(async()=>await deleteSelected())()" style="margin-left:4px;">🗑 删除选中</button>
@@ -249,8 +249,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <script>
 // ========== 10大类体系（V11: 从 IndexedDB 动态加载） ==========
 const DEFAULT_MAJORS = [
-    '食品饮料', '粮油调味', '生鲜特产', '家庭日用', '美妆个护',
-    '运动户外', '家居家电', '卡券文娱', '健康养护', '办公节庆', '消费电子'
+    '食品饮料', '生鲜特产', '健康养护', '日化个护',
+    '家居家电', '运动户外', '企业定制', '卡券文娱', '消费电子'
 ];
 const DEFAULT_SUBCATEGORY_MAP = {
     // 食品饮料
@@ -259,26 +259,25 @@ const DEFAULT_SUBCATEGORY_MAP = {
     '膨化食品': '食品饮料', '方便食品': '食品饮料',
     '乳制品': '食品饮料', '牛奶': '食品饮料', '酸奶': '食品饮料', '奶酪': '食品饮料',
     '饮料': '食品饮料', '冲调': '食品饮料',
-    // 粮油调味（从食品饮料拆分）
-    '粮油调味': '粮油调味', '调味品': '粮油调味', '大米': '粮油调味',
-    '食用油': '粮油调味', '杂粮': '粮油调味', '面粉': '粮油调味',
-    '面条': '粮油调味', '酱料': '粮油调味', '调味酱': '粮油调味',
-    '醋': '粮油调味', '酱油': '粮油调味', '调味汁': '粮油调味',
-    '调味粉': '粮油调味', '调味油': '粮油调味', '蚝油': '粮油调味',
-    '料酒': '粮油调味', '糖': '粮油调味', '盐': '粮油调味',
+    // 粮油调味 → 食品饮料
+    '粮油调味': '食品饮料', '调味品': '食品饮料', '大米': '食品饮料',
+    '食用油': '食品饮料', '杂粮': '食品饮料', '面粉': '食品饮料',
+    '面条': '食品饮料', '酱料': '食品饮料', '调味酱': '食品饮料',
+    '醋': '食品饮料', '酱油': '食品饮料', '调味汁': '食品饮料',
+    '调味粉': '食品饮料', '调味油': '食品饮料', '蚝油': '食品饮料',
+    '料酒': '食品饮料', '糖': '食品饮料', '盐': '食品饮料',
     // 生鲜特产
     '肉制品': '生鲜特产', '海产': '生鲜特产', '水产': '生鲜特产',
     '蛋类': '生鲜特产', '禽肉': '生鲜特产',
     '传统食品': '生鲜特产', '地方特产': '生鲜特产',
     '鲜果': '生鲜特产', '生鲜水果': '生鲜特产',
-    // 家庭日用（从日化个护拆分）
-    '清洁用品': '家庭日用', '纸品': '家庭日用', '日杂': '家庭日用',
-    '洗护': '家庭日用', '沐浴用品': '家庭日用', '口腔护理': '家庭日用',
-    // 美妆个护（从日化个护拆分）
-    '护肤': '美妆个护', '面膜': '美妆个护', '护肤套装': '美妆个护',
-    '彩妆': '美妆个护', '唇部': '美妆个护', '底妆': '美妆个护', '定妆': '美妆个护',
-    '眼妆': '美妆个护', '口红': '美妆个护', '香水': '美妆个护',
-    '美发造型': '美妆个护', '洁面': '美妆个护',
+    // 家庭日用 + 美妆个护 → 日化个护
+    '清洁用品': '日化个护', '纸品': '日化个护', '日杂': '日化个护',
+    '洗护': '日化个护', '沐浴用品': '日化个护', '口腔护理': '日化个护',
+    '护肤': '日化个护', '面膜': '日化个护', '护肤套装': '日化个护',
+    '彩妆': '日化个护', '唇部': '日化个护', '底妆': '日化个护', '定妆': '日化个护',
+    '眼妆': '日化个护', '口红': '日化个护', '香水': '日化个护',
+    '美发造型': '日化个护', '洁面': '日化个护',
     // 健康养护
     '茶叶': '健康养护', '茗茶': '健康养护',
     '滋补保健': '健康养护', '燕窝': '健康养护', '花胶': '健康养护',
@@ -292,9 +291,9 @@ const DEFAULT_SUBCATEGORY_MAP = {
     // 运动户外
     '健身器材': '运动户外', '跑步': '运动户外', '球类运动': '运动户外',
     '运动杯': '运动户外', '户外': '运动户外',
-    // 办公节庆（企业定制更名）
-    '书写工具': '办公节庆', '文具': '办公节庆', '本册': '办公节庆',
-    '日历': '办公节庆', '节庆用品': '办公节庆',
+    // 办公节庆 → 企业定制
+    '书写工具': '企业定制', '文具': '企业定制', '本册': '企业定制',
+    '日历': '企业定制', '节庆用品': '企业定制',
     // 卡券文娱
     '兑换册': '卡券文娱', '提货券': '卡券文娱', '礼品卡': '卡券文娱',
     // 消费电子
@@ -1199,10 +1198,25 @@ function _glabel() { return VIEW_MODE === 'brand' ? '品牌' : '供应商'; }
 
 const EDITABLE_FIELDS = ['name', 'brand', 'majorCategory', 'category', 'brandLevel', 'brandStyle', 'priceRange', 'sceneTag', 'region'];
 let COLUMN_FILTERS = {};
-const BRAND_LEVELS = ['', '国际品牌', '全国一线品牌', '全国二线品牌', '网红/新消费品牌', '地方品牌', '白牌'];
-const BRAND_STYLES = ['', '温馨实用', '健康活力', '轻奢精致', '新潮有趣'];
-const PRICE_RANGES = ['', '高端', '中高端', '中端', '平价'];
-	const REGIONS = ['', '华北', '华东', '华南', '华中', '东北', '西北', '西南', '全国', '进口'];
+// 从产品数据动态提取（connectDB 后填充），初始为空，运行时动态生成
+function buildDistinct(field, includeEmpty = true) {
+    const vals = [...new Set((ALL_PRODUCTS || []).map(p => p[field]).filter(v => v !== undefined && v !== null && v !== ''))].sort();
+    return includeEmpty ? ['', ...vals] : vals;
+}
+function getBRAND_LEVELS() { return buildDistinct('brandLevel'); }
+function getBRAND_STYLES() { return buildDistinct('brandStyle'); }
+function getPRICE_RANGES() { return buildDistinct('priceRange'); }
+function getPRODUCT_TYPES() { return buildDistinct('productType', false); }
+function getSTOCK_TYPES() { return buildDistinct('stockType', false); }
+function getSTOCK_STATUSES() { return buildDistinct('stockStatus', false); }
+function getSCENE_TAGS() {
+    const tags = new Set();
+    (ALL_PRODUCTS || []).forEach(p => {
+        if (p.sceneTag) String(p.sceneTag).split(',').forEach(t => { const v = t.trim(); if (v) tags.add(v); });
+    });
+    return ['', ...Array.from(tags).sort()];
+}
+const REGIONS = ['', '华北', '华东', '华南', '华中', '东北', '西北', '西南', '全国', '进口'];
 
 // ========== 字段名中文映射 ==========
 const FIELD_LABELS = {
@@ -1459,6 +1473,7 @@ async function connectDB() {
         document.getElementById('btn-undo-all').disabled = false;
         // 初始化 brand 下拉选项
         initFieldSelects();
+        initBatchDropdowns();
         // 分组+统计
         groupByBrand();
         loadColumnConfig();
@@ -1476,7 +1491,7 @@ async function connectDB() {
 function initFieldSelects() {
     for (const id of ['field-brandLevel', 'field-brandStyle', 'field-priceRange']) {
         const sel = document.getElementById(id);
-        const opts = id === 'field-brandLevel' ? BRAND_LEVELS : id === 'field-brandStyle' ? BRAND_STYLES : PRICE_RANGES;
+        const opts = id === 'field-brandLevel' ? getBRAND_LEVELS() : id === 'field-brandStyle' ? getBRAND_STYLES() : getPRICE_RANGES();
         sel.innerHTML = opts.map(o => `<option value="${o}">${o || '—'}</option>`).join('');
     }
 }
@@ -1985,25 +2000,38 @@ function startEdit(cell) {
         }
     } else if (field === 'sceneTag') {
         input = document.createElement('select');
-        const scenePresets = ['', '日常', '端午', '中秋', '春节', '三八', '夏日', '年终', '生日', '端午,日常', '中秋,日常', '春节,日常', '教师节', '国庆'];
+        const scenePresets = getSCENE_TAGS();
         input.innerHTML = scenePresets.map(s => `<option value="${s}" ${s === curVal ? 'selected' : ''}>${s || '—'}</option>`).join('');
         if (curVal && !scenePresets.includes(curVal)) {
             input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
         }
     } else if (field === 'brandLevel') {
         input = document.createElement('select');
-        input.innerHTML = BRAND_LEVELS.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+        const blOpts = getBRAND_LEVELS();
+        input.innerHTML = blOpts.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+        if (curVal && !blOpts.includes(curVal)) {
+            input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
+        }
     } else if (field === 'brandStyle') {
         input = document.createElement('select');
-        input.innerHTML = BRAND_STYLES.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+        const bsOpts = getBRAND_STYLES();
+        input.innerHTML = bsOpts.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+        if (curVal && !bsOpts.includes(curVal)) {
+            input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
+        }
     } else if (field === 'region') { input = document.createElement('select'); input.innerHTML = REGIONS.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join(''); if (curVal && !REGIONS.includes(curVal)) { input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`; } } else if (field === 'priceRange') {
         input = document.createElement('select');
-        input.innerHTML = PRICE_RANGES.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+        const prOpts = getPRICE_RANGES();
+        input.innerHTML = prOpts.map(o => `<option value="${o}" ${o === curVal ? 'selected' : ''}>${o || '—'}</option>`).join('');
+        if (curVal && !prOpts.includes(curVal)) {
+            input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
+        }
     } else if (field === 'productType') {
         input = document.createElement('select');
-        const types = ['', '普通', '定制', '包销'];
-        input.innerHTML = types.map(t => `<option value="${t}" ${t === curVal ? 'selected' : ''}>${t || '—'}</option>`).join('');
-        if (curVal && !types.includes(curVal)) {
+        const types = getPRODUCT_TYPES();
+        const typeOpts = ['', ...types];
+        input.innerHTML = typeOpts.map(t => `<option value="${t}" ${t === curVal ? 'selected' : ''}>${t || '—'}</option>`).join('');
+        if (curVal && !typeOpts.includes(curVal)) {
             input.innerHTML += `<option value="${escAttr(curVal)}" selected>${escHtml(curVal)} (当前)</option>`;
         }
     } else if (field === 'supportsDropship' || field === 'sugarFree' || field === 'organic' || field === 'freightIncluded') {
@@ -2320,11 +2348,18 @@ function initBatchDropdowns() {
     const majorSel = document.getElementById('batch-major');
     majorSel.innerHTML = '<option value="">大类—</option>' + STANDARD_MAJORS.map(m => `<option value="${m}">${m}</option>`).join('');
     const sceneSel = document.getElementById('batch-scene');
-    const sceneOpts = ['', '日常', '端午', '中秋', '春节', '三八', '夏日', '年终', '生日', '教师节', '国庆'];
-    sceneSel.innerHTML = sceneOpts.map(s => `<option value="${s}">${s || '场景—'}</option>`).join('');
-    document.getElementById('batch-level').innerHTML = BRAND_LEVELS.map(o => `<option value="${o}">${o || '级别—'}</option>`).join('');
-    document.getElementById('batch-style').innerHTML = BRAND_STYLES.map(o => `<option value="${o}">${o || '调性—'}</option>`).join('');
-    document.getElementById('batch-price').innerHTML = PRICE_RANGES.map(o => `<option value="${o}">${o || '价格—'}</option>`).join(''); document.getElementById('batch-region').innerHTML = REGIONS.map(o => `<option value="${o}">${o || '区域—'}</option>`).join('');
+    sceneSel.innerHTML = getSCENE_TAGS().map(s => `<option value="${s}">${s || '场景—'}</option>`).join('');
+    document.getElementById('batch-level').innerHTML = getBRAND_LEVELS().map(o => `<option value="${o}">${o || '级别—'}</option>`).join('');
+    document.getElementById('batch-style').innerHTML = getBRAND_STYLES().map(o => `<option value="${o}">${o || '调性—'}</option>`).join('');
+    document.getElementById('batch-price').innerHTML = getPRICE_RANGES().map(o => `<option value="${o}">${o || '价格—'}</option>`).join('');
+    document.getElementById('batch-region').innerHTML = REGIONS.map(o => `<option value="${o}">${o || '区域—'}</option>`).join('');
+    // 动态产品类型、库存类型、备货状态
+    const ptSel = document.getElementById('batch-productType');
+    if (ptSel) ptSel.innerHTML = '<option value="">产品类型—</option>' + getPRODUCT_TYPES().map(v => `<option value="${v}">${v}</option>`).join('');
+    const stSel = document.getElementById('batch-stockType');
+    if (stSel) stSel.innerHTML = '<option value="">库存类型—</option>' + getSTOCK_TYPES().map(v => `<option value="${v}">${v}</option>`).join('');
+    const ssSel = document.getElementById('batch-stockStatus');
+    if (ssSel) ssSel.innerHTML = '<option value="">备货状态—</option>' + getSTOCK_STATUSES().map(v => `<option value="${v}">${v}</option>`).join('');
     // 品类下拉随大类联动
     majorSel.addEventListener('change', () => {
         const catSel = document.getElementById('batch-cat');
@@ -2594,11 +2629,14 @@ async function aiBrandQuery() {
     btn.textContent = 'AI 查询中...';
     btn.disabled = true;
     try {
+        const bls = getBRAND_LEVELS().filter(v => v).join('|');
+        const bss = getBRAND_STYLES().filter(v => v).join('|');
+        const prs = getPRICE_RANGES().filter(v => v).join('|');
         const prompt = `请以 JSON 格式返回品牌"${ACTIVE_BRAND}"的信息：
 {
-  "brandLevel": "国际品牌|全国一线品牌|全国二线品牌|网红/新消费品牌|地方品牌|白牌",
-  "brandStyle": "温馨实用|健康活力|轻奢精致|新潮有趣",
-  "priceRange": "高端|中端|平价",
+  "brandLevel": "${bls}",
+  "brandStyle": "${bss}",
+  "priceRange": "${prs}",
   "region": "华北|华东|华南|华中|东北|西北|西南|全国|进口",
   "reason": "一句话判断依据",
   "detail": "详细说明（150-300字），从品牌知名度、市场定位、消费群体、产品特色、适合福利场景等角度分析，解释为什么给出以上级别和调性判断"
@@ -2928,7 +2966,6 @@ document.addEventListener('keydown', (e) => {
     if (e.ctrlKey && e.key === 'z') { e.preventDefault(); undoBrand(); }
 });
 
-initBatchDropdowns();
 connectDB();
 </script>
 </body>

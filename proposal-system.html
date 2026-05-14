@@ -462,6 +462,43 @@ function getAllBrandStyles() {
     products.forEach(p => { if (p.brandStyle) styles.add(p.brandStyle); });
     return [...styles].sort();
 }
+function getAllPackageStyles() {
+    const styles = new Set();
+    products.forEach(p => { if (p.packageStyle) styles.add(p.packageStyle); });
+    return [...styles].sort();
+}
+function getAllProductTypes() {
+    const types = new Set();
+    products.forEach(p => { if (p.productType) types.add(p.productType); });
+    return [...types].sort();
+}
+function getAllScenes() {
+    const scenes = new Set();
+    products.forEach(p => { if (p.sceneTag) String(p.sceneTag).split(',').forEach(t => { const v = t.trim(); if (v) scenes.add(v); }); });
+    return [...scenes].sort();
+}
+function getAllTiers() {
+    const tiers = new Set();
+    products.forEach(p => { if (p.highEndAttribute) tiers.add(p.highEndAttribute); });
+    return [...tiers].sort();
+}
+
+function buildAIFieldOptions() {
+    const scenes = getAllScenes();
+    const tiers = getAllTiers();
+    if (tiers.length === 0) tiers.push('平价', '中端', '中高端', '高端');
+    const styles = getAllBrandStyles();
+    const levels = getAllBrandLevels();
+    const pkgStyles = getAllPackageStyles();
+    if (pkgStyles.length === 0) pkgStyles.push('精装礼盒', '简约实用', '环保简装', '普通包装');
+    return `## 各字段可选值集合
+- scene: [${scenes.map(s => `"${s}"`).join(',')}]
+- tier: ${tiers.map(t => `"${t}"`).join(' / ')} / ""
+- style: [${styles.map(s => `"${s}"`).join(',')}]
+- brandLevel选项: [${levels.map(l => `"${l}"`).join(',')}]
+- brandStyle选项: [${styles.map(s => `"${s}"`).join(',')}]
+- packageStyle选项: [${pkgStyles.map(p => `"${p}"`).join(',')}]`;
+}
 
 // 品牌→大类映射（从产品数据提取）
 function getBrandMajorCategories(brandName) {
@@ -3051,13 +3088,7 @@ async function finishChat() {
   "rationale": "简要说明你的分析依据，2-3句话"
 }
 
-## 各字段可选值集合
-- scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
-- tier: "平价" / "中端" / "中高端" / "高端" / ""
-- style: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
-- brandLevel选项: ["国际品牌","全国一线品牌","全国二线品牌","网红/新消费品牌","地方品牌","白牌"]
-- brandStyle选项: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
-- packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
+${buildAIFieldOptions()}
 - categories: ${allCats.map(c => `"${c}"`).join(', ')}
 - categoryRatios: 按大类设置百分比，总和应为100。根据场景分配权重（如端午福利→食品饮料比例高）
 - recommendedProductCount: 建议的产品总数（正整数）
@@ -3360,9 +3391,10 @@ function showSelectionPage(project) {
         if (!sp.selectedCategories.includes(cat)) delete sp.productsPerCategory[cat];
     }
 
-    const brandLevelOpts = ['国际品牌','全国一线品牌','全国二线品牌','网红/新消费品牌','地方品牌','白牌'];
-    const brandStyleOpts = ['温馨实用','健康活力','轻奢精致','新潮有趣'];
-    const packageStyleOpts = ['精装礼盒','简约实用','环保简装','普通包装'];
+    const brandLevelOpts = getAllBrandLevels();
+    const brandStyleOpts = getAllBrandStyles();
+    const packageStyleOpts = getAllPackageStyles();
+    if (packageStyleOpts.length === 0) packageStyleOpts.push('精装礼盒', '简约实用', '环保简装', '普通包装');
     let html = `
     <div class="flex items-center gap-4 mb-4">
         <button onclick="backToRequirement(${project.id})" class="text-gray-500 hover:text-gray-700">
@@ -3547,11 +3579,11 @@ function showSelectionPage(project) {
             </div>
             <div class="mt-1 flex flex-wrap gap-1">
                 <span class="text-xs text-gray-400 mr-1">档次:</span>
-                ${['平价','中端','中高端','高端'].map(t => `<span class="tag text-xs cursor-pointer ${sp.tierPreference === t ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}" onclick="updateSelectionParam(${project.id},'tierPreference',this.textContent==='${sp.tierPreference}' ? '' : '${t}')">${t}</span>`).join('')}
+                ${getAllTiers().map(t => `<span class="tag text-xs cursor-pointer ${sp.tierPreference === t ? 'bg-amber-100 text-amber-700' : 'bg-gray-100 text-gray-500'}" onclick="updateSelectionParam(${project.id},'tierPreference',this.textContent==='${sp.tierPreference}' ? '' : '${t}')">${t}</span>`).join('')}
             </div>
             <div class="mt-1 flex flex-wrap gap-1">
                 <span class="text-xs text-gray-400 mr-1">风格:</span>
-                ${['温馨实用','健康活力','轻奢精致','新潮有趣'].map(s => {
+                ${getAllBrandStyles().map(s => {
                     const active = (sp.stylePreference || []).includes(s);
                     return `<span class="tag text-xs cursor-pointer ${active ? 'bg-blue-100 text-blue-700' : 'bg-gray-100 text-gray-500'}" onclick="toggleSelectionArray(${project.id},'stylePreference','${s}')">${s}</span>`;
                 }).join('')}
@@ -3582,13 +3614,13 @@ function showSelectionPage(project) {
                 <div>
                     <label class="text-xs text-gray-500 block mb-1">产品类型占比 <span class="text-gray-400">(留空=不限)</span></label>
                     <div class="flex gap-3">
-                        ${['定制','普通','包销'].map(pt => `<div class="flex items-center gap-1"><span class="text-xs">${pt}</span><input type="number" value="${sp.productTypeRatio?.[pt] || ''}" min="0" max="100" class="w-14 border rounded px-1.5 py-1 text-xs" onchange="updateProductTypeRatio(${project.id},'${pt}',parseInt(this.value)||0)" placeholder="%"></div>`).join('')}
+                        ${getAllProductTypes().map(pt => `<div class="flex items-center gap-1"><span class="text-xs">${pt}</span><input type="number" value="${sp.productTypeRatio?.[pt] || ''}" min="0" max="100" class="w-14 border rounded px-1.5 py-1 text-xs" onchange="updateProductTypeRatio(${project.id},'${pt}',parseInt(this.value)||0)" placeholder="%"></div>`).join('')}
                     </div>
                 </div>
                 <div>
                     <label class="text-xs text-gray-500 block mb-1">品牌级别占比 <span class="text-gray-400">(留空=不限)</span></label>
                     <div class="flex gap-2 flex-wrap">
-                        ${['国际','一线','二线','网红','新消费','地方','白牌'].map(bl => `<div class="flex items-center gap-1"><span class="text-xs">${bl}</span><input type="number" value="${sp.brandLevelRatio?.[bl] || ''}" min="0" max="100" class="w-12 border rounded px-1 py-1 text-xs" onchange="updateBrandLevelRatio(${project.id},'${bl}',parseInt(this.value)||0)" placeholder="%"></div>`).join('')}
+                        ${getAllBrandLevels().map(bl => `<div class="flex items-center gap-1"><span class="text-xs">${bl}</span><input type="number" value="${sp.brandLevelRatio?.[bl] || ''}" min="0" max="100" class="w-12 border rounded px-1 py-1 text-xs" onchange="updateBrandLevelRatio(${project.id},'${bl}',parseInt(this.value)||0)" placeholder="%"></div>`).join('')}
                     </div>
                 </div>
             </div>
@@ -3940,13 +3972,7 @@ async function getAISelectionSuggestion(projectId) {
   "rationale": "简要说明分析依据，2-3句话"
 }
 
-## 各字段可选值集合
-- scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
-- tier: "平价" / "中端" / "中高端" / "高端" / ""
-- style: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
-- brandLevel选项: ["国际品牌","全国一线品牌","全国二线品牌","网红/新消费品牌","地方品牌","白牌"]
-- brandStyle选项: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
-- packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
+${buildAIFieldOptions()}
 - categories: ${allCats.map(c => `"${c}"`).join(', ')}
 - categoryRatios: 按大类设置百分比，总和应为100
 - recommendedProductCount: 建议的产品总数（正整数）
@@ -4035,13 +4061,7 @@ async function reAnalyzeSelectionParams(projectId) {
   "rationale": "简要说明分析依据，2-3句话"
 }
 
-## 各字段可选值集合
-- scene: ["端午","中秋","春节","三八","夏日","年终","生日","日常"]
-- tier: "平价" / "中端" / "中高端" / "高端" / ""
-- style: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
-- brandLevel选项: ["国际品牌","全国一线品牌","全国二线品牌","网红/新消费品牌","地方品牌","白牌"]
-- brandStyle选项: ["温馨实用","健康活力","轻奢精致","新潮有趣"]
-- packageStyle选项: ["精装礼盒","简约实用","环保简装","普通包装"]
+${buildAIFieldOptions()}
 - categories: ${allCats.map(c => `"${c}"`).join(', ')}
 - categoryRatios: 按大类设置百分比，总和应为100
 - recommendedProductCount: 建议的产品总数（正整数）
@@ -5479,9 +5499,10 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             const supplierObj = suppliers.find(s => s.id === p.supplierId || s.name === p.supplierId);
             const supplierName = supplierObj?.name || p.supplierName || p.supplierId || '-';
             return {
-                productId: p.id, sku: p.sku, name: p.name,
+                id: p.id, productId: p.id, sku: p.sku, name: p.name,
                 supplierId: p.supplierId, supplier: supplierName,
                 brand: p.brand, brandLevel: p.brandLevel || '',
+                category: p.category || '', majorCategory: p.majorCategory || '',
                 purchasePrice: p.purchasePrice,
                 retailPrice: p.retailPrice || 0,
                 quotePrice: Math.round(quotePrice * 100) / 100,
@@ -5624,30 +5645,34 @@ function renderProposalModal(pp, editMode) {
                 </div>
                 <table class="w-full text-sm border">
                     <thead class="bg-gray-50"><tr>
-                        <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-left">供应商</th><th class="px-3 py-2 text-right">集采成本</th><th class="px-3 py-2 text-right">零售价</th><th class="px-3 py-2 text-right">供货价</th><th class="px-3 py-2 text-right">毛利率</th><th class="px-3 py-2 text-right">小计</th>
+                        <th class="px-3 py-2 text-left">产品</th><th class="px-3 py-2 text-left">品牌</th><th class="px-3 py-2 text-left">子品类</th><th class="px-3 py-2 text-left">供应商</th><th class="px-3 py-2 text-right">集采价</th><th class="px-3 py-2 text-right">零售价</th><th class="px-3 py-2 text-right">报价</th><th class="px-3 py-2 text-right">毛利率</th><th class="px-3 py-2 text-right">小计</th>
                         ${editMode ? '<th class="px-3 py-2 text-center w-16">操作</th>' : ''}
                     </tr></thead>
                     <tbody>
-                    ${pp.products.map((p, idx) => `
+                    ${[...pp.products].sort((a, b) => (b.purchasePrice || 0) - (a.purchasePrice || 0)).map((p, idx) => {
+                        const realIdx = pp.products.findIndex(x => x.id === p.id);
+                        const realMargin = p.quotePrice > 0 ? Math.round((p.quotePrice - (p.purchasePrice || 0)) / p.quotePrice * 100) : 0;
+                        return `
                         <tr class="border-t">
                             <td class="px-3 py-2 flex items-center gap-2">
                                 ${p.image ? `<img src="${p.image}" class="w-10 h-10 rounded object-cover" onerror="this.style.display='none'">` : ''}
                                 <span>${p.name}</span>
                             </td>
                             <td class="px-3 py-2">${p.brand || '-'}</td>
+                            <td class="px-3 py-2 text-xs text-gray-500">${p.category || '-'}</td>
                             <td class="px-3 py-2">${p.supplier || '-'}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.purchasePrice)}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.retailPrice) || '-'}</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.quotePrice)}</td>
-                            <td class="px-3 py-2 text-right">${p.margin}</td>
+                            <td class="px-3 py-2 text-right ${realMargin >= 30 ? 'text-green-600' : 'text-red-500'}">${realMargin}%</td>
                             <td class="px-3 py-2 text-right">${formatMoney(p.subtotal)}</td>
                             ${editMode ? `
                             <td class="px-3 py-2 text-center">
-                                <button onclick="replaceProductInProposal(${pp.id}, ${idx})" class="text-blue-600 text-xs hover:underline mr-1" title="替换">↻</button>
-                                <button onclick="removeProductFromProposal(${pp.id}, ${idx})" class="text-red-500 text-xs hover:underline" title="删除">×</button>
+                                <button onclick="replaceProductInProposal(${pp.id}, ${realIdx})" class="text-blue-600 text-xs hover:underline mr-1" title="替换">↻</button>
+                                <button onclick="removeProductFromProposal(${pp.id}, ${realIdx})" class="text-red-500 text-xs hover:underline" title="删除">×</button>
                             </td>` : ''}
-                        </tr>
-                    `).join('')}
+                        </tr>`;
+                    }).join('')}
                     </tbody>
                 </table>
             </div>

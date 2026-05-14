@@ -1060,6 +1060,48 @@
                 </div>
             </div>
 
+            <!-- 大类新增/编辑弹窗 -->
+            <div id="modal-add-major" class="modal">
+                <div class="modal-content w-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold" id="modal-major-title">新增大类</h3>
+                        <button onclick="closeModal('modal-add-major')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <input type="hidden" id="edit-major-old-name">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">大类名称</label>
+                        <input type="text" id="input-major-name" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="如：消费电子">
+                    </div>
+                    <div class="flex justify-end gap-2 pt-4 border-t">
+                        <button onclick="closeModal('modal-add-major')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                        <button onclick="saveMajor()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 子品类新增/编辑弹窗 -->
+            <div id="modal-add-subcategory" class="modal">
+                <div class="modal-content w-sm">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold" id="modal-subcategory-title">新增子品类</h3>
+                        <button onclick="closeModal('modal-add-subcategory')" class="text-gray-400 hover:text-gray-600">✕</button>
+                    </div>
+                    <input type="hidden" id="edit-subcategory-old-name">
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">所属大类</label>
+                        <select id="input-subcategory-major" class="w-full border rounded-lg px-3 py-2 text-sm"></select>
+                    </div>
+                    <div class="mb-4">
+                        <label class="block text-sm font-medium text-gray-700 mb-1">子品类名称</label>
+                        <input type="text" id="input-subcategory-name" class="w-full border rounded-lg px-3 py-2 text-sm" placeholder="如：手机">
+                    </div>
+                    <div class="flex justify-end gap-2 pt-4 border-t">
+                        <button onclick="closeModal('modal-add-subcategory')" class="px-4 py-2 border rounded-lg text-sm hover:bg-gray-50">取消</button>
+                        <button onclick="saveSubcategory()" class="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm hover:bg-blue-700">保存</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Sheet选择弹窗 -->
             <div id="modal-sheet-select" class="modal">
                 <div class="modal-content w-md">
@@ -1227,6 +1269,34 @@
                                 <tbody id="supplier-fields-list" class="divide-y">
                                 </tbody>
                             </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- 品类管理 -->
+                <div class="bg-white rounded-lg shadow p-6 mb-6">
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="font-medium">📦 品类管理</h3>
+                        <span class="text-xs text-gray-400">管理系统大类与子品类，修改后自动保存</span>
+                    </div>
+                    <div class="flex gap-4" style="min-height: 320px;">
+                        <!-- 左侧：大类列表 -->
+                        <div class="w-1/3 border rounded-lg p-3 bg-gray-50">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm font-medium text-gray-600">大类 (<span id="cat-major-count">0</span>)</span>
+                                <button onclick="showAddMajorModal()" class="px-2 py-1 bg-blue-600 text-white rounded text-xs hover:bg-blue-700">+ 新增</button>
+                            </div>
+                            <div id="category-major-list" class="space-y-1 max-h-80 overflow-y-auto"></div>
+                        </div>
+                        <!-- 右侧：子品类列表 -->
+                        <div class="w-2/3 border rounded-lg p-3">
+                            <div class="flex justify-between items-center mb-2">
+                                <span class="text-sm font-medium text-gray-600" id="cat-sub-panel-title">子品类（请选择大类）</span>
+                                <button id="btn-add-subcategory" onclick="showAddSubcategoryModal()" class="px-2 py-1 bg-green-600 text-white rounded text-xs hover:bg-green-700 hidden">+ 新增</button>
+                            </div>
+                            <div id="category-sub-list" class="space-y-1 max-h-80 overflow-y-auto">
+                                <p class="text-sm text-gray-400 py-8 text-center">← 点击左侧大类查看子品类</p>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1436,7 +1506,7 @@
     <script>
         // ========== IndexedDB 数据库 ==========
         const DB_NAME = 'ProductLibraryDB';
-        const DB_VERSION = 9;
+        const DB_VERSION = 10;
         let db = null;
 
         // 初始化 IndexedDB
@@ -2036,7 +2106,7 @@
         // 异步加载数据（从 IndexedDB）
         async function loadDataAsync() {
             try {
-                const [savedProducts, savedSuppliers, savedTemplates, savedGlobalTemplate, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords, savedUserFilterConfig, savedUserColumnConfig] = await Promise.all([
+                const [savedProducts, savedSuppliers, savedTemplates, savedGlobalTemplate, savedNextId, savedRequiredFields, savedRequiredGroups, savedCustomProductFields, savedCustomSupplierFields, savedDeletedProductFields, savedDeletedSupplierFields, savedProductFieldOrder, savedSupplierFieldOrder, savedImportRecords, savedUserFilterConfig, savedUserColumnConfig, savedCategoryConfig] = await Promise.all([
                     loadFromDB('products'),
                     loadFromDB('suppliers'),
                     loadFromDB('templates'),
@@ -2052,7 +2122,8 @@
                     loadSettingFromDB('supplierFieldOrder'),
                     loadSettingFromDB('importRecords'),
                     loadSettingFromDB('userFilterConfig'),
-                    loadSettingFromDB('userColumnConfig')
+                    loadSettingFromDB('userColumnConfig'),
+                    loadSettingFromDB('categoryConfig')
                 ]);
 
                 // 转换模板数组为对象
@@ -2080,7 +2151,8 @@
                     supplierFieldOrder: savedSupplierFieldOrder || [],
                     importRecords: savedImportRecords || [],
                     userFilterConfig: savedUserFilterConfig || null,
-                    userColumnConfig: savedUserColumnConfig || null
+                    userColumnConfig: savedUserColumnConfig || null,
+                    categoryConfig: savedCategoryConfig || null
                 };
             } catch (e) {
                 console.error('加载数据失败:', e);
@@ -2130,7 +2202,8 @@
                     saveSettingToDB('supplierFieldOrder', supplierFieldOrder),
                     saveSettingToDB('importRecords', importRecords),
                     saveSettingToDB('userFilterConfig', userFilterConfig),
-                    saveSettingToDB('userColumnConfig', userColumnConfig)
+                    saveSettingToDB('userColumnConfig', userColumnConfig),
+                    saveSettingToDB('categoryConfig', _categoryUserConfig)
                 ]);
 
                 console.log('数据保存成功');
@@ -2973,13 +3046,7 @@
                 filterField: 'margin'
             },
             productType: {
-                id: 'productType', label: '产品类型', type: 'select', group: 'supply',
-                options: [
-                    { value: '', label: '全部产品类型' },
-                    { value: '包销', label: '包销' },
-                    { value: '定制', label: '定制' },
-                    { value: '普通', label: '普通' }
-                ],
+                id: 'productType', label: '产品类型', type: 'dynamicSelect', group: 'supply',
                 filterField: 'productType'
             },
             shipFrom: {
@@ -2987,13 +3054,7 @@
                 filterField: 'shipFrom'
             },
             stockStatus: {
-                id: 'stockStatus', label: '备货状态', type: 'select', group: 'supply',
-                options: [
-                    { value: '', label: '全部备货状态' },
-                    { value: '充足', label: '充足' },
-                    { value: '紧张', label: '紧张' },
-                    { value: '需提前', label: '需提前' }
-                ],
+                id: 'stockStatus', label: '备货状态', type: 'dynamicSelect', group: 'supply',
                 filterField: 'stockStatus'
             },
             search: {
@@ -3012,13 +3073,7 @@
                 id: 'category', label: '品类', type: 'dynamicSelect', group: 'product', filterField: 'category'
             },
             brandLevel: {
-                id: 'brandLevel', label: '品牌级别', type: 'select', group: 'product',
-                options: [
-                    { value: '', label: '全部品牌级别' },
-                    { value: '全国品牌', label: '全国品牌' },
-                    { value: '地方品牌', label: '地方品牌' },
-                    { value: '进口品牌', label: '进口品牌' }
-                ],
+                id: 'brandLevel', label: '品牌级别', type: 'dynamicSelect', group: 'product',
                 filterField: 'brandLevel'
             },
             highEndAttribute: {
@@ -3030,12 +3085,7 @@
                 filterField: 'sceneTag'
             },
             stockType: {
-                id: 'stockType', label: '库存类型', type: 'select', group: 'supply',
-                options: [
-                    { value: '', label: '全部库存类型' },
-                    { value: '现货', label: '现货' },
-                    { value: '需预订', label: '需预订' }
-                ],
+                id: 'stockType', label: '库存类型', type: 'dynamicSelect', group: 'supply',
                 filterField: 'stockType'
             },
             origin: {
@@ -3070,15 +3120,7 @@
                 filterField: 'freightIncluded'
             },
             defaultExpress: {
-                id: 'defaultExpress', label: '快递公司', type: 'select', group: 'supply',
-                options: [
-                    { value: '', label: '全部快递公司' },
-                    { value: '中通', label: '中通' },
-                    { value: '圆通', label: '圆通' },
-                    { value: '韵达', label: '韵达' },
-                    { value: '申通', label: '申通' },
-                    { value: '顺丰', label: '顺丰' }
-                ],
+                id: 'defaultExpress', label: '快递公司', type: 'dynamicSelect', group: 'supply',
                 filterField: 'defaultExpress'
             },
             supportsDropship: {
@@ -3092,12 +3134,7 @@
                 formatField: (v) => v ? '是' : '否'
             },
             status: {
-                id: 'status', label: '状态', type: 'select', group: 'core',
-                options: [
-                    { value: '上架中', label: '上架中' },
-                    { value: '待审核', label: '待审核' },
-                    { value: '已过期', label: '已过期' }
-                ],
+                id: 'status', label: '状态', type: 'dynamicSelect', group: 'core',
                 filterField: 'status'
             }
         };
@@ -3216,7 +3253,7 @@
         // 异步初始化数据
         // 自动迁移旧数据
         function migrateFields(products) {
-            const KNOWN_MAJORS = [...STANDARD_MAJORS];
+            const KNOWN_MAJORS = [...getAllMajors()];
             const PRODUCT_TYPE_KEYWORDS = ['独家包销', '包销款', '包销', '定制款', '定制', '独家', 'OEM', 'ODM', '专供'];
             let migrated = false;
 
@@ -3319,16 +3356,16 @@
             return migrated;
         }
 
-        // ========== 品类标准化（V10: 8大品类体系） ==========
+        // ========== 品类标准化（V11: 动态大类/子品类体系，系统设置可管理） ==========
 
-        // 8大标准品类
-        const STANDARD_MAJORS = [
+        // 系统默认大类（兜底值，实际运行时从 IndexedDB 合并用户配置）
+        const DEFAULT_MAJORS = [
             '食品饮料', '生鲜特产', '健康养护', '日化个护',
-            '家居家电', '运动户外', '企业定制', '卡券文娱'
+            '家居家电', '运动户外', '企业定制', '卡券文娱', '消费电子'
         ];
 
-        // 子品类→8大类精确映射
-        const SUBCATEGORY_TO_MAJOR = {
+        // 系统默认子品类→大类映射（兜底值）
+        const DEFAULT_SUBCATEGORY_MAP = {
             // ── 食品饮料 ──
             '粮油调味': '食品饮料', '调味品': '食品饮料', '大米': '食品饮料',
             '坚果': '食品饮料', '饼干糕点': '食品饮料', '粽子': '食品饮料', '月饼': '食品饮料',
@@ -3368,19 +3405,100 @@
             '日历': '企业定制', '节庆用品': '企业定制',
             // ── 卡券文娱 ──
             '兑换册': '卡券文娱', '提货券': '卡券文娱', '礼品卡': '卡券文娱',
+            // ── 消费电子 ──
+            '手机': '消费电子', '平板电脑': '消费电子', '笔记本电脑': '消费电子',
+            '电子阅读器': '消费电子',
+            '耳机': '消费电子', '蓝牙音箱': '消费电子',
+            '智能手表': '消费电子', '智能手环': '消费电子',
+            '充电宝': '消费电子', '数据线': '消费电子', '手机壳': '消费电子',
+            '数码配件': '消费电子', '智能家居设备': '消费电子',
         };
 
-        // 8大品类 + 关键词别名（用于模糊匹配兜底）
-        const CATEGORY_MAP = {
-            '食品饮料': ['大米', '米', '面', '粉', '粮油', '食用油', '面条', '面粉', '杂粮', '五谷', '粗粮', '小米', '糯米', '黑米', '糙米', '高粱', '荞麦', '藜麦', '绿豆', '红豆', '黄豆', '黑豆', '芸豆', '豌豆', '鹰嘴豆', '玉米', '紫薯', '红薯', '山药', '南瓜', '芝麻', '香油', '麻油', '菜籽油', '花生油', '橄榄油', '核桃油', '亚麻籽油', '山茶油', '调味', '调味品', '蚝油', '生抽', '老抽', '料酒', '陈醋', '香醋', '白醋', '味精', '鸡精', '淀粉', '酵母', '火锅底料', '蘸料', '辣酱', '豆瓣酱', '芝麻酱', '花生酱', '番茄酱', '沙拉酱', '果酱', '调料', '酱料', '零食', '小吃', '饼干', '糖果', '巧克力', '肉脯', '膨化', '薯片', '薯条', '锅巴', '爆米花', '肉干', '肉松', '牛肉干', '猪肉脯', '鸭脖', '鸭翅', '鸭舌', '凤爪', '鸡爪', '卤味', '卤', '解馋', '零嘴', '饮料', '咖啡', '可可', '奶茶', '果汁', '椰子水', '椰汁', '杏仁露', '核桃露', '豆奶', '豆浆', '酸梅汤', '凉茶', '汽水', '可乐', '气泡', '苏打', '矿泉水', '纯净水', '功能饮料', '运动饮料', '茶饮', '果茶', '花茶饮', '柠檬茶', '电解质', 'NFC', '冷萃', '挂耳', '咖啡液', '冻干粉', '即饮', '饮用', '椰乳', '厚椰乳', '生椰', '植物饮', '沙棘汁', '西梅汁', '杨梅汁', '气泡水', '冲泡', '速食', '即食', '代餐', '燕麦', '麦片', '藕粉', '芝麻糊', '螺蛳粉', '酸辣粉', '方便面', '方便粉', '拌面', '拉面', '挂面', '米线', '米粉', '罐头', '坚果', '夏威夷果', '巴旦木', '开心果', '碧根果', '腰果', '核桃', '松子', '榛子', '瓜子', '花生', '板栗', '杏仁', '炒货', '每日坚果', '混合坚果', '糕点', '曲奇', '蛋黄酥', '月饼', '蛋糕', '蛋黄派', '凤梨酥', '榴莲酥', '蝴蝶酥', '桃酥', '麻薯', '沙琪玛', '威化', '华夫', '蛋卷', '面包', '吐司', '蛋挞', '马卡龙', '酥饼', '烘焙', '焙烤', '麻花', '绿豆糕', '桂花糕', '云片糕', '米糕', '千层酥', '牛舌饼', '老婆饼', '老公饼', '粽子', '粽礼', '粽香', '月韵', '月宴', '年糕', '汤圆', '青团', '饺子', '馄饨', '包子', '馒头', '烧卖', '春卷', '八宝饭', '糍粑', '蜜饯', '果脯', '果干', '葡萄干', '话梅', '杨梅', '山楂', '梅子', '乌梅', '青梅', '芒果干', '草莓干', '蓝莓干', '蔓越莓', '柠檬干', '椰子干', '香蕉干', '桂圆干', '陈皮', '金桔', '牛奶', '纯奶', '高钙奶', '有机奶', '儿童奶', '酸奶', '羊奶', '驼奶', '鲜牛奶', '鲜奶', '巴氏', '乳制品', '奶粉', '乳粉', '奶昔', '奶酥', '奶片', '奶条', '奶贝', '奶酪', '芝士', '黄油', '奶油', '炼乳', '乳酪', '干酪', '乳', '奶'],
-            '生鲜特产': ['水果', '苹果', '橙', '车厘子', '榴莲', '蛋类', '咸蛋', '皮蛋', '鸡蛋', '鸭蛋', '鹌鹑', '松花蛋', '咸鸭蛋', '蛋黄', '蛋制品', '鲜果', '生鲜', '牛排', '鸡翅', '虾仁', '鱼丸', '冻品', '冷冻', '速冻', '冰鲜', '冷鲜', '虾滑', '鱼片', '肉卷', '肥牛', '羊肉卷', '火锅食材', '半成品菜', '料理包', '冻肉', '特产', '腊味', '腊肉', '腊肠', '香肠', '红肠', '火腿肠', '火腿', '培根', '午餐肉', '肉制品', '畜禽', '熟食', '腌腊', '风干', '牛肉', '猪肉', '羊肉', '鸡肉', '鸭肉', '鹅肉', '鸽子', '卤蛋', '烧鸡', '烤鸭', '酱鸭', '酱肉', '熏肉', '熏肠', '肉枣', '潮汕', '牛肉丸', '海产', '海鲜', '海味', '海珍', '干贝', '虾皮', '虾米', '海米', '蚝干', '蛤蜊', '蛏干', '鲍鱼', '海参', '鱿鱼', '墨鱼', '章鱼', '紫菜', '海带', '海苔', '裙带菜', '龙须菜', '鱼干', '鱼片', '鱼松', '鱼丸', '虾丸', '鱼糜', '水产', '地方特色', '家乡味', '地道', '正宗', '特产食品', '非遗食品', '地理标志', '老字号', '中华老字号'],
-            '健康养护': ['滋补', '养生', '保健', '燕窝', '燕盏', '燕条', '干燕窝', '即炖', '鲜炖', '燕角', '燕碎', '茶叶', '茗茶', '茶礼', '茶韵', '龙井', '普洱', '铁观音', '大红袍', '毛尖', '碧螺春', '银针', '金骏眉', '正山小种', '白茶', '绿茶', '红茶', '乌龙', '花茶', '菊花', '茉莉', '荞麦茶', '大麦茶', '苦荞', '肉桂', '水仙', '岩茶', '单丛', '黄茶', '黑茶', '生普', '熟普', '茶砖', '沱茶', '虫草', '阿胶', '鹿茸', '灵芝', '石斛', '黄芪', '当归', '党参', '人参', '西洋参', '高丽参', '红参', '太子参', '丹参', '三七', '天麻', '枸杞', '桂圆', '花胶', '鱼胶', '雪蛤', '海马', '金线莲', '藏红花', '罗汉果', '胖大海', '金银花', '玫瑰花', '决明子', '山楂干', '新会', '桑葚', '黄精', '玉竹', '麦冬', '百合', '莲子', '芡实', '葛根', '茯苓', '山药片', '药食', '膏方', '枇杷膏', '秋梨膏', '柠檬膏', '姜枣膏', '四物汤', '八珍', '阿胶糕', '固元膏', '按摩仪', '护眼', '干货', '菌菇', '松茸', '竹荪', '猴头菇', '虫草花', '牛肝菌', '鸡枞', '羊肚菌', '茶树菇', '姬松茸', '花菇', '冬菇', '香菇', '木耳', '银耳', '榛蘑', '红菇', '干菜', '黄花菜', '笋干', '笋尖', '腐竹', '豆皮', '烤麸', '面筋', '贡菜', '梅干菜', '蕨菜', '脱水蔬菜', '百合干', '红枣', '黑枣', '椰枣', '阿胶枣', '蜜枣', '龙眼', '荔枝'],
-            '日化个护': ['清洁', '纸巾', '湿巾', '消毒', '洗衣', '洗衣液', '洗衣凝珠', '洗洁精', '洁厕', '去油污', '油污净', '抹布', '拖把', '垃圾桶', '收纳', '纸品', '抽纸', '卷纸', '手帕纸', '棉柔巾', '厨房纸', '柔顺剂', '漂白', '管道疏通', '洁净', '除菌', '抑菌', '杀菌', '家居清洁', '衣物清洁', '洗碗', '百洁布', '钢丝球', '垃圾袋', '保鲜袋', '保鲜膜', '一次性手套', '一次性餐具', '衣架', '粘钩', '挂钩', '洗发', '护发', '发膜', '沐浴', '洗护', '牙膏', '牙刷', '漱口水', '牙线', '毛巾', '浴巾', '方巾', '干发帽', '护手霜', '身体乳', '香皂', '肥皂', '洗手液', '皂', '口腔护理', '搓澡', '浴球', '浴帽', '牙粉', '口喷', '水牙线', '冲牙器', '美妆', '护肤', '面膜', '口红', '唇膏', '唇彩', '唇釉', '唇蜜', '粉底', 'BB霜', 'CC霜', '气垫', '散粉', '蜜粉', '遮瑕', '隔离', '妆前', '定妆', '腮红', '修容', '高光', '妆前', '精华', '面霜', '乳液', '爽肤水', '化妆水', '眼霜', '眼影', '眼线', '眉笔', '眉粉', '睫毛', '防晒', '卸妆', '洁面', '洗面奶', '香水', '香氛', '香薰', '淡香', '古龙', '香薰', '香膏', '彩妆', '化妆', '美发造型', '发蜡', '发泥', '定型', '发胶', '发油', '弹力素', '安瓶', '原液', '精粹', '日霜', '晚霜', '颈霜', '手霜', '润肤', '保湿', '美白', '抗皱', '紧致', '修护', '去角质', '祛痘'],
-            '家居家电': ['家纺', '床品', '家居', '四件套', '被套', '床单', '枕套', '床笠', '床罩', '被子', '被芯', '羽绒被', '蚕丝被', '羊毛被', '棉被', '夏凉被', '空调被', '枕头', '枕芯', '乳胶枕', '记忆枕', '毛毯', '盖毯', '法兰绒毯', '珊瑚绒毯', '凉席', '冰丝席', '竹席', '藤席', '蚊帐', '蒙古包', '抱枕', '坐垫', '靠枕', '腰靠', '收纳用品', '沙发垫', '毯子', '家电', '小家电', '电器', '厨电', '电饭煲', '电饭锅', '电压力锅', '电炖锅', '电蒸锅', '电火锅', '电饼铛', '空气炸锅', '微波炉', '烤箱', '电磁炉', '电陶炉', '养生壶', '电水壶', '电热水瓶', '饮水机', '茶吧机', '破壁机', '榨汁机', '豆浆机', '料理机', '搅拌机', '绞肉机', '咖啡机', '面包机', '酸奶机', '厨师机', '打蛋器', '净水器', '加湿器', '除湿机', '空气净化器', '电风扇', '空调扇', '取暖器', '暖风机', '吸尘器', '扫地机', '洗地机', '挂烫机', '电熨斗', '吹风机', '剃须刀', '电动牙刷', '美容仪', '洁面仪', '卷发棒', '直发器', '理发器', '干衣机', '烘鞋器', '除螨仪', '毛球修剪器', '保温杯', '保温壶', '水杯', '插座', '充电器', '排插', '插线板', '接线板'],
-            '运动户外': ['运动', '健身', '瑜伽', '瑜伽垫', '瑜伽服', '瑜伽球', '瑜伽砖', '瑜伽柱', '瑜伽带', '跑步', '跑步机', '跑鞋', '运动鞋', '健步', '暴走', '马拉松', '跳绳', '哑铃', '俯卧撑', '拉力器', '健腹轮', '弹力带', '壶铃', '杠铃', '动感单车', '椭圆机', '筋膜枪', '划船机', '仰卧板', '引体向上', '篮球', '足球', '排球', '乒乓球', '羽毛球', '网球', '台球', '高尔夫', '游泳', '骑行', '滑板', '轮滑', '球拍', '球类', '运动护具', '运动水杯', '户外', '露营', '登山', '徒步', '帐篷', '睡袋', '防潮垫', '冲锋衣', '登山杖', '吊床', '烧烤炉', '野餐', '野餐垫', '折叠椅', '露营灯', '防晒帽', '垂钓', '骑行装备', '登山装备', '露营装备', '游泳装备', '垂钓装备'],
-            '企业定制': ['定制礼盒', '定制保温杯', '定制雨伞', '定制帆布袋', '文创礼品', '企业定制', '文创', '办公用品', '文具', '礼品', '日历', '对联', '春联', '福字', '红包', '窗花', '灯笼', '中国结', '剪纸', '年画', '钢笔', '圆珠笔', '签字笔', '铅笔', '马克笔', '荧光笔', '毛笔', '中性笔', '笔芯', '笔袋', '笔筒', '笔记本', '记事本', '手账', '日记本', '便签', '便利贴', '线圈本', '活页本', '方格本', '台历', '挂历', '周历', '年历', '万年历', '贺卡', '明信片', '贴纸', '胶带', '书签', '文件夹', '订书机', '回形针', '胶棒', '胶水', '剪刀', '尺子', '橡皮', '修正带', '计算器', '地球仪', '文房', '文房四宝'],
-            '卡券文娱': ['卡券', '购物卡', '超市卡', '电影票', '蛋糕券', '餐饮券', '咖啡券', '景区门票', '兑换卡', '礼品卡', '代金券', '提货券', '体验券', '会员卡', '文化娱乐', '演出票', '展览票', '游乐园', '旅游卡']
-        };
+        // ===== 品类运行时（V11：用户可通过系统设置管理大类/子品类） =====
+        let _MAJORS = [...DEFAULT_MAJORS];
+        let _SUBCATEGORY_MAP = { ...DEFAULT_SUBCATEGORY_MAP };
+        let _categoryUserConfig = null;  // 从 IndexedDB 加载的用户配置
+
+        function applyCategoryConfig(config) {
+            _categoryUserConfig = config || {};
+            _MAJORS = [...DEFAULT_MAJORS];
+            _SUBCATEGORY_MAP = { ...DEFAULT_SUBCATEGORY_MAP };
+
+            const cfg = _categoryUserConfig;
+            // 1. 应用重命名
+            if (cfg.renamedMajors) {
+                _MAJORS = _MAJORS.map(m => cfg.renamedMajors[m] || m);
+                const newMap = {};
+                for (const [cat, major] of Object.entries(_SUBCATEGORY_MAP)) {
+                    newMap[cfg.renamedSubcategories && cfg.renamedSubcategories[cat] || cat] =
+                        cfg.renamedMajors[major] || major;
+                }
+                _SUBCATEGORY_MAP = newMap;
+            }
+            // 2. 应用删除（隐藏）
+            if (cfg.deletedMajors) {
+                _MAJORS = _MAJORS.filter(m => !cfg.deletedMajors.includes(m));
+                const newMap = {};
+                for (const [cat, major] of Object.entries(_SUBCATEGORY_MAP)) {
+                    if (!cfg.deletedMajors.includes(major) && !(cfg.deletedSubcategories || []).includes(cat)) {
+                        newMap[cat] = major;
+                    }
+                }
+                _SUBCATEGORY_MAP = newMap;
+            }
+            // 3. 应用新增
+            if (cfg.customMajors) {
+                for (const m of cfg.customMajors) {
+                    if (!_MAJORS.includes(m)) _MAJORS.push(m);
+                }
+            }
+            if (cfg.customSubcategories) {
+                for (const [cat, major] of Object.entries(cfg.customSubcategories)) {
+                    _SUBCATEGORY_MAP[cat] = cfg.renamedMajors && cfg.renamedMajors[major] || major;
+                }
+            }
+        }
+
+        function getAllMajors() { return _MAJORS; }
+        function getSubcategoryToMajor() { return _SUBCATEGORY_MAP; }
+        function getSubcategoriesForMajor(major) {
+            const cats = [];
+            for (const [cat, maj] of Object.entries(_SUBCATEGORY_MAP)) {
+                if (maj === major) cats.push(cat);
+            }
+            cats.sort((a, b) => a.localeCompare(b, 'zh-CN'));
+            return cats;
+        }
+        function getCategoryUserConfig() { return _categoryUserConfig || {}; }
+
+        // 自动从品类名生成关键词别名（用于 getCategoryMap() 兜底匹配）
+        function autoGenerateCategoryKeywords(name) {
+            const keys = [name];
+            const parts = name.split(/[\/·\-_]/);
+            for (const p of parts) {
+                if (p && p.length >= 1 && !keys.includes(p)) keys.push(p);
+            }
+            return keys;
+        }
+
+        function buildCategoryMap() {
+            const map = {};
+            for (const major of _MAJORS) {
+                const keywords = [major];
+                const subs = getSubcategoriesForMajor(major);
+                for (const sub of subs) {
+                    keywords.push(sub);
+                    keywords.push(...autoGenerateCategoryKeywords(sub));
+                }
+                // 去重
+                map[major] = [...new Set(keywords)];
+            }
+            return map;
+        }
+
+        function getCategoryMap() {
+            return buildCategoryMap();
+        }
 
         // ========== 品牌数据库（V9: 品牌清洗+BRAND_TO_MAJOR+品牌调性） ==========
 
@@ -3650,6 +3768,19 @@
             '蛋糕券': '提货券', '餐饮券': '提货券', '咖啡券': '提货券',
             '景区门票': '提货券', '电影票': '兑换册', '代金券': '礼品卡',
             '体验券': '提货券', '会员卡': '礼品卡', '演出票': '兑换册',
+
+            // ===== 消费电子 =====
+            'iPhone': '手机', '华为手机': '手机', '小米手机': '手机', 'OPPO手机': '手机', 'vivo手机': '手机',
+            'iPad': '平板电脑', '华为平板': '平板电脑', '小米平板': '平板电脑',
+            'MacBook': '笔记本电脑', '华为笔记本': '笔记本电脑', '小米笔记本': '笔记本电脑', 'ThinkPad': '笔记本电脑',
+            'Kindle': '电子阅读器', '电纸书': '电子阅读器',
+            'AirPods': '耳机', '蓝牙耳机': '耳机', '降噪耳机': '耳机', '头戴耳机': '耳机', 'TWS': '耳机',
+            '小爱': '蓝牙音箱', '天猫精灵': '蓝牙音箱', '小度': '蓝牙音箱', 'HomePod': '蓝牙音箱',
+            'Apple Watch': '智能手表', '华为手表': '智能手表',
+            '小米手环': '智能手环',
+            '移动电源': '充电宝',
+            '充电器': '数码配件', '充电头': '数码配件', '转接头': '数码配件', '贴膜': '数码配件', '钢化膜': '数码配件',
+            '智能灯': '智能家居设备', '智能插座': '智能家居设备', '智能门锁': '智能家居设备', '智能摄像头': '智能家居设备',
         };
 
         // 品牌→大类强制修正映射（只包含高置信度品牌）
@@ -3782,6 +3913,8 @@ const BRAND_SECONDARY_MAJOR = {
     '金华火腿': ['食品饮料'],       // 生鲜特产(火腿) + 食品饮料(粽子)
     '觅宫燕': ['食品饮料'],         // 健康养护(燕窝) + 食品饮料(冲调)
     '启泰': ['食品饮料'],           // 健康养护(滋补) + 食品饮料(冲调)
+    '广州酒家': ['生鲜特产'],       // 食品饮料(粽子) + 生鲜特产(咸鸭蛋)
+    '高邮': ['生鲜特产'],           // 生鲜特产(咸鸭蛋) / 食品饮料
 };
 const BRAND_TONE = {
             '花西子': { bl: '全国一线品牌', pr: '中端', bs: '国潮' },
@@ -4056,82 +4189,21 @@ const BRAND_TONE = {
 
             // 大类→默认子品类关键词（按优先级排序，匹配品名/内配）
             // 大类→默认子品类关键词（分组结构：out=标准品类名, keys=匹配关键词）
-            const MAJOR_DEFAULT_CAT_KEYWORDS = {
-                '食品饮料': [
-                    { out: '零食', keys: ['零食', '肉脯', '肉干', '牛肉干', '猪肉脯', '鸭脖', '鸭翅', '鸭舌', '凤爪', '鸡爪', '卤味', '肉松', '卤蛋'] },
-                    { out: '饼干糕点', keys: ['饼干', '糕点', '曲奇', '蛋黄酥', '蛋糕', '凤梨酥', '桃酥', '麻薯', '沙琪玛', '威化', '华夫', '蛋卷', '面包', '绿豆糕', '桂花糕', '云片糕', '米糕', '酥饼', '麻花'] },
-                    { out: '坚果', keys: ['坚果', '夏威夷果', '巴旦木', '开心果', '碧根果', '腰果', '松子', '榛子', '瓜子', '板栗', '杏仁', '炒货'] },
-                    { out: '糖果', keys: ['糖果'] },
-                    { out: '巧克力', keys: ['巧克力'] },
-                    { out: '饮料', keys: ['饮料', '咖啡', '奶茶', '果汁', '汽水', '可乐', '凉茶', '茶饮', '果茶', '椰子水', '椰汁', '椰乳', '柠檬茶', 'NFC', '电解质', '酸梅汤', '豆奶', '矿泉水', '纯净水', '气泡水'] },
-                    { out: '乳制品', keys: ['牛奶', '乳制品', '酸奶', '奶酪', '芝士', '黄油', '奶油', '奶粉', '奶昔', '炼乳', '羊奶'] },
-                    { out: '冲调', keys: ['冲调', '麦片', '藕粉', '芝麻糊', '燕麦'] },
-                    { out: '粮油调味', keys: ['大米', '食用油', '面粉', '面条', '小米', '糯米', '黑米', '糙米', '红豆', '绿豆', '黄豆', '黑豆', '芸豆', '豌豆', '玉米', '紫薯', '红薯', '荞麦', '藜麦', '五谷', '杂粮', '高粱', '芝麻', '亚麻籽油', '山茶油', '菜籽油', '调味', '蚝油', '生抽', '老抽', '料酒', '陈醋', '香醋', '味精', '鸡精', '淀粉'] },
-                    { out: '粽子', keys: ['粽子'] },
-                    { out: '月饼', keys: ['月饼'] },
-                    { out: '蜜饯果干', keys: ['蜜饯', '果脯', '果干', '桂圆干', '陈皮', '金桔'] },
-                    { out: '膨化食品', keys: ['膨化', '薯片', '薯条', '锅巴', '爆米花'] },
-                    { out: '方便食品', keys: ['速食', '即食', '代餐', '螺蛳粉', '酸辣粉', '方便面', '方便粉', '拌面', '拉面', '挂面', '米线', '米粉'] },
-                ],
-                '生鲜特产': [
-                    { out: '肉制品', keys: ['腊味', '火腿', '香肠', '肉制品', '腊肉', '腊肠', '红肠', '培根', '午餐肉', '熟食', '烧鸡', '烤鸭', '酱鸭', '酱肉', '熏肉', '熏肠', '牛肉丸', '牛肉', '猪肉', '风干'] },
-                    { out: '海产', keys: ['海产', '海鲜', '干贝', '虾皮', '虾米', '海米', '蚝干', '鲍鱼', '海参', '鱿鱼', '紫菜', '海带', '海苔', '裙带菜'] },
-                    { out: '水产', keys: ['虾仁', '鱼丸', '虾滑', '鱼片'] },
-                    { out: '蛋类', keys: ['蛋类', '鸡蛋', '鸭蛋', '咸蛋', '皮蛋', '咸鸭蛋', '松花蛋', '蛋黄'] },
-                    { out: '鲜果', keys: ['鲜果', '水果'] },
-                    { out: '地方特产', keys: ['特产', '地方特色'] },
-                ],
-                '健康养护': [
-                    { out: '茶叶', keys: ['茶叶', '茗茶', '茶礼'] },
-                    { out: '滋补保健', keys: ['滋补', '阿胶', '虫草', '灵芝', '阿胶糕', '固元膏', '膏方'] },
-                    { out: '燕窝', keys: ['燕窝'] },
-                    { out: '花胶', keys: ['花胶', '鱼胶'] },
-                    { out: '干货菌菇', keys: ['干货', '菌菇', '松茸', '木耳', '香菇', '银耳', '红枣', '猴头菇', '竹荪', '虫草花', '山药'] },
-                    { out: '中药材', keys: ['人参', '石斛', '西洋参', '枸杞', '黄芪', '当归', '党参', '红参', '鹿茸', '百合', '莲子'] },
-                ],
-                '日化个护': [
-                    { out: '清洁用品', keys: ['洗衣', '洗洁精', '洗衣液', '洗衣凝珠', '除菌', '抑菌', '洗碗', '油污净'] },
-                    { out: '洗护', keys: ['洗发', '护发', '发膜'] },
-                    { out: '沐浴用品', keys: ['沐浴', '香皂', '肥皂', '洗手液', '毛巾', '浴巾', '身体乳'] },
-                    { out: '口腔护理', keys: ['牙膏', '牙刷', '漱口水'] },
-                    { out: '护肤', keys: ['精华', '面霜', '乳液', '爽肤水', '化妆水', '眼霜', '防晒', '卸妆', '保湿', '抗皱', '紧致', '修护'] },
-                    { out: '面膜', keys: ['面膜'] },
-                    { out: '彩妆', keys: ['腮红', '修容', '高光'] },
-                    { out: '唇部', keys: ['口红', '唇膏', '唇彩', '唇釉', '唇蜜'] },
-                    { out: '底妆', keys: ['粉底', 'BB霜', 'CC霜', '气垫'] },
-                    { out: '纸品', keys: ['纸巾', '抽纸', '卷纸', '手帕纸', '棉柔巾'] },
-                    { out: '香水', keys: ['香水', '香氛'] },
-                    { out: '洁面', keys: ['洁面', '洗面奶'] },
-                ],
-                '家居家电': [
-                    { out: '床上套件', keys: ['四件套', '床单', '被套', '枕套', '床笠', '床罩', '家纺'] },
-                    { out: '被子', keys: ['被子', '羽绒被', '蚕丝被', '羊毛被', '棉被', '夏凉被', '空调被', '被芯'] },
-                    { out: '枕头', keys: ['枕头', '枕芯', '乳胶枕', '记忆枕'] },
-                    { out: '毯子', keys: ['毯子', '毛毯', '盖毯', '法兰绒毯', '珊瑚绒毯'] },
-                    { out: '夏凉用品', keys: ['凉席', '冰丝席', '竹席', '藤席', '蚊帐'] },
-                    { out: '厨房电器', keys: ['电饭煲', '电饭锅', '电压力锅', '电炖锅', '电蒸锅', '电火锅', '电饼铛', '空气炸锅', '微波炉', '烤箱', '电磁炉', '破壁机', '榨汁机', '豆浆机', '料理机', '搅拌机', '绞肉机', '咖啡机'] },
-                    { out: '生活电器', keys: ['插座', '电器', '风扇', '养生壶', '电水壶', '电热水瓶', '饮水机', '净水器', '加湿器', '除湿机', '空气净化器', '电风扇', '取暖器', '吸尘器', '扫地机', '洗地机', '挂烫机', '电熨斗'] },
-                    { out: '个护电器', keys: ['吹风机', '剃须刀', '电动牙刷', '美容仪', '按摩仪', '护眼'] },
-                    { out: '保温杯', keys: ['保温杯', '保温壶'] },
-                ],
-                '运动户外': [
-                    { out: '健身器材', keys: ['运动', '健身', '跑步', '跳绳', '瑜伽', '瑜伽垫', '哑铃', '筋膜枪', '拉力器', '健腹轮'] },
-                    { out: '球类运动', keys: ['篮球', '足球', '排球', '乒乓球', '羽毛球', '网球'] },
-                    { out: '户外', keys: ['户外', '露营', '帐篷', '登山', '骑行', '睡袋', '防潮垫', '冲锋衣', '登山杖', '吊床', '烧烤炉', '野餐垫', '折叠椅'] },
-                ],
-                '企业定制': [
-                    { out: '书写工具', keys: ['钢笔', '圆珠笔', '签字笔', '铅笔', '马克笔', '荧光笔', '毛笔', '中性笔'] },
-                    { out: '本册', keys: ['笔记本', '记事本', '手账', '日记本', '便签'] },
-                    { out: '日历', keys: ['日历', '台历', '挂历', '周历'] },
-                    { out: '节庆用品', keys: ['对联', '春联', '福字', '红包', '灯笼', '中国结', '剪纸', '贺卡'] },
-                    { out: '文具', keys: ['文具', '文创', '礼品'] },
-                ],
-                '卡券文娱': [
-                    { out: '礼品卡', keys: ['礼品卡', '购物卡', '超市卡', '兑换卡', '代金券', '会员卡'] },
-                    { out: '提货券', keys: ['提货券', '蛋糕券', '餐饮券', '咖啡券', '景区门票', '体验券'] },
-                    { out: '兑换册', keys: ['兑换册', '电影票', '演出票'] },
-                ],
-            };
+            // 动态构建默认子品类关键词（基于当前大类/子品类体系）
+            function buildDefaultCatKeywords() {
+                const result = {};
+                for (const major of _MAJORS) {
+                    const groups = [];
+                    const subs = getSubcategoriesForMajor(major);
+                    for (const sub of subs) {
+                        const keys = [sub, ...autoGenerateCategoryKeywords(sub)];
+                        groups.push({ out: sub, keys: [...new Set(keys)] });
+                    }
+                    result[major] = groups;
+                }
+                return result;
+            }
+            const MAJOR_DEFAULT_CAT_KEYWORDS = buildDefaultCatKeywords();
 
             for (const p of products) {
                 // ===== 0. 品牌名清洗 =====
@@ -4184,9 +4256,9 @@ const BRAND_TONE = {
                         if (curMajor && curMajor !== expectedMajor && !secondaryMajors.includes(curMajor)) {
                             p.majorCategory = expectedMajor;
                             // 品类与新大类冲突时清空，防止 step 2 按品类反向覆盖
-                            if (curCat && SUBCATEGORY_TO_MAJOR[curCat] && SUBCATEGORY_TO_MAJOR[curCat] !== expectedMajor) {
+                            if (curCat && getSubcategoryToMajor()[curCat] && getSubcategoryToMajor()[curCat] !== expectedMajor) {
                                 // 但品类对应的大类如果是第二大类，不清空
-                                if (!secondaryMajors.includes(SUBCATEGORY_TO_MAJOR[curCat])) {
+                                if (!secondaryMajors.includes(getSubcategoryToMajor()[curCat])) {
                                     p.category = '';
                                 }
                             }
@@ -4225,10 +4297,10 @@ const BRAND_TONE = {
 
                 // ===== 2. 修复大类错配：子品类指向不同大类 =====
                 // 品类与大类冲突时：若大类已是标准大类则保留大类（清空品类让 step 4 重新匹配），否则以品类为准修正大类
-                if (cat && SUBCATEGORY_TO_MAJOR[cat]) {
-                    const expectedMajor = SUBCATEGORY_TO_MAJOR[cat];
+                if (cat && getSubcategoryToMajor()[cat]) {
+                    const expectedMajor = getSubcategoryToMajor()[cat];
                     if (expectedMajor !== major) {
-                        if (major && STANDARD_MAJORS.includes(major)) {
+                        if (major && getAllMajors().includes(major)) {
                             // 大类正确（来自品牌修正或已知标准大类），品类不匹配 → 清空品类
                             p.category = '';
                         } else {
@@ -4239,13 +4311,13 @@ const BRAND_TONE = {
                 }
 
                 // ===== 2.5 品类清洗：品类为无效大类名 → 清空 =====
-                if (cat && STANDARD_MAJORS.includes(cat)) {
+                if (cat && getAllMajors().includes(cat)) {
                     p.category = '';
                     categoryFixed++; fixed++;
                 }
 
                 // ===== 2.6 品类标准化：非标准品类 → CATEGORY_NORMALIZE 映射或清空 =====
-                if (cat && !SUBCATEGORY_TO_MAJOR[cat] && !STANDARD_MAJORS.includes(cat)) {
+                if (cat && !getSubcategoryToMajor()[cat] && !getAllMajors().includes(cat)) {
                     if (CATEGORY_NORMALIZE[cat]) {
                         p.category = CATEGORY_NORMALIZE[cat];
                     } else {
@@ -4309,8 +4381,8 @@ const BRAND_TONE = {
                 }
 
                 // ===== 3. 填充空大类：有品类但无大类 =====
-                if (!major && cat && SUBCATEGORY_TO_MAJOR[cat]) {
-                    p.majorCategory = SUBCATEGORY_TO_MAJOR[cat];
+                if (!major && cat && getSubcategoryToMajor()[cat]) {
+                    p.majorCategory = getSubcategoryToMajor()[cat];
                     categoryFixed++; fixed++;
                 }
 
@@ -4328,8 +4400,8 @@ const BRAND_TONE = {
                             }
                         }
                     }
-                    if (!foundCat && CATEGORY_MAP[curMajor]) {
-                        for (const kw of CATEGORY_MAP[curMajor]) {
+                    if (!foundCat && getCategoryMap()[curMajor]) {
+                        for (const kw of getCategoryMap()[curMajor]) {
                             if (kw.length >= 2 && text.includes(kw.toLowerCase())) {
                                 foundCat = CATEGORY_NORMALIZE[kw] || kw;
                                 break;
@@ -4343,7 +4415,7 @@ const BRAND_TONE = {
                 // ===== 5. 填充全空：大类和品类都为空 =====
                 if (!curMajor && !curCat && p.name) {
                     const text = (p.name || '').toLowerCase();
-                    for (const [maj, keywords] of Object.entries(CATEGORY_MAP)) {
+                    for (const [maj, keywords] of Object.entries(getCategoryMap())) {
                         if (keywords.some(k => k.length >= 2 && text.includes(k.toLowerCase()))) {
                             p.majorCategory = maj;
                             p.category = maj;
@@ -4355,7 +4427,7 @@ const BRAND_TONE = {
 
                 // ===== 5.5 品类末路标准化：step 4/5 产出仍非标准品类 → CATEGORY_NORMALIZE 兜底 =====
                 const finalCat = (p.category || '').trim();
-                if (finalCat && !SUBCATEGORY_TO_MAJOR[finalCat] && !STANDARD_MAJORS.includes(finalCat)) {
+                if (finalCat && !getSubcategoryToMajor()[finalCat] && !getAllMajors().includes(finalCat)) {
                     if (CATEGORY_NORMALIZE[finalCat]) {
                         p.category = CATEGORY_NORMALIZE[finalCat];
                         categoryFixed++; fixed++;
@@ -4389,9 +4461,7 @@ const BRAND_TONE = {
                     await saveData();
                 }
 
-                if (autoFixCategories(products)) {
-                    await saveData();
-                }
+                // autoFixCategories 已禁用：用户已手动整理数据，自动修正会覆盖正确值
 
                 if (savedData.suppliers !== null && savedData.suppliers !== undefined) {
                     suppliers = savedData.suppliers;
@@ -4442,6 +4512,7 @@ const BRAND_TONE = {
                 productFieldOrder = savedData.productFieldOrder || [];
                 supplierFieldOrder = savedData.supplierFieldOrder || [];
                 importRecords = savedData.importRecords || [];
+                applyCategoryConfig(savedData.categoryConfig);
                 await loadAISettings();
 
                 // 加载用户自定义显示配置
@@ -5893,7 +5964,7 @@ const BRAND_TONE = {
                 moq: { type: 'number' },
                 boxSpec: { type: 'number' },
                 innerConfig: { type: 'number' },
-                packagingType: { type: 'datalist', options: ['礼盒装', '袋装', '罐装', '瓶装', '箱装', '散装', '桶装', '条装', '独立包装', '组合装'] },
+                packagingType: { type: 'datalist', options: (() => { const vals = [...new Set(products.map(p => p.packagingType).filter(Boolean))]; return vals.length > 0 ? vals : ['礼盒装', '袋装', '罐装', '瓶装', '箱装', '散装', '桶装', '条装', '独立包装', '组合装']; })() },
                 weight: { type: 'number' },
                 grossWeight: { type: 'number' },
                 boxWeight: { type: 'number' }
@@ -6599,6 +6670,16 @@ const BRAND_TONE = {
             const p = products.find(pr => pr.id === id);
             if (!p) return;
 
+            // 从数据库动态提取字段选项值
+            const distinctValues = (field) => [...new Set(products.map(p => p[field]).filter(v => v !== undefined && v !== null && v !== ''))].sort();
+            const brandLevels = distinctValues('brandLevel');
+            const brandStyles = distinctValues('brandStyle');
+            const highEndAttrs = distinctValues('highEndAttribute');
+            const packagingTypes = distinctValues('packagingType');
+            if (packagingTypes.length === 0) packagingTypes.push('礼盒装', '袋装', '罐装', '瓶装', '箱装', '散装', '桶装', '条装', '独立包装', '组合装');
+            const stockTypes = distinctValues('stockType');
+            const productTypes = distinctValues('productType');
+
             document.getElementById('edit-title').textContent = '编辑商品 - ' + p.name;
             document.getElementById('edit-content').innerHTML = `
                 <div class="grid grid-cols-2 gap-4">
@@ -6639,7 +6720,7 @@ const BRAND_TONE = {
                         <label class="block text-sm text-gray-600 mb-1">包装形式</label>
                         <input type="text" id="edit-packagingType" value="${p.packagingType || ''}" class="w-full border rounded-lg px-3 py-2 text-sm" list="packagingTypeList">
                         <datalist id="packagingTypeList">
-                            <option value="礼盒装"><option value="袋装"><option value="罐装"><option value="瓶装"><option value="箱装"><option value="散装"><option value="桶装"><option value="条装"><option value="独立包装"><option value="组合装">
+                            ${packagingTypes.map(v => `<option value="${v}">`).join('')}
                         </datalist>
                     </div>
                     <div>
@@ -6650,8 +6731,7 @@ const BRAND_TONE = {
                         <label class="block text-sm text-gray-600 mb-1">品牌级别</label>
                         <select id="edit-brandLevel" class="w-full border rounded-lg px-3 py-2 text-sm">
                             <option value="">请选择</option>
-                            <option value="全国品牌" ${p.brandLevel === '全国品牌' ? 'selected' : ''}>全国品牌</option>
-                            <option value="地方品牌" ${p.brandLevel === '地方品牌' ? 'selected' : ''}>地方品牌</option>
+                            ${brandLevels.map(v => `<option value="${v}" ${p.brandLevel === v ? 'selected' : ''}>${v}</option>`).join('')}
                         </select>
                     </div>
                     <div>
@@ -6662,17 +6742,14 @@ const BRAND_TONE = {
                         <label class="block text-sm text-gray-600 mb-1">调性</label>
                         <input type="text" id="edit-brandStyle" value="${p.brandStyle || ''}" class="w-full border rounded-lg px-3 py-2 text-sm" list="brandStyleList">
                         <datalist id="brandStyleList">
-                            <option value="商务稳重"><option value="简约实用"><option value="国民大众"><option value="年轻潮流"><option value="轻奢高端">
+                            ${brandStyles.map(v => `<option value="${v}">`).join('')}
                         </datalist>
                     </div>
                     <div>
                         <label class="block text-sm text-gray-600 mb-1">档次等级</label>
                         <select id="edit-highEndAttribute" class="w-full border rounded-lg px-3 py-2 text-sm">
                             <option value="">请选择</option>
-                            <option value="亲民" ${p.highEndAttribute === '亲民' ? 'selected' : ''}>亲民</option>
-                            <option value="中端" ${p.highEndAttribute === '中端' ? 'selected' : ''}>中端</option>
-                            <option value="中高端" ${p.highEndAttribute === '中高端' ? 'selected' : ''}>中高端</option>
-                            <option value="高端" ${p.highEndAttribute === '高端' ? 'selected' : ''}>高端</option>
+                            ${highEndAttrs.map(v => `<option value="${v}" ${p.highEndAttribute === v ? 'selected' : ''}>${v}</option>`).join('')}
                         </select>
                     </div>
                     <div>
@@ -6736,8 +6813,7 @@ const BRAND_TONE = {
                             <label class="block text-sm text-gray-600 mb-1">库存类型</label>
                             <select id="edit-stockType" class="w-full border rounded-lg px-3 py-2 text-sm">
                                 <option value="">请选择</option>
-                                <option value="现货" ${p.stockType === '现货' ? 'selected' : ''}>现货</option>
-                                <option value="需预订" ${p.stockType === '需预订' ? 'selected' : ''}>需预订</option>
+                                ${stockTypes.map(v => `<option value="${v}" ${p.stockType === v ? 'selected' : ''}>${v}</option>`).join('')}
                             </select>
                         </div>
                         <div>
@@ -6747,9 +6823,8 @@ const BRAND_TONE = {
                         <div>
                             <label class="block text-sm text-gray-600 mb-1">产品类型</label>
                             <select id="edit-productType" class="w-full border rounded-lg px-3 py-2 text-sm">
-                                <option value="普通" ${p.productType === '普通' ? 'selected' : ''}>普通</option>
-                                <option value="包销" ${p.productType === '包销' ? 'selected' : ''}>包销</option>
-                                <option value="定制" ${p.productType === '定制' ? 'selected' : ''}>定制</option>
+                                <option value="">请选择</option>
+                                ${productTypes.map(v => `<option value="${v}" ${p.productType === v ? 'selected' : ''}>${v}</option>`).join('')}
                             </select>
                         </div>
                         <div>
@@ -13747,6 +13822,7 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             // 渲染字段管理
             renderProductFieldsList();
             renderSupplierFieldsList();
+            renderCategoryManagement();
 
             // 更新存储空间显示
             updateStorageDisplay();
@@ -14266,6 +14342,288 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             saveData();
             renderSupplierFieldsList();
         }
+
+        // ===== 品类管理 UI（V11） =====
+        let _selectedMajorForUI = null;
+
+        function renderCategoryManagement() {
+            const cfg = getCategoryUserConfig();
+            const majors = getAllMajors();
+            const defaultMajors = [...DEFAULT_MAJORS];
+            document.getElementById('cat-major-count').textContent = majors.length;
+
+            // 渲染大类列表
+            const majorListEl = document.getElementById('category-major-list');
+            let html = '';
+            for (const major of majors) {
+                const isSystem = defaultMajors.includes(major) || (cfg.renamedMajors && Object.values(cfg.renamedMajors).includes(major));
+                const isRenamed = cfg.renamedMajors && cfg.renamedMajors[major];
+                const subs = getSubcategoriesForMajor(major);
+                html += `<div class="flex items-center justify-between px-2 py-1.5 rounded cursor-pointer text-sm ${_selectedMajorForUI === major ? 'bg-blue-100 font-medium' : 'hover:bg-gray-100'}" onclick="selectCategoryMajor('${escapeHtml(major)}')">
+                    <span>${escapeHtml(major)} <span class="text-xs text-gray-400">(${subs.length})</span></span>
+                    <span class="flex gap-1">
+                        <button onclick="event.stopPropagation();editMajorModal('${escapeHtml(major)}')" class="text-blue-500 hover:text-blue-700 text-xs" title="编辑">✎</button>
+                        ${isSystem ? `<button onclick="event.stopPropagation();deleteMajor('${escapeHtml(major)}')" class="text-gray-400 hover:text-red-500 text-xs" title="隐藏">✕</button>` : `<button onclick="event.stopPropagation();deleteMajor('${escapeHtml(major)}')" class="text-red-400 hover:text-red-600 text-xs" title="删除">✕</button>`}
+                    </span>
+                </div>`;
+            }
+            majorListEl.innerHTML = html || '<p class="text-sm text-gray-400 py-4 text-center">暂无大类</p>';
+
+            // 渲染子品类列表
+            renderSubcategoryPanel();
+        }
+
+        function renderSubcategoryPanel() {
+            const subListEl = document.getElementById('category-sub-list');
+            const titleEl = document.getElementById('cat-sub-panel-title');
+            const addBtn = document.getElementById('btn-add-subcategory');
+            const cfg = getCategoryUserConfig();
+
+            if (!_selectedMajorForUI || !getAllMajors().includes(_selectedMajorForUI)) {
+                subListEl.innerHTML = '<p class="text-sm text-gray-400 py-8 text-center">← 点击左侧大类查看子品类</p>';
+                titleEl.textContent = '子品类（请选择大类）';
+                addBtn.classList.add('hidden');
+                return;
+            }
+
+            const major = _selectedMajorForUI;
+            const subs = getSubcategoriesForMajor(major);
+            titleEl.textContent = `子品类: ${major} (${subs.length})`;
+            addBtn.classList.remove('hidden');
+
+            // 检查哪些是系统默认子品类
+            const defaultSubMap = { ...DEFAULT_SUBCATEGORY_MAP };
+            if (cfg.renamedSubcategories) {
+                for (const [oldName, newName] of Object.entries(cfg.renamedSubcategories)) {
+                    if (defaultSubMap[oldName]) {
+                        delete defaultSubMap[oldName];
+                        defaultSubMap[newName] = defaultSubMap[oldName];
+                    }
+                }
+            }
+
+            let html = '';
+            for (const sub of subs) {
+                const isSystemDefault = defaultSubMap[sub] !== undefined || (cfg.customSubcategories && cfg.customSubcategories[sub] !== undefined && Object.values(defaultSubMap).includes(major) && Object.keys(defaultSubMap).some(k => defaultSubMap[k] === major));
+                // 简化：如果子品类名在默认映射的值中存在，或者是从默认重命名来的，则视为系统默认
+                const isSystem = Object.entries(DEFAULT_SUBCATEGORY_MAP).some(([k, v]) => k === sub || (cfg.renamedSubcategories && cfg.renamedSubcategories[k] === sub));
+                html += `<div class="flex items-center justify-between px-2 py-1 rounded text-sm hover:bg-gray-50">
+                    <span>${escapeHtml(sub)}</span>
+                    <span class="flex gap-1">
+                        <button onclick="editSubcategoryModal('${escapeHtml(sub)}')" class="text-blue-500 hover:text-blue-700 text-xs" title="编辑">✎</button>
+                        ${isSystem ? `<button onclick="deleteSubcategory('${escapeHtml(sub)}')" class="text-gray-400 hover:text-red-500 text-xs" title="隐藏">✕</button>` : `<button onclick="deleteSubcategory('${escapeHtml(sub)}')" class="text-red-400 hover:text-red-600 text-xs" title="删除">✕</button>`}
+                    </span>
+                </div>`;
+            }
+            subListEl.innerHTML = html || '<p class="text-sm text-gray-400 py-4 text-center">暂无子品类</p>';
+        }
+
+        function selectCategoryMajor(major) {
+            _selectedMajorForUI = major;
+            renderCategoryManagement();
+        }
+
+        function showAddMajorModal() {
+            document.getElementById('modal-major-title').textContent = '新增大类';
+            document.getElementById('edit-major-old-name').value = '';
+            document.getElementById('input-major-name').value = '';
+            document.getElementById('modal-add-major').classList.remove('hidden');
+        }
+
+        function editMajorModal(name) {
+            document.getElementById('modal-major-title').textContent = '编辑大类';
+            document.getElementById('edit-major-old-name').value = name;
+            document.getElementById('input-major-name').value = name;
+            document.getElementById('modal-add-major').classList.remove('hidden');
+        }
+
+        function saveMajor() {
+            const oldName = document.getElementById('edit-major-old-name').value.trim();
+            const newName = document.getElementById('input-major-name').value.trim();
+            if (!newName) return alert('请输入大类名称');
+
+            let cfg = getCategoryUserConfig();
+            if (!cfg || !cfg.customMajors) {
+                cfg = { customMajors: [], deletedMajors: [], renamedMajors: {}, customSubcategories: {}, deletedSubcategories: [], renamedSubcategories: {} };
+            }
+
+            if (oldName) {
+                // 编辑模式
+                if (oldName !== newName) {
+                    if (DEFAULT_MAJORS.includes(oldName)) {
+                        // 系统默认大类，记录重命名
+                        if (!cfg.renamedMajors) cfg.renamedMajors = {};
+                        cfg.renamedMajors[oldName] = newName;
+                    } else if (cfg.customMajors.includes(oldName)) {
+                        // 自定义大类，更新名称
+                        const idx = cfg.customMajors.indexOf(oldName);
+                        if (idx >= 0) cfg.customMajors[idx] = newName;
+                    }
+                    // 更新子品类映射中的大类名
+                    if (cfg.customSubcategories) {
+                        for (const [cat, major] of Object.entries(cfg.customSubcategories)) {
+                            if (major === oldName) cfg.customSubcategories[cat] = newName;
+                        }
+                    }
+                }
+            } else {
+                // 新增模式
+                if (getAllMajors().includes(newName)) return alert('该大类已存在');
+                if (!cfg.customMajors) cfg.customMajors = [];
+                cfg.customMajors.push(newName);
+            }
+
+            closeModal('modal-add-major');
+            applyCategoryConfigAndSave(cfg);
+            if (_selectedMajorForUI === oldName) _selectedMajorForUI = newName;
+            renderCategoryManagement();
+        }
+
+        function deleteMajor(name) {
+            const subs = getSubcategoriesForMajor(name);
+            const subNames = subs.join('、');
+            const isSystem = DEFAULT_MAJORS.includes(name);
+            const msg = isSystem
+                ? `确定隐藏系统大类「${name}」？\n其下子品类也将不再显示：${subNames || '无'}\n（系统中已有该大类的商品数据不会丢失）`
+                : `确定删除自定义大类「${name}」？\n其下子品类也将一并移除：${subNames || '无'}`;
+            if (!confirm(msg)) return;
+
+            let cfg = getCategoryUserConfig();
+            if (!cfg) cfg = { customMajors: [], deletedMajors: [], renamedMajors: {}, customSubcategories: {}, deletedSubcategories: [], renamedSubcategories: {} };
+
+            if (isSystem) {
+                if (!cfg.deletedMajors) cfg.deletedMajors = [];
+                cfg.deletedMajors.push(name);
+            } else {
+                cfg.customMajors = (cfg.customMajors || []).filter(m => m !== name);
+            }
+            // 移除相关子品类
+            for (const sub of subs) {
+                if (cfg.customSubcategories && cfg.customSubcategories[sub]) {
+                    delete cfg.customSubcategories[sub];
+                }
+                if (!cfg.deletedSubcategories) cfg.deletedSubcategories = [];
+                if (!cfg.deletedSubcategories.includes(sub)) cfg.deletedSubcategories.push(sub);
+            }
+
+            if (_selectedMajorForUI === name) _selectedMajorForUI = null;
+            applyCategoryConfigAndSave(cfg);
+            renderCategoryManagement();
+        }
+
+        function showAddSubcategoryModal() {
+            document.getElementById('modal-subcategory-title').textContent = '新增子品类';
+            document.getElementById('edit-subcategory-old-name').value = '';
+            document.getElementById('input-subcategory-name').value = '';
+            populateSubcategoryMajorSelect();
+            // 预选当前选中的大类
+            if (_selectedMajorForUI) {
+                document.getElementById('input-subcategory-major').value = _selectedMajorForUI;
+            }
+            document.getElementById('modal-add-subcategory').classList.remove('hidden');
+        }
+
+        function editSubcategoryModal(name) {
+            document.getElementById('modal-subcategory-title').textContent = '编辑子品类';
+            document.getElementById('edit-subcategory-old-name').value = name;
+            document.getElementById('input-subcategory-name').value = name;
+            populateSubcategoryMajorSelect();
+            // 预选当前所属大类
+            const curMajor = getSubcategoryToMajor()[name];
+            if (curMajor) {
+                document.getElementById('input-subcategory-major').value = curMajor;
+            }
+            document.getElementById('modal-add-subcategory').classList.remove('hidden');
+        }
+
+        function populateSubcategoryMajorSelect() {
+            const select = document.getElementById('input-subcategory-major');
+            const majors = getAllMajors();
+            select.innerHTML = majors.map(m => `<option value="${escapeHtml(m)}">${escapeHtml(m)}</option>`).join('');
+        }
+
+        function saveSubcategory() {
+            const oldName = document.getElementById('edit-subcategory-old-name').value.trim();
+            const newName = document.getElementById('input-subcategory-name').value.trim();
+            const major = document.getElementById('input-subcategory-major').value;
+            if (!newName) return alert('请输入子品类名称');
+            if (!major) return alert('请选择所属大类');
+
+            let cfg = getCategoryUserConfig();
+            if (!cfg) cfg = { customMajors: [], deletedMajors: [], renamedMajors: {}, customSubcategories: {}, deletedSubcategories: [], renamedSubcategories: {} };
+
+            const curMap = getSubcategoryToMajor();
+            if (!oldName && curMap[newName]) return alert('该子品类已存在');
+
+            if (oldName) {
+                // 编辑模式
+                const oldMajor = curMap[oldName];
+                if (oldName !== newName || oldMajor !== major) {
+                    const isSystem = DEFAULT_SUBCATEGORY_MAP[oldName] !== undefined;
+                    if (isSystem) {
+                        if (oldName !== newName) {
+                            if (!cfg.renamedSubcategories) cfg.renamedSubcategories = {};
+                            cfg.renamedSubcategories[oldName] = newName;
+                        }
+                        if (oldMajor && oldMajor !== major) {
+                            // 系统子品类换大类 → 添加到自定义映射
+                            if (!cfg.customSubcategories) cfg.customSubcategories = {};
+                            cfg.customSubcategories[newName || oldName] = major;
+                        }
+                    } else {
+                        // 自定义子品类，更新
+                        if (cfg.customSubcategories && cfg.customSubcategories[oldName]) {
+                            delete cfg.customSubcategories[oldName];
+                        }
+                        if (!cfg.customSubcategories) cfg.customSubcategories = {};
+                        cfg.customSubcategories[newName] = major;
+                    }
+                }
+            } else {
+                // 新增模式
+                if (!cfg.customSubcategories) cfg.customSubcategories = {};
+                cfg.customSubcategories[newName] = major;
+                // 如果之前在删除列表中，移出
+                if (cfg.deletedSubcategories) {
+                    cfg.deletedSubcategories = cfg.deletedSubcategories.filter(s => s !== newName);
+                }
+            }
+
+            closeModal('modal-add-subcategory');
+            applyCategoryConfigAndSave(cfg);
+            renderCategoryManagement();
+        }
+
+        function deleteSubcategory(name) {
+            const isSystem = DEFAULT_SUBCATEGORY_MAP[name] !== undefined;
+            const msg = isSystem
+                ? `确定隐藏系统子品类「${name}」？\n（系统中已有该品类的商品数据不会丢失）`
+                : `确定删除自定义子品类「${name}」？`;
+            if (!confirm(msg)) return;
+
+            let cfg = getCategoryUserConfig();
+            if (!cfg) cfg = { customMajors: [], deletedMajors: [], renamedMajors: {}, customSubcategories: {}, deletedSubcategories: [], renamedSubcategories: {} };
+
+            if (isSystem) {
+                if (!cfg.deletedSubcategories) cfg.deletedSubcategories = [];
+                cfg.deletedSubcategories.push(name);
+            } else {
+                if (cfg.customSubcategories && cfg.customSubcategories[name]) {
+                    delete cfg.customSubcategories[name];
+                }
+            }
+
+            applyCategoryConfigAndSave(cfg);
+            renderCategoryManagement();
+        }
+
+        function applyCategoryConfigAndSave(cfg) {
+            _categoryUserConfig = cfg;
+            applyCategoryConfig(cfg);
+            saveData();
+        }
+
+        // ===== 品类管理 UI 结束 =====
 
         // 更新本地文件存储UI状态
         function updateLocalFileStorageUI() {
