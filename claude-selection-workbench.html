@@ -256,9 +256,9 @@
         <div class="bottombar">
             <button class="btn-primary" id="btnGenerate">生成 Prompt</button>
             <button id="btnCopyPrompt">复制</button>
-            <button class="btn-green" onclick="loadResult()">加载结果</button>
-            <button onclick="pasteJson()">粘贴 JSON</button>
-            <button onclick="exportSelection()">导出</button>
+            <button class="btn-green" id="btnLoadResult">加载结果</button>
+            <button id="btnPasteResult">粘贴 JSON</button>
+            <button id="btnExport" disabled>导出</button>
         </div>
     </div>
 
@@ -847,8 +847,259 @@
           }
         }
 
-        function loadResult() { toast('加载结果功能将在后续任务中实现'); }
-        function pasteJson() { toast('粘贴 JSON 功能将在后续任务中实现'); }
+        // ====== Task 5: Result Loading + Parsing + Validation ======
+
+        function buildProductIndex() {
+            const idx = {};
+            allProducts.forEach(p => { idx[p.id] = p; });
+            return idx;
+        }
+
+        function validateResult(data) {
+            const errors = [];
+            if (!data.proposals || !Array.isArray(data.proposals)) {
+                errors.push('缺少 proposals 数组');
+                return errors;
+            }
+            const productIdx = buildProductIndex();
+            data.proposals.forEach((proposal, i) => {
+                if (!proposal.products || !Array.isArray(proposal.products)) {
+                    errors.push('方案 ' + (proposal.id || i) + ': 缺少 products 数组');
+                    return;
+                }
+                proposal.products.forEach((p, j) => {
+                    if (!p.productId) {
+                        errors.push('方案 ' + (proposal.id || i) + ' 产品 ' + j + ': 缺少 productId');
+                    } else if (!productIdx[p.productId]) {
+                        p._notFound = true;
+                    }
+                    if (!p.reason) {
+                        errors.push('方案 ' + (proposal.id || i) + ' 产品 ' + j + ': 缺少 reason');
+                    }
+                });
+            });
+            return errors;
+        }
+
+        function parseAndDisplay(jsonText) {
+            try {
+                const data = JSON.parse(jsonText);
+                const errors = validateResult(data);
+                if (errors.length > 0) {
+                    toast('校验警告: ' + errors.slice(0, 3).join('; '), 'error');
+                }
+                selectionResult = data;
+                renderResults(data);
+                document.getElementById('btnExport').disabled = false;
+                toast('已加载 ' + (data.proposals?.length || 0) + ' 套方案', 'success');
+            } catch (e) {
+                toast('JSON 解析失败: ' + e.message, 'error');
+                document.getElementById('resultsArea').innerHTML =
+                    '<div class="panel-box">' +
+                    '<div style="color:var(--accent);margin-bottom:8px;">JSON 解析失败，请检查格式后重试</div>' +
+                    '<textarea id="fixJsonInput" rows="6" style="font-size:10px;">' + escapeHtml(jsonText) + '</textarea>' +
+                    '<button onclick="parseAndDisplay(document.getElementById(\'fixJsonInput\').value)" style="margin-top:4px;">重新解析</button>' +
+                    '</div>';
+            }
+        }
+
+        async function loadResultFile() {
+            if ('showOpenFilePicker' in window) {
+                try {
+                    const [handle] = await window.showOpenFilePicker({
+                        types: [{ description: 'JSON', accept: { 'application/json': ['.json'] } }]
+                    });
+                    const file = await handle.getFile();
+                    const text = await file.text();
+                    parseAndDisplay(text);
+                    return;
+                } catch (e) {
+                    if (e.name === 'AbortError') return;
+                }
+            }
+            const input = document.createElement('input');
+            input.type = 'file'; input.accept = '.json';
+            input.onchange = async (e) => {
+                const file = e.target.files[0];
+                if (!file) return;
+                const text = await file.text();
+                parseAndDisplay(text);
+            };
+            input.click();
+        }
+
+        async function pasteResult() {
+            try {
+                const text = await navigator.clipboard.readText();
+                parseAndDisplay(text);
+            } catch (e) {
+                const overlay = document.createElement('div');
+                overlay.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.7);z-index:998;';
+                const textarea = document.createElement('textarea');
+                textarea.style.cssText = 'position:fixed;top:10%;left:10%;width:80%;height:50%;z-index:999;background:var(--card);color:var(--text);border-radius:8px;padding:12px;font-size:12px;';
+                textarea.placeholder = '请粘贴结果 JSON...';
+                const btn = document.createElement('button');
+                btn.textContent = '解析';
+                btn.className = 'btn-primary';
+                btn.style.cssText = 'position:fixed;top:calc(10%+52%);left:50%;transform:translateX(-50%);z-index:999;';
+                btn.onclick = () => {
+                    parseAndDisplay(textarea.value);
+                    document.body.removeChild(overlay);
+                    document.body.removeChild(textarea);
+                    document.body.removeChild(btn);
+                };
+                document.body.appendChild(overlay);
+                document.body.appendChild(textarea);
+                document.body.appendChild(btn);
+            }
+        }
+
+        // ====== Task 6: Result Visualization ======
+
+        function renderResults(data) {
+            const container = document.getElementById('resultsArea');
+            if (!data.proposals || data.proposals.length === 0) {
+                container.innerHTML = '<div class="placeholder-text">无方案数据</div>';
+                return;
+            }
+
+            let html = '<div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">';
+            html += '<span style="font-size:10px;color:var(--muted);">' + data.proposals.length + ' 套方案</span>';
+            if (data.globalNotes) {
+                html += '<span style="font-size:10px;color:var(--muted);">· ' + escapeHtml(data.globalNotes.slice(0, 80)) + '</span>';
+            }
+            html += '<span style="flex:1;"></span>';
+            html += '<button class="btn-small" onclick="toggleCompareView()">对比方案</button>';
+            html += '</div>';
+
+            html += '<div class="cards-row">';
+            data.proposals.forEach(proposal => {
+                const totals = proposal.totals || {};
+                html += '<div class="proposal-card" onclick="toggleProposalDetail(\'' + proposal.id + '\')">';
+                html += '<div style="font-size:13px;font-weight:600;">方案 ' + escapeHtml(proposal.id) + ' · ' + escapeHtml(proposal.name || '') + '</div>';
+                if (proposal.summary) {
+                    html += '<div style="font-size:10px;color:var(--muted);margin-top:2px;">' + escapeHtml(proposal.summary.slice(0, 60)) + '</div>';
+                }
+                html += '<div style="font-size:10px;color:var(--green);margin-top:4px;">';
+                html += (totals.productCount || 0) + '件 · ¥' + ((totals.totalCost || 0).toFixed(1)) + '/人 · 毛利' + ((totals.avgMargin || 0).toFixed(0)) + '%';
+                html += '</div>';
+                if (proposal.products) {
+                    html += '<div style="font-size:9px;color:var(--muted);margin-top:4px;line-height:1.4;">';
+                    html += proposal.products.slice(0, 4).map(p => escapeHtml((p.productName || '').slice(0, 12))).join('、');
+                    if (proposal.products.length > 4) html += '...';
+                    html += '</div>';
+                }
+                html += '</div>';
+            });
+            html += '</div>';
+
+            html += '<div id="proposalDetail" class="panel-box" style="display:none;"></div>';
+            html += '<div id="compareView" class="panel-box hidden"></div>';
+
+            container.innerHTML = html;
+        }
+
+        function toggleProposalDetail(proposalId) {
+            if (!selectionResult) return;
+            const proposal = selectionResult.proposals.find(p => p.id === proposalId);
+            if (!proposal) return;
+
+            const detailPanel = document.getElementById('proposalDetail');
+            if (detailPanel.dataset.activeId === proposalId) {
+                detailPanel.style.display = 'none';
+                detailPanel.dataset.activeId = '';
+                return;
+            }
+
+            detailPanel.dataset.activeId = proposalId;
+            detailPanel.style.display = 'block';
+            const totals = proposal.totals || {};
+            const catBreakdown = proposal.categoryBreakdown || {};
+
+            let html = '<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:8px;">';
+            html += '<strong>方案 ' + escapeHtml(proposal.id) + ' · ' + escapeHtml(proposal.name || '') + '</strong>';
+            html += '<span style="font-size:10px;color:var(--muted);">' + escapeHtml(proposal.targetPersona || '') + '</span>';
+            html += '</div>';
+
+            html += '<div style="display:flex;gap:16px;margin-bottom:10px;font-size:11px;">';
+            html += '<span>产品数: <strong>' + (totals.productCount || 0) + '</strong></span>';
+            html += '<span>总成本: <strong>¥' + ((totals.totalCost || 0).toFixed(1)) + '/人</strong></span>';
+            html += '<span>零售总额: <strong>¥' + ((totals.totalRetail || 0).toFixed(1)) + '/人</strong></span>';
+            html += '<span>平均毛利率: <strong style="color:var(--green);">' + ((totals.avgMargin || 0).toFixed(0)) + '%</strong></span>';
+            html += '</div>';
+
+            if (Object.keys(catBreakdown).length > 0) {
+                html += '<div style="display:flex;gap:8px;margin-bottom:10px;flex-wrap:wrap;">';
+                for (const [cat, info] of Object.entries(catBreakdown)) {
+                    html += '<span class="tag" style="font-size:9px;">' + escapeHtml(cat) + ': ' + info.count + '件 · ' + (info.ratio || 0).toFixed(0) + '%</span>';
+                }
+                html += '</div>';
+            }
+
+            html += '<table class="detail-table"><thead><tr>';
+            html += '<th>产品名称</th><th>品牌</th><th>品类</th><th style="text-align:right;">供货价</th>';
+            html += '<th style="text-align:right;">零售价</th><th style="text-align:right;">毛利率</th><th>选品理由</th>';
+            html += '</tr></thead><tbody>';
+
+            (proposal.products || []).forEach(p => {
+                const warnClass = p._notFound ? ' style="background:rgba(233,69,96,0.1);"' : '';
+                const margin = (p.margin != null) ? p.margin + '%' :
+                    (p.supplyPrice && p.retailPrice) ? Math.round((1 - p.supplyPrice / p.retailPrice) * 100) + '%' : '-';
+                html += '<tr' + warnClass + '>';
+                html += '<td>' + escapeHtml(p.productName || '') + (p._notFound ? ' <span style="color:var(--accent);">已下架</span>' : '') + '</td>';
+                html += '<td>' + escapeHtml(p.brand || '') + '</td>';
+                html += '<td>' + escapeHtml(p.category || '') + '</td>';
+                html += '<td style="text-align:right;">' + (p.supplyPrice != null ? '¥' + p.supplyPrice : '-') + '</td>';
+                html += '<td style="text-align:right;">' + (p.retailPrice != null ? '¥' + p.retailPrice : '-') + '</td>';
+                html += '<td style="text-align:right;color:var(--green);">' + margin + '</td>';
+                html += '<td style="font-size:10px;color:var(--muted);max-width:200px;">' + escapeHtml(p.reason || '') + '</td>';
+                html += '</tr>';
+            });
+
+            html += '</tbody></table>';
+            detailPanel.innerHTML = html;
+        }
+
+        function toggleCompareView() {
+            const panel = document.getElementById('compareView');
+            if (!panel.classList.contains('hidden')) {
+                panel.classList.add('hidden');
+                return;
+            }
+            panel.classList.remove('hidden');
+            if (!selectionResult || !selectionResult.proposals) return;
+            const proposals = selectionResult.proposals;
+
+            let html = '<strong>方案对比</strong>';
+            html += '<div style="overflow-x:auto;margin-top:8px;">';
+            html += '<table class="detail-table"><thead><tr><th>维度</th>';
+            proposals.forEach(p => { html += '<th>方案 ' + escapeHtml(p.id) + '</th>'; });
+            html += '</tr></thead><tbody>';
+
+            const rows = [
+                ['方案名称', p => escapeHtml(p.name || '')],
+                ['定位', p => escapeHtml(p.summary || '')],
+                ['产品数', p => (p.totals || {}).productCount || 0],
+                ['人均成本', p => '¥' + ((p.totals || {}).totalCost || 0).toFixed(1)],
+                ['平均毛利率', p => ((p.totals || {}).avgMargin || 0).toFixed(0) + '%'],
+                ['适合客户', p => escapeHtml(p.targetPersona || '')],
+                ['top 品类', p => {
+                    const cats = p.categoryBreakdown || {};
+                    return Object.entries(cats).sort((a,b) => b[1].ratio - a[1].ratio)
+                        .slice(0,3).map(([c,info]) => c + '(' + info.count + ')').join(', ');
+                }]
+            ];
+
+            rows.forEach(([label, fn]) => {
+                html += '<tr><td style="color:var(--muted);">' + label + '</td>';
+                proposals.forEach(p => { html += '<td>' + fn(p) + '</td>'; });
+                html += '</tr>';
+            });
+
+            html += '</tbody></table></div>';
+            panel.innerHTML = html;
+        }
+
         function exportSelection() { toast('导出功能将在后续任务中实现'); }
 
         // ====== 应用入口 ======
@@ -862,6 +1113,8 @@
                 document.getElementById('requirementInput').addEventListener('input', extractParamsFromText);
                 document.getElementById('btnGenerate').addEventListener('click', writePromptFile);
                 document.getElementById('btnCopyPrompt').addEventListener('click', copyPromptToClipboard);
+                document.getElementById('btnLoadResult').addEventListener('click', loadResultFile);
+                document.getElementById('btnPasteResult').addEventListener('click', pasteResult);
                 document.getElementById('productCount').textContent =
                     '\u{1F4E6} ' + allProducts.length.toLocaleString() + ' 条商品';
                 document.getElementById('bridgeStatus').textContent = 'DB 已连接';
