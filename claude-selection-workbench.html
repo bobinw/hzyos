@@ -254,8 +254,8 @@
 
         <!-- 底部操作栏 -->
         <div class="bottombar">
-            <button class="btn-primary" onclick="generatePrompt()">生成 Prompt</button>
-            <button onclick="copyPrompt()">复制</button>
+            <button class="btn-primary" id="btnGenerate">生成 Prompt</button>
+            <button id="btnCopyPrompt">复制</button>
             <button class="btn-green" onclick="loadResult()">加载结果</button>
             <button onclick="pasteJson()">粘贴 JSON</button>
             <button onclick="exportSelection()">导出</button>
@@ -694,9 +694,159 @@
             }
         }
 
-        // ====== 底部按钮占位 ======
-        function generatePrompt() { toast('Prompt 生成功能将在后续任务中实现'); }
-        function copyPrompt() { toast('复制功能将在后续任务中实现'); }
+        // ====== TopicTask 4: TopicPrompt 生成 + 文件写入 + 剪贴板 ======
+        function buildPromptMarkdown() {
+          const requirement = document.getElementById('requirementInput').value.trim();
+          if (!requirement) { toast('请先输入需求描述', 'error'); return null; }
+          if (filteredProducts.length === 0) { toast('筛选后无候选商品', 'error'); return null; }
+
+          const modeLabels = {
+            full: '完整选品（从候选池中独立挑选，生成 N 套差异化方案）',
+            enhance: '辅助增强（基于已有方案进行润色、替换和补充）',
+            review: '方案评审（评审已有方案的合理性并给出改进建议）'
+          };
+
+          let md = '# 选品任务\n\n';
+          md += '## 工作模式\n' + (modeLabels[currentMode] || modeLabels.full) + '\n\n';
+          md += '## 客户需求\n' + requirement + '\n\n';
+
+          // Parameters
+          md += '## 选品参数\n';
+          md += '- 方案数量: ' + selectionParams.proposalCount + '\n';
+          if (selectionParams.budgetPerPerson) md += '- 预算: ' + selectionParams.budgetPerPerson + ' 元/人\n';
+          if (selectionParams.peopleCount) md += '- 人数: ' + selectionParams.peopleCount + '\n';
+          if (selectionParams.targetMargin) md += '- 目标毛利率: >=' + selectionParams.targetMargin + '%\n';
+          if (selectionParams.scene) md += '- 场景: ' + selectionParams.scene + '\n';
+          if (selectionParams.tier) md += '- 档次: ' + selectionParams.tier + '\n';
+          md += '\n';
+
+          // Pre-filter summary
+          md += '## 预筛条件\n';
+          if (preFilter.majorCategories.size > 0) {
+            md += '- 大类: ' + [...preFilter.majorCategories].join(', ') + '\n';
+          }
+          if (preFilter.categories.size > 0) {
+            md += '- 品类: ' + [...preFilter.categories].join(', ') + '\n';
+          }
+          if (preFilter.brands.size > 0) {
+            md += '- 品牌偏好: ' + [...preFilter.brands].join(', ') + '\n';
+          }
+          if (preFilter.budgetMin != null || preFilter.budgetMax != null) {
+            md += '- 预算范围: ' + (preFilter.budgetMin || 0) + ' - ' + (preFilter.budgetMax || '不限') + ' 元/人\n';
+          }
+          if (preFilter.marginMin != null) {
+            md += '- 毛利率 >= ' + preFilter.marginMin + '%\n';
+          }
+          if (preFilter.excludedBrands.size > 0) {
+            md += '- 排除品牌: ' + [...preFilter.excludedBrands].join(', ') + '\n';
+          }
+          md += '\n';
+
+          // Candidate product table
+          const maxRows = 2000;
+          const products = filteredProducts.slice(0, maxRows);
+          md += '## 候选商品 (' + products.length + ' 条';
+          if (filteredProducts.length > maxRows) md += '，已截断至 ' + maxRows;
+          md += ')\n\n';
+
+          md += '| ID | 产品名称 | 品牌 | 大类 | 品类 | 供货价 | 零售价 | 毛利率 | 规格 | 场景标签 | 档次 |\n';
+          md += '|---|---|---|---|---|---|---|---|---|---|\n';
+
+          products.forEach(p => {
+            const margin = (p.purchasePrice && p.retailPrice)
+              ? Math.round((1 - p.purchasePrice / p.retailPrice) * 100) + '%'
+              : '-';
+            const name = (p.name || '').slice(0, 30);
+            const spec = (p.weight || p.spec || '').slice(0, 15);
+            const scene = (p.scene || '').slice(0, 20);
+            md += '| ' + (p.id || '') + ' | ' + name + ' | ' + (p.brand || '') + ' | ' +
+              (p.majorCategory || '') + ' | ' + (p.category || '') + ' | ' +
+              (p.purchasePrice || '') + ' | ' + (p.retailPrice || '') + ' | ' +
+              margin + ' | ' + spec + ' | ' + scene + ' | ' + (p.priceRange || '') + ' |\n';
+          });
+
+          md += '\n## 输出要求\n';
+          md += '将选品结果写入 **selection-result.json**，格式如下：\n\n';
+          md += '```json\n';
+          md += JSON.stringify(getResultTemplate(), null, 2);
+          md += '\n```\n\n';
+          md += '**约束**：productId 必须来自上表中的 ID 列。每件产品必须填写 reason 字段。';
+
+          return md;
+        }
+
+        function getResultTemplate() {
+          return {
+            generatedAt: new Date().toISOString(),
+            mode: currentMode,
+            proposals: [{
+              id: "A",
+              name: "方案名称",
+              summary: "一句话描述方案定位",
+              targetPersona: "适合什么样的客户",
+              products: [{
+                productId: "必填，必须在候选表中",
+                productName: "...",
+                brand: "...",
+                majorCategory: "...",
+                category: "...",
+                supplyPrice: 0,
+                retailPrice: 0,
+                margin: 0,
+                reason: "为什么选这款产品"
+              }],
+              totals: { productCount: 0, totalCost: 0, totalRetail: 0, avgMargin: 0 },
+              categoryBreakdown: { "大类名": { count: 0, cost: 0, ratio: 0 } }
+            }],
+            globalNotes: "方案间差异说明"
+          };
+        }
+
+        async function writePromptFile() {
+          const md = buildPromptMarkdown();
+          if (!md) return;
+
+          if ('showSaveFilePicker' in window) {
+            try {
+              const handle = await window.showSaveFilePicker({
+                suggestedName: 'selection-prompt.md',
+                types: [{ description: 'Markdown', accept: { 'text/markdown': ['.md'] } }]
+              });
+              const writable = await handle.createWritable();
+              await writable.write(md);
+              await writable.close();
+              toast('Prompt 已写入文件', 'success');
+              return;
+            } catch (e) {
+              if (e.name === 'AbortError') return;
+            }
+          }
+
+          // Fallback: Blob download
+          const blob = new Blob([md], { type: 'text/markdown' });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement('a');
+          a.href = url; a.download = 'selection-prompt.md'; a.click();
+          URL.revokeObjectURL(url);
+          toast('已下载 prompt 文件', 'success');
+        }
+
+        async function copyPromptToClipboard() {
+          const md = buildPromptMarkdown();
+          if (!md) return;
+
+          try {
+            await navigator.clipboard.writeText(md);
+            toast('Prompt 已复制到剪贴板', 'success');
+          } catch (e) {
+            const textarea = document.createElement('textarea');
+            textarea.value = md; textarea.style.position = 'fixed'; textarea.style.opacity = '0';
+            document.body.appendChild(textarea); textarea.select();
+            document.execCommand('copy'); document.body.removeChild(textarea);
+            toast('Prompt 已复制到剪贴板', 'success');
+          }
+        }
+
         function loadResult() { toast('加载结果功能将在后续任务中实现'); }
         function pasteJson() { toast('粘贴 JSON 功能将在后续任务中实现'); }
         function exportSelection() { toast('导出功能将在后续任务中实现'); }
@@ -710,6 +860,8 @@
                 buildPreFilter();
                 buildParamChips();
                 document.getElementById('requirementInput').addEventListener('input', extractParamsFromText);
+                document.getElementById('btnGenerate').addEventListener('click', writePromptFile);
+                document.getElementById('btnCopyPrompt').addEventListener('click', copyPromptToClipboard);
                 document.getElementById('productCount').textContent =
                     '\u{1F4E6} ' + allProducts.length.toLocaleString() + ' 条商品';
                 document.getElementById('bridgeStatus').textContent = 'DB 已连接';
