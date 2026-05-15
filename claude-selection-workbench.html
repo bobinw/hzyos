@@ -137,6 +137,7 @@
             background: var(--panel); border: 1px solid rgba(255,255,255,0.1);
             box-shadow: 0 4px 20px rgba(0,0,0,0.4);
             animation: fadeIn 0.2s ease-out;
+            transition: opacity 0.3s;
         }
         @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } }
         .toast.success { border-color: var(--green); }
@@ -261,6 +262,11 @@
             return new Promise((resolve, reject) => {
                 const request = indexedDB.open(DB_NAME, DB_VERSION);
                 request.onerror = () => reject(request.error);
+                request.onupgradeneeded = () => {
+                    // 此页面仅读取，store 由商品库/方案系统创建
+                    // 如果独立打开且 DB 不存在，记录警告
+                    console.warn('DB 升级触发，但此页面不创建 store。请先在商品库系统中初始化。');
+                };
                 request.onsuccess = () => {
                     db = request.result;
                     db.onversionchange = () => { db.close(); db = null; };
@@ -271,6 +277,7 @@
 
         function loadAllProducts() {
             return new Promise((resolve, reject) => {
+                if (!db) { reject(new Error('数据库未初始化')); return; }
                 const tx = db.transaction('products', 'readonly');
                 const store = tx.objectStore('products');
                 const request = store.getAll();
