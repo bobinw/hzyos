@@ -254,6 +254,17 @@
         let filteredProducts = [];
         let currentMode = 'full';
         let selectionResult = null;
+
+        // 预筛状态
+        let preFilter = {
+            majorCategories: new Set(),   // 选中大类
+            categories: new Set(),        // 选中品类
+            brands: new Set(),            // 选中品牌
+            budgetMin: null,
+            budgetMax: null,
+            marginMin: null,
+            excludedBrands: new Set()
+        };
         let promptFilePath = 'selection-prompt.md';
         let resultFilePath = 'selection-result.json';
 
@@ -293,12 +304,240 @@
             return div.innerHTML;
         }
 
+        // ====== 动态字段提取 ======
+        // 从产品数据中提取所有大类的唯一值
+        function getMajorCategories() {
+            const values = new Set();
+            allProducts.forEach(p => {
+                if (p.majorCategory) values.add(p.majorCategory);
+            });
+            return [...values].sort();
+        }
+
+        // 按已选大类，提取关联的品类唯一值
+        function getCategoriesForMajors(majorCats) {
+            const values = new Set();
+            const targetMajors = majorCats.size > 0 ? majorCats : new Set(getMajorCategories());
+            allProducts.forEach(p => {
+                if (targetMajors.has(p.majorCategory) && p.category) {
+                    values.add(p.category);
+                }
+            });
+            return [...values].sort();
+        }
+
+        // 按大类分组提取品牌
+        function getBrandsByMajor(majorCats) {
+            const map = {};
+            const targetMajors = majorCats.size > 0 ? majorCats : new Set(getMajorCategories());
+            allProducts.forEach(p => {
+                if (targetMajors.has(p.majorCategory) && p.brand) {
+                    if (!map[p.majorCategory]) map[p.majorCategory] = new Set();
+                    map[p.majorCategory].add(p.brand);
+                }
+            });
+            const result = {};
+            for (const [maj, brands] of Object.entries(map)) {
+                result[maj] = [...brands].sort();
+            }
+            return result;
+        }
+
         function toast(msg, type) {
             const el = document.createElement('div');
             el.className = 'toast ' + (type || '');
             el.textContent = msg;
             document.body.appendChild(el);
             setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 300); }, 2500);
+        }
+
+        // ====== 预筛引擎 ======
+        function buildPreFilter() {
+            const container = document.getElementById('preFilter');
+            const majorCats = getMajorCategories();
+            const selMajors = preFilter.majorCategories;
+            const displayMajors = selMajors.size > 0 ? selMajors : new Set(majorCats);
+
+            let html = '';
+
+            // --- 大类 ---
+            html += '<div style="margin-bottom:8px;">';
+            html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">大类';
+            if (selMajors.size > 0) {
+                html += ' <span style="color:var(--green);">' + selMajors.size + '/' + majorCats.length + ' 已选</span>';
+            }
+            html += '</div><div class="chip-group">';
+            majorCats.forEach(maj => {
+                const sel = selMajors.has(maj) ? ' selected' : '';
+                html += '<span class="tag' + sel + '" data-filter="major" data-value="' + escapeHtml(maj) + '">' + escapeHtml(maj) + '</span>';
+            });
+            html += '</div></div>';
+
+            // --- 品类 ---
+            html += '<div style="margin-bottom:8px;">';
+            html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">品类';
+            if (preFilter.categories.size > 0) {
+                html += ' <span style="color:var(--green);">' + preFilter.categories.size + ' 已选</span>';
+            }
+            html += '</div>';
+            html += '<div style="max-height:160px;overflow-y:auto;">';
+
+            displayMajors.forEach(maj => {
+                html += '<div style="font-size:9px;color:var(--green);margin:4px 0 2px;">' + escapeHtml(maj) + ' →</div>';
+                html += '<div class="chip-group">';
+                const catSet = new Set();
+                allProducts.forEach(p => {
+                    if (p.majorCategory === maj && p.category) catSet.add(p.category);
+                });
+                [...catSet].sort().forEach(cat => {
+                    const sel = preFilter.categories.has(cat) ? ' selected' : '';
+                    html += '<span class="tag' + sel + '" data-filter="category" data-value="' + escapeHtml(cat) + '">' + escapeHtml(cat) + '</span>';
+                });
+                html += '</div>';
+            });
+            html += '</div></div>';
+
+            // --- 品牌 ---
+            html += '<div style="margin-bottom:8px;">';
+            html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">品牌 <span style="color:var(--muted);">· 可选</span></div>';
+            html += '<div style="max-height:140px;overflow-y:auto;">';
+            displayMajors.forEach(maj => {
+                html += '<div style="font-size:9px;color:var(--green);margin:4px 0 2px;">' + escapeHtml(maj) + ':</div>';
+                html += '<input type="text" class="brand-search" data-major="' + escapeHtml(maj) + '"'
+                    + ' placeholder="搜索品牌..." style="font-size:9px;padding:3px 6px;margin-bottom:3px;width:100%;"'
+                    + ' oninput="filterBrands(this)">';
+                html += '<div class="chip-group brand-chips" data-major="' + escapeHtml(maj) + '">';
+                const brands = getBrandsByMajor(new Set([maj]))[maj] || [];
+                brands.forEach(brand => {
+                    const sel = preFilter.brands.has(brand) ? ' selected' : '';
+                    html += '<span class="tag' + sel + '" data-filter="brand" data-value="' + escapeHtml(brand) + '">' + escapeHtml(brand) + '</span>';
+                });
+                html += '</div>';
+            });
+            html += '</div></div>';
+
+            // --- 其他条件 ---
+            html += '<div style="margin-bottom:6px;">';
+            html += '<div style="font-size:10px;color:var(--muted);margin-bottom:4px;">其他条件</div>';
+            html += '<input type="number" id="filterBudgetMin" placeholder="预算下限 (元/人)" style="margin-bottom:4px;font-size:10px;"'
+                + ' value="' + (preFilter.budgetMin != null ? preFilter.budgetMin : '') + '" onchange="updateBudgetFilter()">';
+            html += '<input type="number" id="filterBudgetMax" placeholder="预算上限 (元/人)" style="margin-bottom:4px;font-size:10px;"'
+                + ' value="' + (preFilter.budgetMax != null ? preFilter.budgetMax : '') + '" onchange="updateBudgetFilter()">';
+            html += '<input type="number" id="filterMarginMin" placeholder="毛利率下限 (%)" style="margin-bottom:4px;font-size:10px;"'
+                + ' value="' + (preFilter.marginMin != null ? preFilter.marginMin : '') + '" onchange="updateMarginFilter()">';
+            html += '<input type="text" id="filterExcludeBrands" placeholder="排除品牌（逗号分隔）" style="font-size:10px;" onchange="updateExcludeFilter()">';
+            html += '</div>';
+
+            // --- 筛选结果计数 ---
+            html += '<div style="font-size:10px;color:var(--green);font-weight:600;" id="filteredCount"></div>';
+
+            container.innerHTML = html;
+            updateFilteredCount();
+
+            // 绑定标签点击事件
+            container.querySelectorAll('.tag[data-filter]').forEach(tag => {
+                tag.addEventListener('click', () => toggleFilter(tag));
+            });
+        }
+
+        function toggleFilter(el) {
+            const type = el.dataset.filter;
+            const value = el.dataset.value;
+
+            if (type === 'major') {
+                if (preFilter.majorCategories.has(value)) {
+                    preFilter.majorCategories.delete(value);
+                } else {
+                    preFilter.majorCategories.add(value);
+                }
+                // 清除关联筛选
+                preFilter.categories.clear();
+                preFilter.brands.clear();
+            } else if (type === 'category') {
+                if (preFilter.categories.has(value)) {
+                    preFilter.categories.delete(value);
+                } else {
+                    preFilter.categories.add(value);
+                }
+            } else if (type === 'brand') {
+                if (preFilter.brands.has(value)) {
+                    preFilter.brands.delete(value);
+                } else {
+                    preFilter.brands.add(value);
+                }
+            }
+            buildPreFilter();
+        }
+
+        function applyFilters() {
+            let result = [...allProducts];
+
+            // 大类过滤
+            if (preFilter.majorCategories.size > 0) {
+                result = result.filter(p => preFilter.majorCategories.has(p.majorCategory));
+            }
+            // 品类过滤
+            if (preFilter.categories.size > 0) {
+                result = result.filter(p => preFilter.categories.has(p.category));
+            }
+            // 品牌白名单
+            if (preFilter.brands.size > 0) {
+                result = result.filter(p => preFilter.brands.has(p.brand));
+            }
+            // 预算范围（使用 purchasePrice 作为供货价参考）
+            if (preFilter.budgetMin != null) {
+                result = result.filter(p => p.purchasePrice && p.purchasePrice >= preFilter.budgetMin * 0.3);
+            }
+            if (preFilter.budgetMax != null) {
+                result = result.filter(p => p.purchasePrice && p.purchasePrice <= preFilter.budgetMax * 0.8);
+            }
+            // 毛利率
+            if (preFilter.marginMin != null) {
+                result = result.filter(p => {
+                    if (!p.purchasePrice || !p.retailPrice || p.retailPrice === 0) return true;
+                    const margin = ((p.retailPrice - p.purchasePrice) / p.retailPrice) * 100;
+                    return margin >= preFilter.marginMin;
+                });
+            }
+            // 排除品牌
+            if (preFilter.excludedBrands.size > 0) {
+                result = result.filter(p => !preFilter.excludedBrands.has(p.brand));
+            }
+
+            return result;
+        }
+
+        function updateFilteredCount() {
+            filteredProducts = applyFilters();
+            const el = document.getElementById('filteredCount');
+            if (el) {
+                el.innerHTML = '● 筛选后: ' + filteredProducts.length.toLocaleString() + ' 条候选';
+            }
+        }
+
+        function updateBudgetFilter() {
+            preFilter.budgetMin = parseFloat(document.getElementById('filterBudgetMin').value) || null;
+            preFilter.budgetMax = parseFloat(document.getElementById('filterBudgetMax').value) || null;
+            updateFilteredCount();
+        }
+        function updateMarginFilter() {
+            preFilter.marginMin = parseFloat(document.getElementById('filterMarginMin').value) || null;
+            updateFilteredCount();
+        }
+        function updateExcludeFilter() {
+            const val = document.getElementById('filterExcludeBrands').value;
+            preFilter.excludedBrands = new Set(val.split(',').map(s => s.trim()).filter(Boolean));
+            updateFilteredCount();
+        }
+
+        function filterBrands(input) {
+            const major = input.dataset.major;
+            const query = input.value.toLowerCase();
+            const chips = input.parentElement.querySelectorAll('.brand-chips .tag');
+            chips.forEach(chip => {
+                const brand = chip.dataset.value || '';
+                chip.style.display = brand.toLowerCase().includes(query) ? '' : 'none';
+            });
         }
 
         // ====== 模式切换 ======
@@ -322,6 +561,7 @@
                 await initDB();
                 allProducts = await loadAllProducts();
                 filteredProducts = [...allProducts];
+                buildPreFilter();
                 document.getElementById('productCount').textContent =
                     '\u{1F4E6} ' + allProducts.length.toLocaleString() + ' 条商品';
                 document.getElementById('bridgeStatus').textContent = 'DB 已连接';
