@@ -1100,7 +1100,34 @@
             panel.innerHTML = html;
         }
 
-        function exportSelection() { toast('导出功能将在后续任务中实现'); }
+        async function exportToExistingSystem() {
+          if (!selectionResult) { toast('无结果可导出', 'error'); return; }
+          try {
+            const tx = db.transaction('proposals', 'readwrite');
+            const store = tx.objectStore('proposals');
+            for (const proposal of selectionResult.proposals) {
+              const record = {
+                id: 'cc-' + Date.now() + '-' + proposal.id,
+                name: proposal.name || '',
+                summary: proposal.summary || '',
+                targetPersona: proposal.targetPersona || '',
+                products: proposal.products || [],
+                totals: proposal.totals || {},
+                categoryBreakdown: proposal.categoryBreakdown || {},
+                source: 'claude-code-workbench',
+                createdAt: new Date().toISOString()
+              };
+              await new Promise((resolve, reject) => {
+                const req = store.put(record);
+                req.onsuccess = resolve;
+                req.onerror = reject;
+              });
+            }
+            toast('已导出 ' + selectionResult.proposals.length + ' 套方案到 proposals 表', 'success');
+          } catch (e) {
+            toast('导出失败: ' + e.message, 'error');
+          }
+        }
 
         // ====== 应用入口 ======
         (async function init() {
@@ -1115,6 +1142,7 @@
                 document.getElementById('btnCopyPrompt').addEventListener('click', copyPromptToClipboard);
                 document.getElementById('btnLoadResult').addEventListener('click', loadResultFile);
                 document.getElementById('btnPasteResult').addEventListener('click', pasteResult);
+                document.getElementById('btnExport').addEventListener('click', exportToExistingSystem);
                 document.getElementById('productCount').textContent =
                     '\u{1F4E6} ' + allProducts.length.toLocaleString() + ' 条商品';
                 document.getElementById('bridgeStatus').textContent = 'DB 已连接';
