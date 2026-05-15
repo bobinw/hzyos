@@ -221,6 +221,23 @@
                 <div class="section-title">需求描述</div>
                 <textarea id="requirementInput" rows="4" placeholder="示例：帮我为某国企工会选配 200 元档位的端午福利方案，需要 8-12 款商品，覆盖粮油、日化、小家电品类，偏好知名品牌，总预算控制在 10 万元以内。"></textarea>
 
+                <!-- 辅助增强：导入已有方案 -->
+                <div id="enhanceImportArea" class="panel-box hidden" style="margin-top:8px;">
+                  <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">
+                    导入现有算法方案（从 proposal-system.html 复制或从 DB 加载）</div>
+                  <textarea id="enhanceInput" rows="3" placeholder="粘贴方案 JSON..."
+                    style="font-size:10px;"></textarea>
+                  <button class="btn-small" style="margin-top:4px;" onclick="loadProposalsFromDB('enhanceInput')">从 DB 加载方案</button>
+                </div>
+                <!-- 方案评审：导入待评审方案 -->
+                <div id="reviewImportArea" class="panel-box hidden" style="margin-top:8px;">
+                  <div style="font-size:11px;color:var(--muted);margin-bottom:4px;">
+                    导入待评审方案</div>
+                  <textarea id="reviewInput" rows="3" placeholder="粘贴待评审方案 JSON..."
+                    style="font-size:10px;"></textarea>
+                  <button class="btn-small" style="margin-top:4px;" onclick="loadProposalsFromDB('reviewInput')">从 DB 加载方案</button>
+                </div>
+
                 <!-- 参数微调 -->
                 <div class="section-title">参数微调</div>
                 <div id="paramChips" class="chip-group">
@@ -545,9 +562,136 @@
         // ====== 模式切换 ======
         function switchMode(mode) {
             currentMode = mode;
-            document.querySelectorAll('.mode-tab').forEach(tab => {
-                tab.classList.toggle('active', tab.dataset.mode === mode);
+            // 更新 tab 样式
+            document.querySelectorAll('.mode-tab').forEach(t => {
+                t.classList.toggle('active', t.dataset.mode === mode);
             });
+            // 显示/隐藏导入区域
+            const enhanceArea = document.getElementById('enhanceImportArea');
+            const reviewArea = document.getElementById('reviewImportArea');
+            if (enhanceArea) enhanceArea.classList.toggle('hidden', mode !== 'enhance');
+            if (reviewArea) reviewArea.classList.toggle('hidden', mode !== 'review');
+        }
+
+        // 绑定 tab 点击（委托模式，覆盖 inline onclick）
+        document.getElementById('modeSwitcher').addEventListener('click', (e) => {
+            const tab = e.target.closest('.mode-tab');
+            if (tab) switchMode(tab.dataset.mode);
+        });
+
+        // ====== 参数配置 ======
+        let selectionParams = {
+            proposalCount: 6,
+            budgetPerPerson: null,
+            peopleCount: null,
+            targetMargin: null,
+            scene: '',
+            tier: ''
+        };
+
+        function buildParamChips() {
+            const container = document.getElementById('paramChips');
+            const params = [
+                { key: 'proposalCount', label: '方案数', value: selectionParams.proposalCount },
+                { key: 'budgetPerPerson', label: '预算/人', value: selectionParams.budgetPerPerson, suffix: '元' },
+                { key: 'peopleCount', label: '人数', value: selectionParams.peopleCount, suffix: '人' },
+                { key: 'targetMargin', label: '毛利率', value: selectionParams.targetMargin, suffix: '%' },
+                { key: 'scene', label: '场景', value: selectionParams.scene, placeholder: '端午/中秋...' },
+                { key: 'tier', label: '档次', value: selectionParams.tier, placeholder: '中高端...' }
+            ];
+
+            container.innerHTML = params.map(p => {
+                if (p.key === 'scene' || p.key === 'tier') {
+                    const display = p.value || p.placeholder || '';
+                    return '<span class="tag" data-param="' + p.key + '" contenteditable="true" ' +
+                        'onblur="updateParam(\'' + p.key + '\', this.textContent)" ' +
+                        'onkeydown="if(event.key===\'Enter\'){event.preventDefault();this.blur();}">' +
+                        escapeHtml(display) + '</span>';
+                }
+                const val = p.value != null ? p.value : '';
+                return '<span class="tag" data-param="' + p.key + '">' +
+                    p.label + ': <input type="number" value="' + val + '" ' +
+                    'style="width:50px;background:transparent;border:none;color:inherit;font-size:10px;padding:0;" ' +
+                    'onchange="updateParam(\'' + p.key + '\', this.value)">' +
+                    (p.suffix || '') + '</span>';
+            }).join('');
+
+            container.insertAdjacentHTML('beforeend',
+                '<button class="btn-small" onclick="addCustomParam()">+ 添加</button>');
+        }
+
+        function updateParam(key, value) {
+            if (key === 'proposalCount' || key === 'budgetPerPerson' ||
+                key === 'peopleCount' || key === 'targetMargin') {
+                selectionParams[key] = parseFloat(value) || null;
+            } else {
+                selectionParams[key] = value;
+            }
+        }
+
+        let customParamCounter = 0;
+        function addCustomParam() {
+            customParamCounter++;
+            const container = document.getElementById('paramChips');
+            const addBtn = container.querySelector('button');
+            const span = document.createElement('span');
+            span.className = 'tag';
+            span.contentEditable = 'true';
+            span.dataset.custom = 'custom_' + customParamCounter;
+            span.textContent = '新参数';
+            span.onkeydown = function(e) {
+                if (e.key === 'Enter') { e.preventDefault(); span.blur(); }
+            };
+            container.insertBefore(span, addBtn);
+        }
+
+        // 从需求文本中自动提取参数
+        function extractParamsFromText() {
+            const text = document.getElementById('requirementInput').value;
+
+            const budgetMatch = text.match(/(\d+)\s*(?:元|块)?\s*\/\s*(?:人|每人)/);
+            if (budgetMatch) selectionParams.budgetPerPerson = parseInt(budgetMatch[1]);
+
+            const peopleMatch = text.match(/(\d+)\s*(?:人|名|位)/);
+            if (peopleMatch && parseInt(peopleMatch[1]) > 10) {
+                selectionParams.peopleCount = parseInt(peopleMatch[1]);
+            }
+
+            const marginMatch = text.match(/毛利(?:率)?\s*(?:≥|>=|>)?\s*(\d+)\s*%/);
+            if (marginMatch) selectionParams.targetMargin = parseInt(marginMatch[1]);
+
+            const scenes = ['端午', '中秋', '春节', '年节', '新年', '日常', '生日', '三八', '五一', '国庆', '圣诞'];
+            for (const s of scenes) {
+                if (text.includes(s)) { selectionParams.scene = s; break; }
+            }
+
+            const tiers = ['高端', '中高端', '中端', '性价比', '平价'];
+            for (const t of tiers) {
+                if (text.includes(t)) { selectionParams.tier = t; break; }
+            }
+
+            buildParamChips();
+        }
+
+        // ====== 从 DB 加载方案 ======
+        async function loadProposalsFromDB(targetInputId) {
+            try {
+                if (!db) { toast('数据库未连接', 'error'); return; }
+                const tx = db.transaction('proposals', 'readonly');
+                const store = tx.objectStore('proposals');
+                const all = await new Promise((resolve, reject) => {
+                    const req = store.getAll();
+                    req.onsuccess = () => resolve(req.result || []);
+                    req.onerror = () => reject(req.error);
+                });
+                if (all.length === 0) {
+                    toast('proposals 表中无方案', 'error'); return;
+                }
+                document.getElementById(targetInputId).value = JSON.stringify(all, null, 2);
+                toast('已加载 ' + all.length + ' 套方案', 'success');
+            } catch (e) {
+                toast('加载失败: ' + e.message, 'error');
+            }
         }
 
         // ====== 底部按钮占位 ======
@@ -564,6 +708,8 @@
                 allProducts = await loadAllProducts();
                 filteredProducts = [...allProducts];
                 buildPreFilter();
+                buildParamChips();
+                document.getElementById('requirementInput').addEventListener('input', extractParamsFromText);
                 document.getElementById('productCount').textContent =
                     '\u{1F4E6} ' + allProducts.length.toLocaleString() + ' 条商品';
                 document.getElementById('bridgeStatus').textContent = 'DB 已连接';
