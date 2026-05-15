@@ -33,7 +33,16 @@
       "Bash(command -v node)",
       "Bash(npm ls *)",
       "Bash(git *)",
-      "Bash(npm install *)"
+      "Bash(npm install *)",
+      "Read(//c/Users/53115/OneDrive/**)",
+      "Bash(kill %1)",
+      "Read(//c/Users/53115/Downloads/**)",
+      "Bash(bash *)",
+      "Bash(awk 'BEGIN{cat=\"\"; maj=\"\"} *)",
+      "Bash(sort -t'|' -k1,2)",
+      "Bash(awk *)",
+      "Bash(rm -f fix_brand_60_and_exclusion.js fix_margin_and_category.js fix_brand_exclusion.js fix_chat_prompt.js fix_chat_subs_products.js)",
+      "Bash(ls *.js)"
     ]
   }
 }

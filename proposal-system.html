@@ -3339,6 +3339,7 @@ function showSelectionPage(project) {
         selectedSuppliers: [],
         productTypeRatio: {},
         brandLevelRatio: {},
+        mainProductRatios: [0.7, 0.5, 0.3],
         excludedCategories: [],
         excludedBrands: [],
         excludedProductTypes: [],
@@ -3570,6 +3571,16 @@ function showSelectionPage(project) {
                     <input type="number" id="param-count-${project.id}" value="${sp.proposalCount}" min="1" max="20" class="w-full border rounded px-2 py-1.5 text-sm" onchange="updateSelectionParam(${project.id},'proposalCount',parseInt(this.value)||0)">
                 </div>
             </div>
+            <div class="mt-3">
+                <label class="text-xs text-gray-500 block mb-1">主力产品策略 <span class="text-gray-400">(主力占品类预算比例，多方案轮换)</span></label>
+                <select id="param-mainRatios-${project.id}" onchange="updateMainProductRatios(${project.id}, this.value)" class="w-full border rounded px-2 py-1.5 text-sm">
+                    ${['0.7,0.5,0.3:默认（旗舰+均衡+性价比）','0.8,0.6,0.4:偏向高档','0.5,0.4,0.3:偏性价比','0.7:仅旗舰型','0.5:仅均衡型','0.3:仅性价比型'].map(opt => {
+                        const [val, label] = opt.split(':');
+                        const selected = (sp.mainProductRatios || [0.7,0.5,0.3]).join(',') === val ? 'selected' : '';
+                        return `<option value="${val}" ${selected}>${label}</option>`;
+                    }).join('')}
+                </select>
+            </div>
             <div class="mt-3 flex flex-wrap gap-1">
                 <span class="text-xs text-gray-400 mr-1">场景:</span>
                 ${['端午','中秋','春节','三八','夏日','年终','生日','日常'].map(s => {
@@ -3693,6 +3704,13 @@ function updateSelectionParam(projectId, key, value) {
     const project = findProject(projectId);
     if (!project || !project.selectionParams) return;
     project.selectionParams[key] = value;
+    saveAllData();
+}
+
+function updateMainProductRatios(projectId, csv) {
+    const project = findProject(projectId);
+    if (!project || !project.selectionParams) return;
+    project.selectionParams.mainProductRatios = csv.split(',').map(Number).filter(n => n > 0);
     saveAllData();
 }
 
@@ -4237,11 +4255,6 @@ async function generateProposalsFromParams(projectId) {
     console.log('品牌筛选后(最终候选)按大类:', JSON.stringify(finalByCat));
     if (candidates.length < 3) { alert(`符合条件的商品太少（${candidates.length}个），请检查品牌筛选或价格条件`); return; }
 
-    // 适配打分：给每个候选品按集采权重打分，策略选品时优先高分
-    candidates.forEach(p => {
-        p._score = scoreProduct(p, budget, sp.targetMargin || 30, estMargin, expectedMinCount, sp);
-    });
-    console.log(`候选品 ${candidates.length} 个，分数范围 ${Math.min(...candidates.map(p => p._score))}-${Math.max(...candidates.map(p => p._score))}`);
     // 按大类统计候选品数量
     const catCandidateCount = {};
     candidates.forEach(p => { const c = p.majorCategory || '未知'; catCandidateCount[c] = (catCandidateCount[c] || 0) + 1; });
@@ -4754,114 +4767,8 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         catProducts[cat] = [...(byCategory[cat] || [])];
     }
 
-    // 生成所有品类×1的组合（每个品类至少1个）
-    let _comboIterations = 0;
-    const _COMBO_MAX_ITER = 20000;
-    function enumerateCombos(catList, idx, current, allCombos) {
-        if (allCombos.length > 5000 || _comboIterations > _COMBO_MAX_ITER) return;
-        if (idx >= catList.length) {
-            _comboIterations++;
-            const total = current.reduce((s, p) => s + calcQuote(p), 0);
-            current._totalQuote = Math.round(total * 100) / 100;
-            if (current._totalQuote >= minBudget && current._totalQuote <= maxBudget) {
-                const copy = [...current];
-                copy._totalQuote = current._totalQuote;
-                allCombos.push(copy);
-            }
-            return;
-        }
-        const cat = catList[idx];
-        const products = catProducts[cat];
-        for (const p of products) {
-            if (allCombos.length > 5000 || _comboIterations > _COMBO_MAX_ITER) return;
-            current.push(p);
-            enumerateCombos(catList, idx + 1, current, allCombos);
-            current.pop();
-        }
-    }
-
-    let allCombos = [];
-    _comboIterations = 0; console.time('enum1'); enumerateCombos(cats, 0, [], allCombos); console.timeEnd('enum1');
-    console.log(`枚举1: ${allCombos.length}个组合, ${_comboIterations}次迭代`);
-
-    // 如果品类×1不够，尝试某些品类选2个
-    if (allCombos.length < count * 2) {
-        console.log('品类×1组合不够，尝试增加产品数量');
-        // 品类×1 + 任意品类多选1个
-        const baseCombos = [];
-        _comboIterations = 0; console.time('enum2'); enumerateCombos(cats, 0, [], baseCombos); console.timeEnd('enum2');
-        console.log(`枚举2: ${baseCombos.length}个组合, ${_comboIterations}次迭代`);
-        // 从接近预算的组合中，尝试加一个产品
-        baseCombos.sort((a, b) => b._totalQuote - a._totalQuote);
-        const topBase = baseCombos.slice(0, 200);
-        for (const base of topBase) {
-            for (const p of candidates) {
-                if (base.some(bp => bp.id === p.id)) continue;
-                const newCombo = [...base, p];
-                newCombo._totalQuote = Math.round((base._totalQuote + calcQuote(p)) * 100) / 100;
-                if (newCombo._totalQuote >= minBudget && newCombo._totalQuote <= maxBudget) {
-                    allCombos.push(newCombo);
-                }
-            }
-            if (allCombos.length > 5000) break;
-        }
-    }
-
-    // 如果仍然不够，放宽预算下限到80%
-    if (allCombos.length < count) {
-        console.log('放宽预算约束到85%');
-        allCombos = [];
-        _comboIterations = 0; console.time('enum3'); enumerateCombos(cats, 0, [], allCombos); console.timeEnd('enum3');
-        console.log(`枚举3: ${allCombos.length}个组合(放宽前), ${_comboIterations}次迭代`);
-        allCombos = allCombos.filter(c => c._totalQuote >= budget * 0.8 && c._totalQuote <= maxBudget);
-        // 如果还不够，再尝试品类×2
-        if (allCombos.length < count) {
-            const baseCombos = [];
-            _comboIterations = 0; console.time('enum4'); enumerateCombos(cats, 0, [], baseCombos); console.timeEnd('enum4');
-            console.log(`枚举4: ${baseCombos.length}个组合, ${_comboIterations}次迭代`);
-            baseCombos.sort((a, b) => b._totalQuote - a._totalQuote);
-            for (const base of baseCombos.slice(0, 200)) {
-                for (const p of candidates) {
-                    if (base.some(bp => bp.id === p.id)) continue;
-                    const newCombo = [...base, p];
-                    newCombo._totalQuote = Math.round((base._totalQuote + calcQuote(p)) * 100) / 100;
-                    if (newCombo._totalQuote >= budget * 0.8 && newCombo._totalQuote <= maxBudget) {
-                        allCombos.push(newCombo);
-                    }
-                }
-                if (allCombos.length > 3000) break;
-            }
-        }
-    }
-
-    // 去重
-    const seen = new Set();
-    allCombos = allCombos.filter(c => {
-        const key = c.map(p => p.id).sort().join(',');
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
-    });
-
-    // 品类多样性辅助函数
-    const comboDiversityScore = (combo) => {
-        const cats = combo.map(p => p.category || p.majorCategory);
-        return new Set(cats).size / cats.length;
-    };
-    const sameCategoryCount = (combo, targetCat, targetMajor) => {
-        targetMajor = targetMajor || targetCat;
-        return combo.filter(p => {
-            const pCat = p.category || p.majorCategory;
-            const pMajor = p.majorCategory || p.category;
-            if (pCat === targetCat) return true;
-            // 候选品 category 是泛化大类名 → 与同大类的任何产品冲突
-            if (targetCat === targetMajor && pMajor === targetCat) return true;
-            // 已有产品 category 是泛化大类名 → 候选品同大类即冲突
-            if (pCat === pMajor && targetCat === pMajor) return true;
-            return false;
-        }).length;
-    };
-    const sameCategoryTotal = (combo, targetCat, targetMajor, _totalBudget) => {
+    // 子品类重复限制：该子品类产品总价 ≤ 总预算20% 即可重复，否则禁止
+    const subCategoryTotal = (combo, targetCat, targetMajor) => {
         targetMajor = targetMajor || targetCat;
         return combo.filter(p => {
             const pCat = p.category || p.majorCategory;
@@ -4872,11 +4779,21 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             return false;
         }).reduce((sum, p) => sum + calcQuote(p), 0);
     };
-    // 品类重复限制：该品类产品总价 ≤ 总预算20% 即可重复，否则禁止
     const canAddSameCategory = (combo, targetCat, targetMajor, newQuote) => {
-        const existing = sameCategoryTotal(combo, targetCat, targetMajor);
+        const existing = subCategoryTotal(combo, targetCat, targetMajor);
         const threshold = budget * 0.2;
         return (existing + newQuote) <= threshold;
+    };
+    const sameSubCategoryCount = (combo, targetCat, targetMajor) => {
+        targetMajor = targetMajor || targetCat;
+        return combo.filter(p => {
+            const pCat = p.category || p.majorCategory;
+            const pMajor = p.majorCategory || p.category;
+            if (pCat === targetCat) return true;
+            if (targetCat === targetMajor && pMajor === targetCat) return true;
+            if (pCat === pMajor && targetCat === pMajor) return true;
+            return false;
+        }).length;
     };
     // 计算方案中金额占比最大的品牌
     const getDominantBrand = (products) => {
@@ -4893,288 +4810,205 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         return maxBrand;
     };
 
-    // 品类多样性优先排序：全品类不同的组合排在前面，同档内按总价
-    allCombos.sort((a, b) => {
-        const aDiv = comboDiversityScore(a);
-        const bDiv = comboDiversityScore(b);
-        if (aDiv === 1 && bDiv < 1) return -1;
-        if (bDiv === 1 && aDiv < 1) return 1;
-        return a._totalQuote - b._totalQuote;
-    });
-
-    console.log(`找到 ${allCombos.length} 个有效组合`);
-
-    // 从有效组合中选 count 个差异化方案
-    // 通过预算利用率梯度 + 价格偏好交替自然差异化
-
     // 保留已有方案，新方案追加（不覆盖）
     const existingProposals = proposals.filter(p => p.projectId === project.id);
     const existingMaxIndex = existingProposals.reduce((max, p) => Math.max(max, p.index || 0), 0);
 
-    if (allCombos.length === 0) {
-        const fallback = cats.map(cat => catProducts[cat][0]).filter(Boolean);
-        if (fallback.length > 0) {
-            allCombos = [fallback];
-            fallback._totalQuote = fallback.reduce((s, p) => s + calcQuote(p), 0);
-        }
-    }
-
-    const usedMainProducts = new Set();
     const usedProductSets = new Set(); // 跨方案去重：记录已使用的产品ID组合
 
-    // 分数优先、价格辅助排序：高分品优先入选，同分再按价格策略排
+    // 按价格排序（选品阶段不评分，只看价格）
     const getCatProds = (cat, sortFn) => {
-        const sortWithScore = (a, b) => (b._score || 0) - (a._score || 0) || sortFn(a, b);
-        return [...(byCategory[cat] || [])].sort(sortWithScore);
+        return [...(byCategory[cat] || [])].sort(sortFn);
     };
 
-    // 每品类预算上限（循环内设置，adjustToBudget 可用）
+    // 每大类预算上限（方案循环内按差异化参数重新计算，adjustToBudget 可用）
     let _catBudgets = {};
+    let _effectiveBudget = 0;
 
-    // 预算强制调整（三轮兜底）
+    // 大类当前总价
+    const catCurrentTotal = (products, cat) => {
+        return products.filter(p => p.majorCategory === cat).reduce((s, p) => s + calcQuote(p), 0);
+    };
+
+    // 阶段A：束搜索 — 每大类1个主力产品，mainRatio控制主力占品类预算的比例
+    const beamSearch = (cats, preferExpensive, mainRatio, beamWidth = 15) => {
+        let beams = [[]];
+        for (const cat of cats) {
+            const catBudget = _catBudgets[cat] || _effectiveBudget;
+            const mainTarget = catBudget * mainRatio;
+            const allProds = [...(byCategory[cat] || [])].sort((a, b) => {
+                const aProx = 1 - Math.abs(calcQuote(a) / (mainTarget || 1) - 1);
+                const bProx = 1 - Math.abs(calcQuote(b) / (mainTarget || 1) - 1);
+                if (Math.abs(aProx - bProx) < 0.15) {
+                    return preferExpensive ? calcQuote(b) - calcQuote(a) : calcQuote(a) - calcQuote(b);
+                }
+                return bProx - aProx;
+            });
+            const catProds = allProds.slice(0, beamWidth);
+            const newBeams = [];
+            for (const beam of beams) {
+                for (const p of catProds) {
+                    if (excludedBrands.has(p.brand)) continue;
+                    const combo = [...beam, p];
+                    const catTotal = combo.filter(x => x.majorCategory === cat).reduce((s, x) => s + calcQuote(x), 0);
+                    if (catTotal > catBudget * 1.2) continue;
+                    if (!canAddSameCategory(beam, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
+                    combo._totalQuote = combo.reduce((s, x) => s + calcQuote(x), 0);
+                    newBeams.push(combo);
+                }
+                // 允许跳过该大类（不选主力产品），beam原样保留
+                const skipBeam = [...beam];
+                skipBeam._totalQuote = beam._totalQuote || 0;
+                newBeams.push(skipBeam);
+            }
+            // 保留总价最接近品类预算的 beam
+            newBeams.sort((a, b) => Math.abs(a._totalQuote - _effectiveBudget) - Math.abs(b._totalQuote - _effectiveBudget));
+            beams = newBeams.slice(0, beamWidth);
+        }
+        // 最终按预算匹配度排序
+        beams.sort((a, b) => Math.abs(a._totalQuote - _effectiveBudget) - Math.abs(b._totalQuote - _effectiveBudget));
+        return beams;
+    };
+
+    // 主力产品子品类独占：shared across inner functions, reassigned per proposal
+    let claimedSubcats = new Set();
+    let mainProductIds = new Set();
+
+    // 阶段B：贪心补充产品
+    const supplementProducts = (mainProducts) => {
+        const result = [...mainProducts];
+        let total = result.reduce((s, p) => s + calcQuote(p), 0);
+        const catCounts = {};
+        result.forEach(p => { catCounts[p.majorCategory] = (catCounts[p.majorCategory] || 0) + 1; });
+        const avail = candidates
+            .filter(p => !result.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) && !claimedSubcats.has(p.category || p.majorCategory))
+            .sort((a, b) => calcQuote(b) - calcQuote(a));
+        for (const p of avail) {
+            if (total >= minBudget) break;
+            const add = calcQuote(p);
+            if (total + add > maxBudget) continue;
+            const cat = p.majorCategory;
+            if ((catCounts[cat] || 0) >= (catMaxs[cat] || 2)) continue;
+            const catBudget = _catBudgets[cat];
+            if (catBudget && catCurrentTotal(result, cat) + add > catBudget * 1.2) continue;
+            if (!canAddSameCategory(result, p.category || p.majorCategory, p.majorCategory || p.category, add)) continue;
+            result.push(p); total += add;
+            catCounts[cat] = (catCounts[cat] || 0) + 1;
+        }
+        return { products: result, total: Math.round(total * 100) / 100 };
+    };
+
+    // 预算微调：补足或削减
     const adjustToBudget = (selected, minB, maxB) => {
         let total = selected.reduce((s, p) => s + calcQuote(p), 0);
         if (total >= minB && total <= maxB) return { products: [...selected], total };
-
         const arr = [...selected];
-        if (total < minB && arr.length > 0) {
-            // 只加不同品类的产品，硬跳同类品，宁可预算低也不出同品类重复。受品类预算硬约束。
-            const catTotals = {};
-            arr.forEach(p => { const c = p.majorCategory; catTotals[c] = (catTotals[c] || 0) + calcQuote(p); });
+        if (total < minB) {
             const avail = candidates
-                .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
+                .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) && !claimedSubcats.has(p.category || p.majorCategory))
                 .sort((a, b) => calcQuote(b) - calcQuote(a));
             for (const p of avail) {
                 if (total >= minB) break;
                 const add = calcQuote(p);
                 if (total + add > maxB) continue;
-                if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
                 const cat = p.majorCategory;
-                const catBudget = _catBudgets[cat];
-                if (catBudget && (catTotals[cat] || 0) + add > catBudget * 1.1) continue;
+                if (catCurrentTotal(arr, cat) + add > (_catBudgets[cat] || _effectiveBudget) * 1.2) continue;
+                if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, add)) continue;
                 arr.push(p); total += add;
-                catTotals[cat] = (catTotals[cat] || 0) + add;
             }
-            // 放宽至 maxBudget：品类预算也放宽到 1.3 倍
+            // 第二轮：放宽子品类和品类预算约束
             if (total < minB) {
-                const remaining = candidates
-                    .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
+                const relaxed = candidates
+                    .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) && !claimedSubcats.has(p.category || p.majorCategory))
                     .sort((a, b) => calcQuote(b) - calcQuote(a));
-                for (const p of remaining) {
+                for (const p of relaxed) {
                     if (total >= minB) break;
                     const add = calcQuote(p);
                     if (total + add > maxB) continue;
-                    if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
                     const cat = p.majorCategory;
-                    const catBudget = _catBudgets[cat];
-                    if (catBudget && (catTotals[cat] || 0) + add > catBudget * 1.3) continue;
+                    if (catCurrentTotal(arr, cat) + add > (_catBudgets[cat] || _effectiveBudget) * 1.4) continue;
                     arr.push(p); total += add;
-                    catTotals[cat] = (catTotals[cat] || 0) + add;
-                }
-            }
-            // 第三轮：用更贵的商品替换最便宜的，逐步逼近预算
-            if (total < minB) {
-                for (let attempt = 0; attempt < 15 && total < minB; attempt++) {
-                    arr.sort((a, b) => calcQuote(a) - calcQuote(b));
-                    const cheapest = arr[0];
-                    const replacement = candidates
-                        .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) && calcQuote(p) > calcQuote(cheapest) && canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p)))
-                        .sort((a, b) => {
-                            const aSame = sameCategoryCount(arr, a.category || a.majorCategory, a.majorCategory || a.category);
-                            const bSame = sameCategoryCount(arr, b.category || b.majorCategory, b.majorCategory || b.category);
-                            if (aSame === 0 && bSame > 0) return -1;
-                            if (bSame === 0 && aSame > 0) return 1;
-                            return calcQuote(a) - calcQuote(b);
-                        })
-                        .find(p => total - calcQuote(cheapest) + calcQuote(p) <= maxBudget);
-                    if (replacement) {
-                        total = total - calcQuote(cheapest) + calcQuote(replacement);
-                        arr[0] = replacement;
-                    } else break;
-                }
-            }
-            // 第四轮：兜底——放宽品类预算和子品类限制，直接加最便宜的产品凑够预算
-            if (total < minB) {
-                const desperation = candidates
-                    .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
-                    .sort((a, b) => calcQuote(a) - calcQuote(b));
-                for (const p of desperation) {
-                    if (total >= minB) break;
-                    const add = calcQuote(p);
-                    if (total + add > maxBudget) continue;
-                    arr.push(p); total += add;
-                    console.warn(`预算兜底：放宽约束添加 ${p.name} (${p.brand}) ¥${add}`);
                 }
             }
         } else if (total > maxB && arr.length > 1) {
-            // 总价太高：优先替换为便宜的，品类多样性优先
-            const avail = candidates
-                .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
-                .sort((a, b) => {
-                    const aSame = sameCategoryCount(arr, a.category || a.majorCategory, a.majorCategory || a.category);
-                    const bSame = sameCategoryCount(arr, b.category || b.majorCategory, b.majorCategory || b.category);
-                    if (aSame === 0 && bSame > 0) return -1;
-                    if (bSame === 0 && aSame > 0) return 1;
-                    return calcQuote(a) - calcQuote(b);
-                });
-            // 第1轮：逐产品替换为同品类更便宜的
+            // 第1轮：替换为同大类更便宜的，精确控制在预算内
             const sorted = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
             for (const exp of sorted) {
                 if (total <= maxB) break;
+                if (mainProductIds.has(exp.id)) continue; // 主力产品不可替换
                 const cat = exp.majorCategory;
-                const cheapAlt = avail.find(p => calcQuote(p) < calcQuote(exp) && total - calcQuote(exp) + calcQuote(p) <= maxB);
-                if (cheapAlt) {
+                if (arr.filter(p => p.majorCategory === cat).length <= (catMins[cat] || 1)) continue;
+                const alt = candidates.find(p =>
+                    !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) &&
+                    !claimedSubcats.has(p.category || p.majorCategory) &&
+                    calcQuote(p) < calcQuote(exp) && total - calcQuote(exp) + calcQuote(p) <= maxB
+                );
+                if (alt) {
                     const idx = arr.findIndex(p => p.id === exp.id);
-                    if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(cheapAlt); arr[idx] = cheapAlt; }
-                    continue;
+                    if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(alt); arr[idx] = alt; }
                 }
-                // 同品类找不到，跨品类替换前检查：该品类至少保留 catMin 个
-                const catMinCount = (cat) => (catMins[cat] || 1);
-                const expCatCount = arr.filter(p => majorCategoryMatch(p.majorCategory, cat)).length;
-                if (expCatCount > catMinCount(cat)) {
-                    const anyCheap = avail.find(p => calcQuote(p) < calcQuote(exp) && total - calcQuote(exp) + calcQuote(p) <= maxB);
-                    if (anyCheap) {
-                        const idx = arr.findIndex(p => p.id === exp.id);
-                        if (idx >= 0) { total = total - calcQuote(exp) + calcQuote(anyCheap); arr[idx] = anyCheap; }
-                        continue;
+            }
+            // 第2轮：渐进降级——即使换完仍超预算，只要更接近目标就换
+            if (total > maxB) {
+                for (const exp of sorted) {
+                    if (total <= maxB) break;
+                    if (mainProductIds.has(exp.id)) continue;
+                    const alt = candidates.find(p =>
+                        !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) &&
+                        !claimedSubcats.has(p.category || p.majorCategory) &&
+                        calcQuote(p) < calcQuote(exp)
+                    );
+                    if (alt) {
+                        const newTotal = total - calcQuote(exp) + calcQuote(alt);
+                        if (newTotal < total) {
+                            const idx = arr.findIndex(p => p.id === exp.id);
+                            if (idx >= 0) { total = newTotal; arr[idx] = alt; }
+                        }
                     }
                 }
             }
-            // 第2轮：仍超预算，尝试把最贵的替换为两个更便宜的
+            // 第3轮：移除冗余产品（保留 catMin）
             if (total > maxB) {
                 const sorted2 = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
                 for (const exp of sorted2) {
                     if (total <= maxB) break;
-                    const cat = exp.majorCategory;
-                    const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
-                    // 找一个便宜的替换品 + 一个额外产品腾预算空间
-                    const alt = avail.find(p => calcQuote(p) < calcQuote(exp) && p.majorCategory === cat);
-                    if (!alt) continue;
-                    const newTotalNoAdd = total - calcQuote(exp) + calcQuote(alt);
-                    if (newTotalNoAdd <= maxB) {
-                        const idx = arr.findIndex(p => p.id === exp.id);
-                        if (idx >= 0) { total = newTotalNoAdd; arr[idx] = alt; }
-                        continue;
-                    }
-                    // 还是超：换成便宜的 + 再找一个更便宜的换掉另一个贵的
-                }
-            }
-            // 第3轮：最后手段 — 移除产品（但保留每品类至少 catMin 个 + 不低于ppMin）
-            if (total > maxB && arr.length > ppMin) {
-                const sorted3 = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
-                for (const exp of sorted3) {
-                    if (total <= maxB || arr.length <= ppMin) break;
-                    const cat = exp.majorCategory;
-                    const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
-                    if (sameCatCnt <= (catMins[cat] || 1)) continue;
+                    if (mainProductIds.has(exp.id)) continue; // 主力产品不可移除
+                    if (arr.filter(p => p.majorCategory === exp.majorCategory).length <= (catMins[exp.majorCategory] || 1)) continue;
                     const idx = arr.findIndex(p => p.id === exp.id);
                     if (idx >= 0) { total -= calcQuote(exp); arr.splice(idx, 1); }
                 }
             }
         }
-
-        // 兜底：从 allCombos 找绝对最接近预算的（且产品数在范围内）
-        if ((total < minB || total > maxB) && allCombos.length > 0) {
-            let best = null, bestDiff = Infinity;
-            const target = (minB + maxB) / 2;
-            for (const c of allCombos) {
-                if (c.length < ppMin) continue;
-                if (c.length > ppMax) continue;
-                const diff = Math.abs(c._totalQuote - target);
-                if (diff < bestDiff) { bestDiff = diff; best = c; }
-            }
-            if (best) return { products: [...best], total: best._totalQuote };
-        }
-
         return { products: arr, total };
     };
 
-    // 产品数量范围调整
+    // 产品数微调
     const adjustProductCount = (products, minN, maxN) => {
         const arr = [...products];
         let total = arr.reduce((s, p) => s + calcQuote(p), 0);
-        // 每个品类至少保留 catMin 个产品
-        const catMinCount = (cat) => catMins[cat] || 1;
-        const absMin = Object.values(catMins).reduce((a, b) => a + b, 0);
-
-        // 太少：三阶段补足
-        // 阶段1：优先补足未达 catMin 的品类
         while (arr.length < minN) {
-            let best = null, bestPrice = Infinity;
-            // 优先补足少于 catMin 的品类
-            for (const cat of cats) {
-                const currentInCat = arr.filter(p => majorCategoryMatch(p.majorCategory, cat)).length;
-                if (currentInCat >= catMinCount(cat)) continue;
-                const p = candidates.find(p => !excludedBrands.has(p.brand) && majorCategoryMatch(p.majorCategory, cat) && !arr.some(sp => sp.id === p.id) && total + calcQuote(p) <= maxBudget && canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p)));
-                if (p && calcQuote(p) < bestPrice) { best = p; bestPrice = calcQuote(p); }
-            }
-            if (best) { arr.push(best); total += bestPrice; continue; }
-            // 阶段1b：放宽品类限制，加任何不同品类的产品
+            let best = null, bestPrice = -Infinity;
             for (const p of candidates) {
                 if (arr.some(sp => sp.id === p.id)) continue;
                 if (excludedBrands.has(p.brand)) continue;
-                const add = calcQuote(p);
-                if (total + add > maxBudget) continue;
-                if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
-                if (add < bestPrice) { best = p; bestPrice = add; }
+                if (claimedSubcats.has(p.category || p.majorCategory)) continue;
+                if (total + calcQuote(p) > maxBudget * 1.1) continue;
+                if (calcQuote(p) > bestPrice) { bestPrice = calcQuote(p); best = p; }
             }
-            if (best) { arr.push(best); total += bestPrice; continue; }
-            // 阶段2：预算内加不进，尝试把最贵产品替换为更便宜的，腾出预算再加
-            let freed = false;
-            const sortedByPrice = [...arr].sort((a, b) => calcQuote(b) - calcQuote(a));
-            for (const exp of sortedByPrice) {
-                if (arr.length <= absMin) break;
-                const cat = exp.majorCategory;
-                const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
-                if (sameCatCnt <= catMinCount(cat)) continue;
-                // 找一个更便宜的替代品 + 一个能塞进去的新品
-                const avail = candidates
-                    .filter(p => !arr.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
-                    .sort((a, b) => calcQuote(a) - calcQuote(b));
-                const cheapAlt = avail.find(p => calcQuote(p) < calcQuote(exp) && p.majorCategory === cat);
-                if (!cheapAlt) continue;
-                const budgetLeft = maxBudget - (total - calcQuote(exp) + calcQuote(cheapAlt));
-                const extra = avail.find(p => p.id !== cheapAlt.id && calcQuote(p) <= budgetLeft && canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p)));
-                if (extra) {
-                    const idx = arr.findIndex(p => p.id === exp.id);
-                    total = total - calcQuote(exp) + calcQuote(cheapAlt) + calcQuote(extra);
-                    arr[idx] = cheapAlt; arr.push(extra);
-                    freed = true;
-                    break;
-                }
-            }
-            if (freed) continue;
-            // 阶段3：放宽预算到 maxBudget*1.1，同样只加不同品类
-            let best2 = null, bestPrice2 = Infinity;
-            for (const p of candidates) {
-                if (arr.some(sp => sp.id === p.id)) continue;
-                if (excludedBrands.has(p.brand)) continue;
-                const add = calcQuote(p);
-                if (total + add > maxBudget * 1.1) continue;
-                if (!canAddSameCategory(arr, p.category || p.majorCategory, p.majorCategory || p.category, calcQuote(p))) continue;
-                if (add < bestPrice2) { best2 = p; bestPrice2 = add; }
-            }
-            if (best2 && arr.length < minN) {
-                arr.push(best2); total += bestPrice2;
-                console.warn(`产品数不足，放宽预算至${(maxBudget*1.1).toFixed(0)}以达标minN=${minN}`);
-            } else break;
+            if (best) { arr.push(best); total += calcQuote(best); }
+            else break;
         }
-
-        // 太多：移除最低价的冗余产品（保留每品类至少 catMin 个，不跌破预算下限）
-        if (arr.length > maxN && arr.length > absMin) {
+        while (arr.length > maxN) {
             const sorted = [...arr].sort((a, b) => calcQuote(a) - calcQuote(b));
+            let removed = false;
             for (const cheap of sorted) {
-                if (arr.length <= maxN || arr.length <= absMin) break;
-                const cat = cheap.majorCategory;
-                const sameCatCnt = arr.filter(p => p.majorCategory === cat).length;
-                if (sameCatCnt <= catMinCount(cat)) continue;
-                const newTotal = total - calcQuote(cheap);
-                if (newTotal < minBudget) continue;
+                if (mainProductIds.has(cheap.id)) continue; // 主力产品不可移除
+                if (arr.filter(p => p.majorCategory === cheap.majorCategory).length <= (catMins[cheap.majorCategory] || 1)) continue;
                 const idx = arr.findIndex(p => p.id === cheap.id);
-                if (idx >= 0) { total = newTotal; arr.splice(idx, 1); }
+                if (idx >= 0) { total -= calcQuote(cheap); arr.splice(idx, 1); removed = true; break; }
             }
+            if (!removed) break;
         }
-
         return { products: arr, total: Math.round(total * 100) / 100 };
     };
 
@@ -5195,36 +5029,47 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
         cats.forEach(cat => { _catBudgets[cat] = effectiveBudget * (catWeights[cat] || 1 / cats.length); });
         let selectedProducts = [];
 
-        // 统一选品逻辑：每品类按 catMax 选品，评分排序，价格偏好交替，受品类预算硬约束
-        for (const cat of cats) {
-            const catMax = catMaxs[cat] || 2;
-            const catBudget = _catBudgets[cat] || effectiveBudget;
-            const catBudgetUpper = catBudget * 1.1;
-            const catBudgetLower = catBudget * 0.9;
-            const sortFn = preferExpensive
-                ? (a, b) => calcQuote(b) - calcQuote(a)
-                : (a, b) => calcQuote(a) - calcQuote(b);
-            const prods = getCatProds(cat, sortFn);
-            let added = 0;
-            let catRunningTotal = 0;
-            for (const p of prods) {
-                if (added >= catMax) break;
-                if (excludedBrands.has(p.brand)) continue;
-                if (usedMainProducts.has(p.id) || selectedProducts.some(sp => sp.id === p.id)) continue;
-                const quote = calcQuote(p);
-                if (catRunningTotal + quote > catBudgetUpper && added >= (catMins[cat] || 1)) continue;
-                if (!canAddSameCategory(selectedProducts, p.category || p.majorCategory, p.majorCategory || p.category, quote)) continue;
-                selectedProducts.push(p); usedMainProducts.add(p.id); added++;
-                catRunningTotal += quote;
+        // 阶段A：束搜索主力组合（主力产品数可0~N个，按mainRatio控制价格定位）
+        _effectiveBudget = effectiveBudget;
+        const mainProductRatios = project.selectionParams?.mainProductRatios || [0.7, 0.5, 0.3];
+        const mainRatio = mainProductRatios[i % mainProductRatios.length];
+        const beamResults = beamSearch(cats, preferExpensive, mainRatio, 15);
+        if (beamResults.length === 0) {
+            // Fallback: 每大类取分数最高的1个
+            const fallback = cats.map(cat => getCatProds(cat, (a, b) => calcQuote(b) - calcQuote(a))[0]).filter(Boolean);
+            if (fallback.length > 0) {
+                selectedProducts = fallback;
+            } else {
+                selectedProducts = candidates.slice(0, Math.max(ppMin, 1));
             }
-            // 兜底：至少保证每个品类有 catMin 个（即使超预算或品牌被禁）
+        } else {
+            // 从束搜索结果中选一个差异化的主力组合（按索引轮换取不同beam）
+            const beamIdx = i % beamResults.length;
+            selectedProducts = beamResults[beamIdx];
+        }
+
+        // 标记主力产品：子品类独占 + ID保护
+        claimedSubcats = new Set(selectedProducts.map(p => p.category || p.majorCategory));
+        mainProductIds = new Set(selectedProducts.map(p => p.id));
+
+        // 阶段B：贪心补充产品
+        const supplemented = supplementProducts(selectedProducts);
+        selectedProducts = supplemented.products;
+
+        // 兜底：大类覆盖——确保每个大类至少有 catMin 个产品
+        for (const cat of cats) {
             const catMin = catMins[cat] || 1;
-            while (added < catMin && prods.length > added) {
-                const p = prods[added];
-                if (!usedMainProducts.has(p.id) && !selectedProducts.some(sp => sp.id === p.id)) {
-                    if (excludedBrands.has(p.brand)) console.warn(`方案${i+1}: 品类${cat}候选不足，被迫使用被禁品牌${p.brand}`);
-                    selectedProducts.push(p); usedMainProducts.add(p.id); added++;
-                } else { break; }
+            const currentInCat = selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat)).length;
+            if (currentInCat >= catMin) continue;
+            const missing = catMin - currentInCat;
+            const catCands = (byCategory[cat] || [])
+                .filter(p => !selectedProducts.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand) && !claimedSubcats.has(p.category || p.majorCategory))
+                .sort((a, b) => calcQuote(b) - calcQuote(a));
+            for (let m = 0; m < missing && m < catCands.length; m++) {
+                const add = calcQuote(catCands[m]);
+                const curTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
+                if (curTotal + add > maxBudget) break;
+                selectedProducts.push(catCands[m]);
             }
         }
 
@@ -5359,56 +5204,19 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
             }
         }
 
-        // 预算预检：策略选品可能严重超预算（如轻奢全选高价品），先重建为最便宜组合
-        const preCheckTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
-        if (preCheckTotal > maxBudget * 1.5) {
-            selectedProducts = [];
-            for (const cat of cats) {
-                const cheapest = getCatProds(cat, (a, b) => calcQuote(a) - calcQuote(b))[0];
-                if (cheapest && !selectedProducts.some(p => p.id === cheapest.id)) {
-                    selectedProducts.push(cheapest);
-                }
-            }
-        }
-
-        // 预算强制调整（使用差异化预算目标）
+        // 预算调整 + 产品数调整（各一轮）
         const targetMin = budget * 0.9;
         const targetMax = budget * 1.1;
-        const adjusted = adjustToBudget(selectedProducts, targetMin, targetMax);
+        let adjusted = adjustToBudget(selectedProducts, targetMin, targetMax);
+        adjusted = adjustProductCount(adjusted.products, ppMin, ppMax);
         selectedProducts = adjusted.products;
-
-        // 产品数量范围调整
-        const countAdjusted = adjustProductCount(selectedProducts, ppMin, ppMax);
-        selectedProducts = countAdjusted.products;
-
-        // 最终预算复核
+        // 最终复核
         const finalCheckTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
         if (finalCheckTotal < targetMin || finalCheckTotal > targetMax) {
             const reAdjusted = adjustToBudget(selectedProducts, targetMin, targetMax);
             selectedProducts = reAdjusted.products;
         }
-        // 预算调整后重新约束产品数
-        const countRecheck = adjustProductCount(selectedProducts, ppMin, ppMax);
-        selectedProducts = countRecheck.products;
 
-        // 大类强制覆盖：确保所有需求大类都有至少 catMin 个产品
-        let verifyTotal = selectedProducts.reduce((s, p) => s + calcQuote(p), 0);
-        for (const cat of cats) {
-            const catMin = catMins[cat] || 1;
-            const currentInCat = selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat)).length;
-            if (currentInCat >= catMin) continue;
-            // 从该品类的候选品中强制补充
-            const missing = catMin - currentInCat;
-            const catCands = (byCategory[cat] || [])
-                .filter(p => !selectedProducts.some(sp => sp.id === p.id) && !excludedBrands.has(p.brand))
-                .sort((a, b) => calcQuote(a) - calcQuote(b));
-            for (let m = 0; m < missing && m < catCands.length; m++) {
-                const addQuote = calcQuote(catCands[m]);
-                if (verifyTotal + addQuote > budget * 1.15) break; // 极端超预算则跳过
-                selectedProducts.push(catCands[m]);
-                verifyTotal += addQuote;
-            }
-        }
         // 单品牌金额占比 ≤ 60%
         const enforceBrandCap = (products) => {
             // DEBUG: temporarily disabled to isolate infinite loop
@@ -5443,7 +5251,7 @@ async function algorithmSelectProducts(project, candidates, count, selectedCats,
                     const cat = cats[ci];
                     const currentInCat = selectedProducts.filter(p => majorCategoryMatch(p.majorCategory, cat));
                     if (currentInCat.length === 0) continue;
-                    const altProds = getCatProds(cat, (a, b) => (b._score || 0) - (a._score || 0));
+                    const altProds = getCatProds(cat, (a, b) => calcQuote(b) - calcQuote(a));
                     const alt = altProds.find(p => !excludedBrands.has(p.brand) && !selectedProducts.some(sp => sp.id === p.id));
                     if (alt) {
                         // 替换该品类第一个产品
