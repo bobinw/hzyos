@@ -315,15 +315,19 @@
         }
 
         // 按已选大类，提取关联的品类唯一值
-        function getCategoriesForMajors(majorCats) {
-            const values = new Set();
-            const targetMajors = majorCats.size > 0 ? majorCats : new Set(getMajorCategories());
+        function getCategoriesByMajor() {
+            const map = {};
             allProducts.forEach(p => {
-                if (targetMajors.has(p.majorCategory) && p.category) {
-                    values.add(p.category);
+                if (p.majorCategory && p.category) {
+                    if (!map[p.majorCategory]) map[p.majorCategory] = new Set();
+                    map[p.majorCategory].add(p.category);
                 }
             });
-            return [...values].sort();
+            const result = {};
+            for (const [maj, cats] of Object.entries(map)) {
+                result[maj] = [...cats].sort();
+            }
+            return result;
         }
 
         // 按大类分组提取品牌
@@ -385,11 +389,9 @@
             displayMajors.forEach(maj => {
                 html += '<div style="font-size:9px;color:var(--green);margin:4px 0 2px;">' + escapeHtml(maj) + ' →</div>';
                 html += '<div class="chip-group">';
-                const catSet = new Set();
-                allProducts.forEach(p => {
-                    if (p.majorCategory === maj && p.category) catSet.add(p.category);
-                });
-                [...catSet].sort().forEach(cat => {
+                const catsByMajor = getCategoriesByMajor();
+                const cats = catsByMajor[maj] || [];
+                cats.forEach(cat => {
                     const sel = preFilter.categories.has(cat) ? ' selected' : '';
                     html += '<span class="tag' + sel + '" data-filter="category" data-value="' + escapeHtml(cat) + '">' + escapeHtml(cat) + '</span>';
                 });
