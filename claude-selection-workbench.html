@@ -136,8 +136,9 @@
             padding: 10px 18px; border-radius: 8px; font-size: 0.85rem;
             background: var(--panel); border: 1px solid rgba(255,255,255,0.1);
             box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-            transition: opacity 0.3s;
+            animation: fadeIn 0.2s ease-out;
         }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(-8px); } }
         .toast.success { border-color: var(--green); }
         .toast.error { border-color: var(--accent); }
 
@@ -237,7 +238,7 @@
         <div class="bottombar">
             <button class="btn-primary" onclick="generatePrompt()">生成 Prompt</button>
             <button onclick="copyPrompt()">复制</button>
-            <button onclick="loadResult()">加载结果</button>
+            <button class="btn-green" onclick="loadResult()">加载结果</button>
             <button onclick="pasteJson()">粘贴 JSON</button>
             <button onclick="exportSelection()">导出</button>
         </div>
