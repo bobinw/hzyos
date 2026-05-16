@@ -3039,15 +3039,59 @@ function applyBrandReidentificationChanges() {
     closeModal();
     _aiBrandResults = [];
     if (changed > 0) {
-        toast('品牌名识别：已应用 ' + changed + ' 处修改');
-        renderBrandList();
-        updateDetailIssues();
-        if (BRAND_GROUPS[ACTIVE_BRAND]) {
-            renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
-        }
+        toast('品牌名识别：已应用 ' + changed + ' 处修改，正在保存...');
+        saveReidentificationChanges().then(() => {
+            toast('品牌名识别：已应用并保存 ' + changed + ' 处修改');
+            renderBrandList();
+            updateDetailIssues();
+            if (BRAND_GROUPS[ACTIVE_BRAND]) {
+                renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+            }
+        }).catch(e => {
+            toast('保存失败: ' + e.message + '（修改仍在内存中，请手动保存）');
+            renderBrandList();
+            updateDetailIssues();
+            if (BRAND_GROUPS[ACTIVE_BRAND]) {
+                renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+            }
+        });
     } else {
         toast('未选中任何修改');
     }
+}
+
+async function saveReidentificationChanges() {
+    const dirtyBrands = [...DIRTY_BRANDS];
+    if (dirtyBrands.length === 0) return;
+    const tx = DB.transaction('products', 'readwrite');
+    const store = tx.objectStore('products');
+    for (const brand of dirtyBrands) {
+        const deleted = BRAND_DELETED[brand] || [];
+        for (const d of deleted) {
+            store.delete(d.id);
+        }
+    }
+    for (const brand of dirtyBrands) {
+        const prods = BRAND_GROUPS[brand];
+        if (prods) {
+            for (const p of prods) {
+                store.put(p);
+            }
+        }
+    }
+    await new Promise((resolve, reject) => {
+        tx.oncomplete = resolve;
+        tx.onerror = () => reject(tx.error);
+        tx.onabort = () => reject(new Error('事务被中止'));
+    });
+    for (const brand of dirtyBrands) {
+        delete BRAND_ORIGINALS[brand];
+        delete BRAND_DELETED[brand];
+        BRAND_STATS[brand] = recomputeStats(brand, BRAND_GROUPS[brand]);
+    }
+    DIRTY_BRANDS.clear();
+    document.getElementById('btn-undo-all').disabled = true;
+    if (ACTIVE_BRAND) document.getElementById('btn-undo-brand').disabled = true;
 }
 
 // ========== 工具函数 ==========
