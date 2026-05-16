@@ -102,7 +102,8 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
 #product-area { flex: 1; overflow: auto; padding: 8px 16px; }
 #product-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; background: var(--card); }
-#product-table th { background: #f9fafb; padding: 8px 10px; text-align: left; font-weight: 600; font-size: 12px; border-bottom: 2px solid var(--border); position: sticky; top: 0; z-index: 1; }
+#product-table thead { position: sticky; top: 0; z-index: 2; background: #f9fafb; }
+#product-table thead th { padding: 8px 10px; text-align: left; font-weight: 600; font-size: 12px; border-bottom: 2px solid var(--border); }
 #product-table td { padding: 6px 10px; border-bottom: 1px solid #f3f4f6; }
 #product-table tr:hover td { background: #fafbff; }
 #product-table .editable { cursor: pointer; border-radius: 3px; min-width: 60px; }
