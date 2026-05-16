@@ -2109,8 +2109,17 @@ function renderProductTable(brand, products) {
     const colValues = {};
     for (const f of visibleFields) {
         const vals = new Set();
-        products.forEach(p => { if (p[f]) vals.add(String(p[f]).trim()); });
+        let hasEmpty = false;
+        products.forEach(p => {
+            const v = p[f];
+            if (v !== undefined && v !== null && String(v).trim() !== '') {
+                vals.add(String(v).trim());
+            } else {
+                hasEmpty = true;
+            }
+        });
         colValues[f] = [...vals].sort((a, b) => a.localeCompare(b, 'zh-CN'));
+        if (hasEmpty) colValues[f].unshift('(空)');
     }
 
     // 应用列筛选
@@ -2120,11 +2129,18 @@ function renderProductTable(brand, products) {
     }
     for (const [field, val] of Object.entries(COLUMN_FILTERS)) {
         if (!val) continue;
-        const v = val.toLowerCase();
-        displayIndices = displayIndices.filter(i => {
-            const pv = products[i][field];
-            return pv !== undefined && pv !== null && String(pv).toLowerCase().includes(v);
-        });
+        if (val === '(空)') {
+            displayIndices = displayIndices.filter(i => {
+                const pv = products[i][field];
+                return pv === undefined || pv === null || String(pv).trim() === '';
+            });
+        } else {
+            const v = val.toLowerCase();
+            displayIndices = displayIndices.filter(i => {
+                const pv = products[i][field];
+                return pv !== undefined && pv !== null && String(pv).toLowerCase().includes(v);
+            });
+        }
     }
 
     // 筛选行的 input/select 构建函数
