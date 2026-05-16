@@ -1793,8 +1793,8 @@ function switchTab(mode) {
     // 供应商审计面板
     const auditPanel = document.getElementById('supplier-audit');
     const auditSummary = document.getElementById('audit-summary');
-    if (auditPanel) auditPanel.style.display = isBrand ? 'none' : '';
-    if (auditSummary) auditSummary.style.display = isBrand ? 'none' : '';
+    if (auditPanel) auditPanel.style.display = isBrand ? 'none' : 'block';
+    if (auditSummary) auditSummary.style.display = isBrand ? 'none' : 'flex';
     // 批量修改栏
     document.getElementById('batch-brand').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-major').style.display = isBrand ? '' : 'none';
@@ -1993,8 +1993,8 @@ function selectBrand(brand) {
         }
         // 供应商审计面板
         renderSupplierAudit(brand, BRAND_STATS[brand]);
-        document.getElementById('supplier-audit').style.display = '';
-        document.getElementById('audit-summary').style.display = '';
+        document.getElementById('supplier-audit').style.display = 'block';
+        document.getElementById('audit-summary').style.display = 'flex';
     }
 
     // 导航按钮
