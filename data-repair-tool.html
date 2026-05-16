@@ -23,6 +23,13 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 #topbar .dot { width: 7px; height: 7px; border-radius: 50%; background: #d1d5db; }
 #topbar .dot.on { background: var(--success); }
 
+#mode-tabs { display: flex; gap: 0; margin-left: 8px; }
+.mode-tab { padding: 5px 14px; border: 1px solid var(--border); background: #f9fafb; font-size: 13px; cursor: pointer; color: var(--text2); transition: all 0.15s; }
+.mode-tab:first-child { border-radius: 5px 0 0 5px; }
+.mode-tab:last-child { border-radius: 0 5px 5px 0; }
+.mode-tab.active { background: var(--primary); color: #fff; border-color: var(--primary); z-index: 1; }
+.mode-tab:hover:not(.active) { background: #f3f4f6; }
+
 /* Main */
 #main { display: grid; grid-template-columns: 300px 1fr; overflow: hidden; }
 
@@ -69,6 +76,29 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 
 #suggestion-bar { background: #fffbeb; padding: 8px 16px; border-bottom: 1px solid #fde68a; font-size: 12px; display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
 #suggestion-bar.hidden { display: none; }
+
+/* 供应商审计 */
+#audit-summary { background: #fff; padding: 8px 16px; border-bottom: 1px solid var(--border); display: none; align-items: center; gap: 8px; font-size: 12px; flex-shrink: 0; }
+#audit-summary .as-badge { display: inline-flex; align-items: center; gap: 3px; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 500; }
+#audit-summary .as-badge.warn { background: #fef3c7; color: #92400e; }
+#audit-summary .as-badge.err { background: #fee2e2; color: #991b1b; }
+#audit-summary .as-badge.ok { background: #dcfce7; color: #166534; }
+#supplier-audit { display: none; flex-shrink: 0; border-bottom: 1px solid var(--border); max-height: 45vh; overflow-y: auto; }
+#supplier-audit .sa-section { padding: 10px 16px; border-bottom: 1px solid #f3f4f6; }
+#supplier-audit .sa-section:last-child { border-bottom: none; }
+#supplier-audit .sa-title { font-size: 12px; font-weight: 600; margin-bottom: 6px; display: flex; align-items: center; gap: 8px; }
+#supplier-audit .sa-title .count { font-size: 11px; color: var(--text2); font-weight: 400; }
+#supplier-audit .sa-row { display: flex; align-items: center; gap: 8px; padding: 4px 0; font-size: 12px; flex-wrap: wrap; }
+#supplier-audit .sa-row .sa-label { color: var(--text2); min-width: 70px; white-space: nowrap; }
+#supplier-audit .sa-row .sa-detail { font-size: 11px; color: var(--text2); }
+#supplier-audit .sa-row select { padding: 2px 6px; border: 1px solid var(--border); border-radius: 4px; font-size: 12px; }
+#supplier-audit .sa-row .btn-sm { font-size: 11px; padding: 2px 8px; }
+.sa-compact-bar { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.sa-compact-bar .bar-wrap { flex: 1; max-width: 180px; height: 7px; background: #e5e7eb; border-radius: 3px; overflow: hidden; }
+.sa-compact-bar .bar-wrap .fill { height: 100%; border-radius: 3px; transition: width 0.3s; }
+.sa-compact-bar .bar-wrap .fill.high { background: #22c55e; }
+.sa-compact-bar .bar-wrap .fill.mid { background: #f59e0b; }
+.sa-compact-bar .bar-wrap .fill.low { background: #ef4444; }
 
 #product-area { flex: 1; overflow: auto; padding: 8px 16px; }
 #product-table { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; background: var(--card); }
@@ -150,7 +180,10 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
 <div id="app">
 <div id="topbar">
     <h1>商品库数据修复工具</h1>
-    <button class="btn btn-outline btn-sm" id="mode-toggle" onclick="switchMode()">按供应商</button>
+    <div id="mode-tabs">
+        <button id="tab-brand" class="mode-tab active" onclick="switchTab('brand')">品牌修改</button>
+        <button id="tab-supplier" class="mode-tab" onclick="switchTab('supplier')">供应商修改</button>
+    </div>
     <span class="spacer"></span>
     <span class="status" style="cursor:pointer;" onclick="connectDB()" title="点击重新连接"><span class="dot" id="db-dot"></span><span id="db-label">正在连接...</span></span>
     <button class="btn btn-outline btn-sm" id="btn-backup" onclick="downloadBackup()" disabled>下载备份</button>
@@ -213,6 +246,24 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 <span id="suggestion-reason" style="font-size:11px;color:var(--text2);"></span>
                 <a href="javascript:void(0)" id="suggestion-detail-link" onclick="showAIDetail()" style="font-size:11px;color:var(--primary);display:none;">查看详情 →</a>
                 <button class="btn-sm btn-primary" id="btn-accept-suggestion" onclick="acceptSuggestions()" disabled>确认修改并保存</button>
+            </div>
+            <!-- 供应商审计摘要 -->
+            <div id="audit-summary" style="display:none;">
+                <span style="font-weight:500;">数据质量：</span>
+                <span id="as-inconsistent"></span>
+                <span id="as-missing"></span>
+                <span id="as-healthy" class="as-badge ok" style="display:none;">✓ 数据健康</span>
+            </div>
+            <!-- 供应商审计面板 -->
+            <div id="supplier-audit" style="display:none;">
+                <div class="sa-section" id="sa-inconsistent-section">
+                    <div class="sa-title">不一致字段 <span class="count" id="sa-inconsistent-count"></span></div>
+                    <div id="sa-inconsistent-rows"></div>
+                </div>
+                <div class="sa-section" id="sa-missing-section">
+                    <div class="sa-title">字段缺失率</div>
+                    <div id="sa-missing-rows"></div>
+                </div>
             </div>
             <div id="batch-bar" style="background:#fef3c7;padding:6px 16px;border-bottom:1px solid #fcd34d;display:none;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;">
                 <span style="font-size:12px;font-weight:500;">批量修改选中:</span>
@@ -1547,6 +1598,14 @@ function groupBySupplier() {
         BRAND_STATS[sup] = computeSupplierStats(sup, prods);
     }
 }
+// 应统一字段（同一供应商内值应一致）
+const UNIFORM_FIELDS = ['deliveryFrom', 'defaultExpress', 'freightIncluded',
+    'supportsDropship', 'stockType', 'stockStatus'];
+// 关键缺失字段
+const KEY_FIELDS = ['barcode', 'cartonBarcode', 'jdUrl', 'taobaoUrl', 'pddUrl',
+    'images', 'dropshipPrice', 'dropshipFreight', 'jdSFPrice', 'jdSFFreight',
+    'moq', 'priceExpiry'];
+
 function computeSupplierStats(name, prods) {
     const count = prods.length;
     const majors = [...new Set(prods.map(p => p.majorCategory).filter(Boolean))];
@@ -1557,35 +1616,186 @@ function computeSupplierStats(name, prods) {
     let severity = 'good';
     if (missingBrand === count && count > 0) severity = 'critical';
     else if (totalIssues > 0) severity = 'warning';
-    return { count, majors, missingBL: 0, missingBS: 0, missingPR: 0, missingCat, missingBrand, obsoleteMajor, totalIssues, severity };
+
+    // 应统一字段的不一致检测
+    const inconsistencies = {};
+    for (const f of UNIFORM_FIELDS) {
+        const vals = new Map();
+        for (const p of prods) {
+            let v = (p[f] || '').toString().trim();
+            if (v === 'true') v = '是';
+            if (v === 'false') v = '否';
+            if (!v) v = '(空)';
+            vals.set(v, (vals.get(v) || 0) + 1);
+        }
+        if (vals.size > 1) {
+            const sorted = [...vals.entries()].sort((a, b) => b[1] - a[1]);
+            inconsistencies[f] = { values: sorted, total: count };
+        }
+    }
+
+    // 字段缺失率
+    const completeness = {};
+    for (const f of KEY_FIELDS) {
+        const filled = prods.filter(p => {
+            const v = p[f];
+            return v !== undefined && v !== null && String(v).trim() !== '' && v !== 'false' && v !== '否';
+        }).length;
+        completeness[f] = { filled, total: count, pct: count > 0 ? Math.round(filled / count * 100) : 0 };
+    }
+
+    // 产品类型分布
+    const productTypes = {};
+    for (const p of prods) {
+        const pt = (p.productType || '').trim() || '未分类';
+        productTypes[pt] = (productTypes[pt] || 0) + 1;
+    }
+
+    return {
+        count, majors, missingBL: 0, missingBS: 0, missingPR: 0,
+        missingCat, missingBrand, obsoleteMajor, totalIssues, severity,
+        inconsistencies, completeness, productTypes
+    };
+}
+
+// ========== 供应商审计面板渲染 ==========
+function renderSupplierAudit(brand, stats) {
+    const incon = stats.inconsistencies || {};
+    const comp = stats.completeness || {};
+    const inconCount = Object.keys(incon).length;
+
+    const asInc = document.getElementById('as-inconsistent');
+    const asMiss = document.getElementById('as-missing');
+    const asHealthy = document.getElementById('as-healthy');
+
+    const missCount = Object.values(comp).filter(c => c.pct < 70).length;
+    if (inconCount > 0) {
+        asInc.innerHTML = '<span class="as-badge err">' + inconCount + ' 项不一致</span>';
+        asInc.style.display = '';
+    } else {
+        asInc.style.display = 'none';
+    }
+    if (missCount > 0) {
+        asMiss.innerHTML = '<span class="as-badge warn">' + missCount + ' 项缺失 &lt;70%</span>';
+        asMiss.style.display = '';
+    } else {
+        asMiss.style.display = 'none';
+    }
+    asHealthy.style.display = (inconCount === 0 && missCount === 0) ? '' : 'none';
+
+    // 不一致字段行
+    if (inconCount > 0) {
+        document.getElementById('sa-inconsistent-section').style.display = '';
+        document.getElementById('sa-inconsistent-count').textContent = '(' + inconCount + ')';
+        document.getElementById('sa-inconsistent-rows').innerHTML = Object.entries(incon).map(([f, info]) => {
+            const label = fieldLabel(f);
+            const valStr = info.values.map(([v, n]) => escHtml(v) + '(' + n + ')').join(' / ');
+            const options = info.values.map(([v, n]) =>
+                '<option value="' + escAttr(v === '(空)' ? '' : v) + '">' + escHtml(v) + ' (' + n + ')</option>'
+            ).join('');
+            return '<div class="sa-row">' +
+                '<span class="sa-label">' + label + ':</span>' +
+                '<span class="sa-detail">' + valStr + '</span>' +
+                '<span style="font-size:11px;color:var(--primary);cursor:pointer;margin-left:4px;" onclick="filterProductsByField(\'' + f + '\')">查看</span>' +
+                '<select id="sa-val-' + f + '" style="margin-left:8px;">' + options + '</select>' +
+                '<button class="btn-sm btn-primary" onclick="batchFixField(\'' + f + '\', document.getElementById(\'sa-val-' + f + '\').value)">批量统一</button>' +
+                '</div>';
+        }).join('');
+    } else {
+        document.getElementById('sa-inconsistent-section').style.display = 'none';
+    }
+
+    // 缺失率行
+    const missFields = ['barcode', 'cartonBarcode', 'jdUrl', 'taobaoUrl', 'pddUrl',
+        'images', 'dropshipPrice', 'dropshipFreight', 'jdSFPrice', 'jdSFFreight', 'moq', 'priceExpiry'];
+    document.getElementById('sa-missing-rows').innerHTML = missFields.map(f => {
+        const c = comp[f];
+        if (!c) return '';
+        const pct = c.pct;
+        const cls = pct >= 70 ? 'high' : pct >= 30 ? 'mid' : 'low';
+        const warn = pct < 30 ? ' ❌' : pct < 70 ? ' ⚠' : '';
+        return '<div class="sa-compact-bar" style="padding:4px 0;">' +
+            '<span class="sa-label">' + fieldLabel(f) + '</span>' +
+            '<div class="bar-wrap"><div class="fill ' + cls + '" style="width:' + Math.max(pct, 2) + '%"></div></div>' +
+            '<span style="font-size:11px;min-width:55px;">' + c.filled + '/' + c.total + ' ' + pct + '%' + warn + '</span>' +
+            (pct < 100 ? '<span style="font-size:11px;color:var(--primary);cursor:pointer;" onclick="filterProductsMissingField(\'' + f + '\')">查看缺失</span>' : '') +
+            '</div>';
+    }).join('');
+    document.getElementById('sa-missing-section').style.display = '';
+}
+
+function filterProductsByField(field) {
+    const prods = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    _selectedIndices.clear();
+    for (let i = 0; i < prods.length; i++) {
+        _selectedIndices.add(i);
+    }
+    updateBatchBar();
+    renderProductTable(ACTIVE_BRAND, prods);
+    toast('已全选，可通过列筛选"' + fieldLabel(field) + '"查看不同值');
+}
+
+function filterProductsMissingField(field) {
+    const prods = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    _selectedIndices.clear();
+    for (let i = 0; i < prods.length; i++) {
+        const v = prods[i][field];
+        if (v === undefined || v === null || String(v).trim() === '') {
+            _selectedIndices.add(i);
+        }
+    }
+    updateBatchBar();
+    renderProductTable(ACTIVE_BRAND, prods);
+    toast('已勾选 ' + _selectedIndices.size + ' 个缺失"' + fieldLabel(field) + '"的产品');
+}
+
+function batchFixField(field, value) {
+    const prods = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    const selIndices = getSelectedIndices();
+    const targets = selIndices.length > 0 ? selIndices.map(i => prods[i]).filter(Boolean) : prods;
+    let dbVal = value;
+    if (field === 'freightIncluded' || field === 'supportsDropship') {
+        dbVal = value === '是' ? 'true' : value === '否' ? 'false' : value;
+    }
+    for (const p of targets) {
+        applyEdit(p, field, dbVal);
+    }
+    markBrandDirtyByBrand(ACTIVE_BRAND);
+    BRAND_STATS[ACTIVE_BRAND] = computeSupplierStats(ACTIVE_BRAND, prods);
+    renderSupplierAudit(ACTIVE_BRAND, BRAND_STATS[ACTIVE_BRAND]);
+    renderProductTable(ACTIVE_BRAND, prods);
+    toast('已批量更新 ' + targets.length + ' 个产品: ' + fieldLabel(field) + ' → ' + (value || '(空)'));
 }
 
 // ========== 模式切换 ==========
-function switchMode() {
+function switchTab(mode) {
     try {
-    const toSupplier = VIEW_MODE === 'brand';
-    // 提示用户保存未保存的修改
-    if (DIRTY_BRANDS.size > 0 && !confirm('当前有未保存的修改。切换模式将丢失这些修改。\n\n确定切换吗？')) return;
-    VIEW_MODE = toSupplier ? 'supplier' : 'brand';
+    if (VIEW_MODE === mode) return;
+    const isBrand = mode === 'brand';
+    VIEW_MODE = mode;
+    document.getElementById('tab-brand').classList.toggle('active', isBrand);
+    document.getElementById('tab-supplier').classList.toggle('active', !isBrand);
     loadColumnConfig();
-    // 从全量产品重建分组
-    if (toSupplier) groupBySupplier(); else groupByBrand();
+    if (isBrand) groupByBrand(); else groupBySupplier();
     DIRTY_BRANDS = new Set(); BRAND_ORIGINALS = {}; BRAND_DELETED = {}; ACTIVE_BRAND = null; FILTERED_BRANDS = [];
-    // 重置 UI 状态
     document.getElementById('right-content').style.display = 'none';
     document.getElementById('right-empty').style.display = 'flex';
-    // 适配标签
-    const isBrand = VIEW_MODE === 'brand';
+    document.getElementById('right-empty').textContent = isBrand ? '选择左侧品牌开始编辑' : '选择左侧供应商开始编辑';
+    document.getElementById('product-table').innerHTML = '';
     const G = isBrand ? '品牌' : '供应商';
-    document.getElementById('mode-toggle').textContent = isBrand ? '按供应商' : '按品牌';
     document.getElementById('brand-search').placeholder = '搜索' + G + '...';
     document.getElementById('btn-save-brand').textContent = '保存此' + G;
     document.getElementById('btn-undo-brand').textContent = '撤销此' + G;
-    // 品牌独有区域显示/隐藏
+    // 品牌独有区域
     document.getElementById('brand-fields').style.display = isBrand ? '' : 'none';
     document.getElementById('brand-search-btns').style.display = isBrand ? '' : 'none';
-    document.getElementById('suggestion-bar').style.display = isBrand ? '' : 'none';
-    if (!isBrand) document.getElementById('suggestion-bar').classList.add('hidden');
+    document.getElementById('suggestion-bar').classList.toggle('hidden', !isBrand);
+    // 供应商审计面板
+    const auditPanel = document.getElementById('supplier-audit');
+    const auditSummary = document.getElementById('audit-summary');
+    if (auditPanel) auditPanel.style.display = isBrand ? 'none' : '';
+    if (auditSummary) auditSummary.style.display = isBrand ? 'none' : '';
+    // 批量修改栏
     document.getElementById('batch-brand').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-major').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-cat').style.display = isBrand ? '' : 'none';
@@ -1594,17 +1804,18 @@ function switchMode() {
     document.getElementById('batch-style').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-price').style.display = isBrand ? '' : 'none'; document.getElementById('batch-region').style.display = isBrand ? '' : 'none';
     document.getElementById('batch-supplier-fields').style.display = isBrand ? 'none' : '';
+    document.getElementById('batch-bar').style.display = 'none';
     document.getElementById('supplier-brand-filter').style.display = isBrand ? 'none' : '';
     SUPPLIER_BRAND_FILTER = '';
-    // 重新渲染列表
     ACTIVE_FILTERS.clear();
+    initBatchDropdowns();
     renderFilterChips();
     renderBrandList();
-    toast('已切换到' + G + '模式');
     } catch(e) {
         alert('模式切换出错: ' + e.message);
     }
 }
+function switchMode() { switchTab(VIEW_MODE === 'brand' ? 'supplier' : 'brand'); }
 
 // ========== 品牌/供应商列表 ==========
 function applyColumnFilter(el) {
@@ -1671,11 +1882,21 @@ function renderBrandList() {
         const activeClass = key === ACTIVE_BRAND ? ' active' : '';
         const dirtyClass = DIRTY_BRANDS.has(key) ? ' dirty' : '';
         const majors = stats.majors.slice(0, 3).join('/') || '无大类';
+        // 供应商模式：计算平均完整度
+        let healthHtml = '';
+        if (!isBrand) {
+            const oc = Object.values(stats.completeness || {});
+            if (oc.length > 0) {
+                const avgPct = Math.round(oc.reduce((s, c) => s + c.pct, 0) / oc.length);
+                const hCls = avgPct >= 80 ? 'ok' : avgPct >= 50 ? 'warn' : 'err';
+                healthHtml = ' <span class="as-badge ' + hCls + '" style="font-size:10px;">' + avgPct + '%</span>';
+            }
+        }
         return `<div class="brand-entry${activeClass}${dirtyClass}" onclick="selectBrand('${escAttr(key)}')" data-brand="${escAttr(key)}">
             <span class="sev">${sevIcon}</span>
             <div class="info">
                 <div class="name">${escHtml(key)}</div>
-                <div class="meta"><span>${majors}</span></div>
+                <div class="meta"><span>${majors}</span>${healthHtml}</div>
             </div>
             <span class="count">${stats.count}品${sevNum ? ' ' + sevNum : ''}</span>
             <span class="dirty-dot"></span>
@@ -1711,6 +1932,11 @@ function selectBrand(brand) {
         ? '<span style="color:var(--danger);">⚠ ' + issues.join(' · ') + '</span>'
         : '<span style="color:var(--success);">✓ 无问题</span>';
 
+    // 品牌模式隐藏供应商审计面板
+    if (isBrand) {
+        document.getElementById('supplier-audit').style.display = 'none';
+        document.getElementById('audit-summary').style.display = 'none';
+    }
     // 品牌级下拉：仅品牌模式
     if (isBrand) {
         const mostCommon = (field) => {
@@ -1765,6 +1991,10 @@ function selectBrand(brand) {
             const filtered = products.filter(p => (p.brand || '').trim() === SUPPLIER_BRAND_FILTER);
             document.getElementById('detail-product-count').textContent = filtered.length + ' / ' + products.length + ' 个产品';
         }
+        // 供应商审计面板
+        renderSupplierAudit(brand, BRAND_STATS[brand]);
+        document.getElementById('supplier-audit').style.display = '';
+        document.getElementById('audit-summary').style.display = '';
     }
 
     // 导航按钮
