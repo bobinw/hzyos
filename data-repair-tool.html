@@ -2315,6 +2315,10 @@ async function batchApply() {
         }
     }
     // Refresh display
+    _selectedIndices.clear();
+    document.getElementById('cb-all').checked = false;
+    document.getElementById('batch-count').textContent = '';
+    document.getElementById('batch-bar').style.display = 'none';
     const curProds = BRAND_GROUPS[ACTIVE_BRAND];
     if (curProds) {
         renderProductTable(ACTIVE_BRAND, curProds);
