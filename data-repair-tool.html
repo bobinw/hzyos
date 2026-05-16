@@ -3140,6 +3140,10 @@ function getKnownBrands() {
         _KNOWN_BRANDS = new Set();
         for (const b of Object.keys(BRAND_TONE)) _KNOWN_BRANDS.add(b);
         for (const b of Object.keys(BRAND_TO_MAJOR)) _KNOWN_BRANDS.add(b);
+        for (const p of (ALL_PRODUCTS || [])) {
+            const b = (p.brand || '').trim();
+            if (b && b.length >= 2) _KNOWN_BRANDS.add(b);
+        }
         // 按长度降序排列，优先匹配长的品牌名
         _KNOWN_BRANDS = [..._KNOWN_BRANDS].sort((a, b) => b.length - a.length || b.localeCompare(a, 'zh-CN'));
     }
@@ -3164,8 +3168,20 @@ function tryExtractBrand(name) {
         if (raw.startsWith(known) && known.length >= 2) {
             // 后面接数字/括号/空格/规格等（非中文，或中文但≥3字品牌）
             const after = raw.slice(known.length);
-            if (!after || /^[0-9a-zA-Z\s\(\)（）、，。．\.\-\+×xX\*\/·•【\d]/.test(after) || known.length >= 3) {
+            if (!after || /^[0-9a-zA-Z\s\(\)（）、，。．\.\-\+×xX\*\/·•【\d]/.test(after) || known.length >= 2) {
                 return known;
+            }
+        }
+    }
+    // 2b. 去除常见前缀（供应商名、修饰词等）后再试 startsWith
+    const stripped = raw.replace(/^[^一-鿿]{0,10}?[^\w一-鿿]*/, '');
+    if (stripped !== raw) {
+        for (const known of getKnownBrands()) {
+            if (stripped.startsWith(known) && known.length >= 2) {
+                const after = stripped.slice(known.length);
+                if (!after || /^[0-9a-zA-Z\s\(\)（）、，。．\.\-\+×xX\*\/·•【\d]/.test(after) || known.length >= 2) {
+                    return known;
+                }
             }
         }
     }
@@ -3174,6 +3190,12 @@ function tryExtractBrand(name) {
     // 4. BRAND_NORMALIZE 变体匹配
     for (const [variant, standard] of Object.entries(BRAND_NORMALIZE)) {
         if (t.includes(variant)) return standard;
+    }
+    // 4b. 已知品牌名出现在产品名中（≥3字）
+    for (const known of getKnownBrands()) {
+        if (known.length >= 3 && t.includes(known)) {
+            return known;
+        }
     }
     // 5. 纯品牌名（≤6个中文字符，无数字规格）→ 通过 cleanBrandName
     if (/^[一-鿿·•]{2,6}$/.test(t) && !/\d/.test(t)) {
