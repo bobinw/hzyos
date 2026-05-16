@@ -205,8 +205,14 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 <button class="btn-sm btn-outline" onclick="reidentifyBrand()" style="margin-left:auto;">重新识别品牌名</button>
             </div>
             <div id="suggestion-bar" class="hidden">
-                <span id="suggestion-text"></span>
-                <button class="btn-sm btn-primary" id="btn-accept-suggestion" onclick="acceptSuggestions()" disabled>接受建议并保存</button>
+                <span style="font-size:12px;white-space:nowrap;font-weight:500;">AI建议:</span>
+                <select id="sug-level" style="padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:4px;min-width:90px;"><option value="">级别—</option></select>
+                <select id="sug-style" style="padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:4px;min-width:90px;"><option value="">调性—</option></select>
+                <select id="sug-price" style="padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:4px;min-width:90px;"><option value="">价格—</option></select>
+                <select id="sug-region" style="padding:2px 4px;font-size:12px;border:1px solid var(--border);border-radius:4px;min-width:80px;"><option value="">区域—</option></select>
+                <span id="suggestion-reason" style="font-size:11px;color:var(--text2);"></span>
+                <a href="javascript:void(0)" id="suggestion-detail-link" onclick="showAIDetail()" style="font-size:11px;color:var(--primary);display:none;">查看详情 →</a>
+                <button class="btn-sm btn-primary" id="btn-accept-suggestion" onclick="acceptSuggestions()" disabled>确认修改并保存</button>
             </div>
             <div id="batch-bar" style="background:#fef3c7;padding:6px 16px;border-bottom:1px solid #fcd34d;display:none;align-items:center;gap:8px;flex-wrap:wrap;flex-shrink:0;">
                 <span style="font-size:12px;font-weight:500;">批量修改选中:</span>
@@ -1517,13 +1523,12 @@ function computeBrandStats(brand, prods) {
     const missingBS = prods.filter(p => !p.brandStyle).length;
     const missingPR = prods.filter(p => !p.priceRange).length;
     const missingCat = prods.filter(p => !p.category || STANDARD_MAJORS.includes(p.category)).length;
-    const missingScene = prods.filter(p => !p.sceneTag).length;
     const obsoleteMajor = prods.filter(p => OBSOLETE_MAJORS[p.majorCategory]).length;
-    const totalIssues = missingBL + missingBS + missingPR + missingCat + missingScene + obsoleteMajor;
+    const totalIssues = missingBL + missingBS + missingPR + missingCat + obsoleteMajor;
     let severity = 'good';
     if (missingBL === count || missingBS === count) severity = 'critical';
     else if (totalIssues > 0) severity = 'warning';
-    return { count, majors, missingBL, missingBS, missingPR, missingCat, missingScene, obsoleteMajor, totalIssues, severity };
+    return { count, majors, missingBL, missingBS, missingPR, missingCat, obsoleteMajor, totalIssues, severity };
 }
 function recomputeStats(key, prods) {
     return VIEW_MODE === 'brand' ? computeBrandStats(key, prods) : computeSupplierStats(key, prods);
@@ -1546,14 +1551,13 @@ function computeSupplierStats(name, prods) {
     const count = prods.length;
     const majors = [...new Set(prods.map(p => p.majorCategory).filter(Boolean))];
     const missingCat = prods.filter(p => !p.category || STANDARD_MAJORS.includes(p.category)).length;
-    const missingScene = prods.filter(p => !p.sceneTag).length;
     const missingBrand = prods.filter(p => !p.brand || (p.brand || '').trim() === '').length;
     const obsoleteMajor = prods.filter(p => OBSOLETE_MAJORS[p.majorCategory]).length;
-    const totalIssues = missingCat + missingScene + missingBrand + obsoleteMajor;
+    const totalIssues = missingCat + missingBrand + obsoleteMajor;
     let severity = 'good';
     if (missingBrand === count && count > 0) severity = 'critical';
     else if (totalIssues > 0) severity = 'warning';
-    return { count, majors, missingBL: 0, missingBS: 0, missingPR: 0, missingCat, missingScene, missingBrand, obsoleteMajor, totalIssues, severity };
+    return { count, majors, missingBL: 0, missingBS: 0, missingPR: 0, missingCat, missingBrand, obsoleteMajor, totalIssues, severity };
 }
 
 // ========== 模式切换 ==========
@@ -1619,11 +1623,9 @@ function renderFilterChips() {
         { key: 'missingBS', label: '缺品牌调性' },
         { key: 'missingPR', label: '缺价格定位' },
         { key: 'missingCat', label: '品类问题' },
-        { key: 'missingScene', label: '缺场景标签' },
         { key: 'obsoleteMajor', label: '大类待更新' },
     ] : [
         { key: 'missingCat', label: '品类问题' },
-        { key: 'missingScene', label: '缺场景标签' },
         { key: 'missingBrand', label: '缺品牌' },
         { key: 'obsoleteMajor', label: '大类待更新' },
     ];
@@ -1648,7 +1650,6 @@ function renderBrandList() {
         if (ACTIVE_FILTERS.has('missingBS') && stats.missingBS === 0) return false;
         if (ACTIVE_FILTERS.has('missingPR') && stats.missingPR === 0) return false;
         if (ACTIVE_FILTERS.has('missingCat') && stats.missingCat === 0) return false;
-        if (ACTIVE_FILTERS.has('missingScene') && stats.missingScene === 0) return false;
         if (ACTIVE_FILTERS.has('missingBrand') && (stats.missingBrand || 0) === 0) return false;
         if (ACTIVE_FILTERS.has('obsoleteMajor') && stats.obsoleteMajor === 0) return false;
         return true;
@@ -1705,7 +1706,6 @@ function selectBrand(brand) {
         if ((stats.missingBrand || 0) > 0) issues.push(`${stats.missingBrand}缺品牌`);
     }
     if (stats.missingCat > 0) issues.push(`${stats.missingCat}品类泛化`);
-    if (stats.missingScene > 0) issues.push(`${stats.missingScene}缺场景标签`);
     if (stats.obsoleteMajor > 0) issues.push(`${stats.obsoleteMajor}大类需更新`);
     document.getElementById('detail-issues').innerHTML = issues.length > 0
         ? '<span style="color:var(--danger);">⚠ ' + issues.join(' · ') + '</span>'
@@ -1730,20 +1730,17 @@ function selectBrand(brand) {
     if (isBrand) {
         const tone = BRAND_TONE[brand];
         if (tone) {
-            const parts = [];
-            if (tone.bl) parts.push('品牌级别: ' + tone.bl);
-            if (tone.bs) parts.push('调性: ' + tone.bs);
-            if (tone.pr) parts.push('价格: ' + tone.pr);
-            document.getElementById('suggestion-text').textContent = '参考数据: ' + parts.join(' | ');
-            suggestBar.dataset.level = tone.bl || '';
-            suggestBar.dataset.style = tone.bs || '';
-            suggestBar.dataset.price = tone.pr || '';
+            populateSuggestionSelects();
+            document.getElementById('sug-level').value = tone.bl || '';
+            document.getElementById('sug-style').value = tone.bs || '';
+            document.getElementById('sug-price').value = tone.pr || '';
+            document.getElementById('sug-region').value = '';
+            document.getElementById('suggestion-reason').textContent = '参考数据';
+            document.getElementById('suggestion-detail-link').style.display = 'none';
+            suggestBar.dataset.detail = '';
             document.getElementById('btn-accept-suggestion').disabled = false;
             suggestBar.classList.remove('hidden');
         } else {
-            suggestBar.dataset.level = '';
-            suggestBar.dataset.style = '';
-            suggestBar.dataset.price = '';
             suggestBar.classList.add('hidden');
         }
     } else {
@@ -1834,13 +1831,17 @@ function showAIDetail() {
     const bar = document.getElementById('suggestion-bar');
     const detail = bar.dataset.detail || '';
     const brand = ACTIVE_BRAND || '';
+    const levelVal = document.getElementById('sug-level').value;
+    const styleVal = document.getElementById('sug-style').value;
+    const priceVal = document.getElementById('sug-price').value;
+    const regionVal = document.getElementById('sug-region').value;
     document.getElementById('modal-title').textContent = `AI 分析: ${brand}`;
     document.getElementById('modal-body').innerHTML = `<div style="line-height:1.8;font-size:14px;">${escHtml(detail).replace(/\n/g, '<br>')}</div>
         <div style="margin-top:16px;font-size:12px;color:var(--text2);">
-            <b>级别:</b> ${escHtml(bar.dataset.level)} &nbsp;|&nbsp;
-            <b>调性:</b> ${escHtml(bar.dataset.style)} &nbsp;|&nbsp;
-            <b>价格:</b> ${escHtml(bar.dataset.price)}
-            ${bar.dataset.region ? ` &nbsp;|&nbsp; <b>区域:</b> ${escHtml(bar.dataset.region)}` : ''}
+            <b>级别:</b> ${escHtml(levelVal)} &nbsp;|&nbsp;
+            <b>调性:</b> ${escHtml(styleVal)} &nbsp;|&nbsp;
+            <b>价格:</b> ${escHtml(priceVal)}
+            ${regionVal ? ` &nbsp;|&nbsp; <b>区域:</b> ${escHtml(regionVal)}` : ''}
         </div>`;
     document.getElementById('modal-overlay').classList.remove('hidden');
 }
@@ -1861,7 +1862,6 @@ function hasFieldIssue(field, p) {
         case 'brand': return !v || /^\d+\.?\d*$/.test(v);
         case 'majorCategory': return OBSOLETE_MAJORS[v];
         case 'category': return !v || STANDARD_MAJORS.includes(v) || OBSOLETE_MAJORS[v];
-        case 'sceneTag': return !v;
         case 'brandLevel': return !v;
         case 'brandStyle': return !v;
         case 'priceRange': return !v;
@@ -2173,7 +2173,6 @@ function updateDetailIssues() {
         if ((stats.missingBrand || 0) > 0) issues.push(`${stats.missingBrand}缺品牌`);
     }
     if (stats.missingCat > 0) issues.push(`${stats.missingCat}品类泛化`);
-    if (stats.missingScene > 0) issues.push(`${stats.missingScene}缺场景标签`);
     if (stats.obsoleteMajor > 0) issues.push(`${stats.obsoleteMajor}大类需更新`);
     const el = document.getElementById('detail-issues');
     if (el) {
@@ -2650,24 +2649,25 @@ async function aiBrandQuery() {
         if (!result.brandLevel && !result.brandStyle && !result.priceRange) {
             throw new Error('AI 返回数据不完整');
         }
-        // 显示到建议栏
+        // 填充 editable selects
+        populateSuggestionSelects();
         const bar = document.getElementById('suggestion-bar');
-        const text = document.getElementById('suggestion-text');
-        const parts = [];
-        if (result.brandLevel) parts.push(`级别: <b>${escHtml(result.brandLevel)}</b>`);
-        if (result.brandStyle) parts.push(`调性: <b>${escHtml(result.brandStyle)}</b>`);
-        if (result.priceRange) parts.push(`价格: <b>${escHtml(result.priceRange)}</b>`); if (result.region) parts.push(`区域: <b>${escHtml(result.region)}</b>`);
-        if (result.reason) parts.push(`<br><span style="font-size:11px;color:var(--text2);">${escHtml(result.reason)}</span>`);
-        if (result.detail) parts.push(` <a href="javascript:void(0)" onclick="showAIDetail()" style="font-size:11px;color:var(--primary);">查看详情 →</a>`);
-        text.innerHTML = parts.join(' &nbsp;|&nbsp; ');
+        document.getElementById('sug-level').value = result.brandLevel || '';
+        document.getElementById('sug-style').value = result.brandStyle || '';
+        document.getElementById('sug-price').value = result.priceRange || '';
+        document.getElementById('sug-region').value = result.region || '';
+        document.getElementById('suggestion-reason').textContent = result.reason || '';
+        const detailLink = document.getElementById('suggestion-detail-link');
+        if (result.detail) {
+            detailLink.style.display = '';
+            bar.dataset.detail = result.detail;
+        } else {
+            detailLink.style.display = 'none';
+            bar.dataset.detail = '';
+        }
         bar.classList.remove('hidden');
-        // 暂存到 suggestion-bar 的 data 属性供 accept 使用
-        bar.dataset.level = result.brandLevel || '';
-        bar.dataset.style = result.brandStyle || '';
-        bar.dataset.price = result.priceRange || ''; bar.dataset.region = result.region || '';
-        bar.dataset.detail = result.detail || '';
         document.getElementById('btn-accept-suggestion').disabled = false;
-        toast('AI 已返回建议，请确认后点击"接受建议并保存"');
+        toast('AI 已返回建议，可修改后点击"确认修改并保存"');
     } catch (e) {
         toast('AI 查询失败: ' + e.message);
         alert('AI 查询失败: ' + e.message + '\n\n确认主应用已配置 AI API Key（设置 → AI 设置）。');
@@ -2676,13 +2676,23 @@ async function aiBrandQuery() {
     btn.disabled = false;
 }
 
+function populateSuggestionSelects() {
+    for (const [id, optionsFunc] of [['sug-level', getBRAND_LEVELS], ['sug-style', getBRAND_STYLES], ['sug-price', getPRICE_RANGES]]) {
+        const sel = document.getElementById(id);
+        const opts = optionsFunc().filter(v => v);
+        sel.innerHTML = '<option value="">—</option>' + opts.map(o => `<option value="${o}">${o}</option>`).join('');
+    }
+    const regSel = document.getElementById('sug-region');
+    regSel.innerHTML = REGIONS.map(o => `<option value="${o}">${o || '—'}</option>`).join('');
+}
+
 // ========== 建议接受 ==========
 async function acceptSuggestions() {
-    const bar = document.getElementById('suggestion-bar');
-    const levelVal = bar.dataset.level || '';
-    const styleVal = bar.dataset.style || '';
-    const priceVal = bar.dataset.price || '';
-    if (!levelVal && !styleVal && !priceVal) return;
+    const levelVal = document.getElementById('sug-level').value;
+    const styleVal = document.getElementById('sug-style').value;
+    const priceVal = document.getElementById('sug-price').value;
+    const regionVal = document.getElementById('sug-region').value;
+    if (!levelVal && !styleVal && !priceVal && !regionVal) return;
     const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
     if (!products.length) return;
     let count = 0;
@@ -2698,23 +2708,20 @@ async function acceptSuggestions() {
         document.getElementById('field-priceRange').value = priceVal;
         for (const p of products) { applyEdit(p, 'priceRange', priceVal); count++; }
     }
-    const regionVal = bar.dataset.region || '';
     if (regionVal) {
         document.getElementById('field-region').value = regionVal;
         for (const p of products) { applyEdit(p, 'region', regionVal); count++; }
     }
     renderProductTable(ACTIVE_BRAND, products);
-    // 自动保存到数据库
     await saveBrand();
-    bar.dataset.level = '';
-    bar.dataset.style = '';
-    bar.dataset.price = ''; bar.dataset.region = '';
     document.getElementById('btn-accept-suggestion').disabled = true;
+    toast('AI建议已应用: ' + count + ' 处更新');
 }
 
 // ========== AI 品类检测 ==========
 const AI_CAT_BATCH_SIZE = 20;
 let _aiCatResults = []; // { idx, name, curMajor, curCat, aiMajor, aiCat, reason }
+let _aiBrandResults = []; // { idx, name, curBrand, newBrand } for brand reidentification modal
 
 async function aiDetectCategory() {
 	if (!ACTIVE_BRAND || VIEW_MODE !== 'brand') return;
@@ -2893,19 +2900,53 @@ function applyCategoryChanges() {
 }
 
 // ========== 品牌重新识别 ==========
+let _KNOWN_BRANDS = null;
+function getKnownBrands() {
+    if (!_KNOWN_BRANDS) {
+        _KNOWN_BRANDS = new Set();
+        for (const b of Object.keys(BRAND_TONE)) _KNOWN_BRANDS.add(b);
+        for (const b of Object.keys(BRAND_TO_MAJOR)) _KNOWN_BRANDS.add(b);
+        // 按长度降序排列，优先匹配长的品牌名
+        _KNOWN_BRANDS = [..._KNOWN_BRANDS].sort((a, b) => b.length - a.length || b.localeCompare(a, 'zh-CN'));
+    }
+    return _KNOWN_BRANDS;
+}
+
 function tryExtractBrand(name) {
     if (!name || name === '产品名称') return null;
-    const t = name.replace(/^【.+?】\s*/, '').trim();
-    // 1. 品名中包含已知品牌变体 → 返回标准名
+    const raw = name.trim();
+    // 1. 提取【品牌名】前缀
+    const bracketMatch = raw.match(/^【(.+?)】/);
+    if (bracketMatch) {
+        const extracted = bracketMatch[1].trim();
+        // 验证提取的不是非品牌标签
+        if (extracted.length >= 2 && extracted.length <= 12 && !NON_BRANDS.has(extracted)) {
+            const cleaned = cleanBrandName(extracted);
+            if (cleaned) return cleaned;
+        }
+    }
+    // 2. 品名以已知品牌名开头
+    for (const known of getKnownBrands()) {
+        if (raw.startsWith(known) && known.length >= 2) {
+            // 后面接数字/括号/空格/规格等（非中文，或中文但≥3字品牌）
+            const after = raw.slice(known.length);
+            if (!after || /^[0-9a-zA-Z\s\(\)（）、，。．\.\-\+×xX\*\/·•【\d]/.test(after) || known.length >= 3) {
+                return known;
+            }
+        }
+    }
+    // 3. 去除【】前缀后再试
+    const t = raw.replace(/^【.+?】\s*/, '').trim();
+    // 4. BRAND_NORMALIZE 变体匹配
     for (const [variant, standard] of Object.entries(BRAND_NORMALIZE)) {
         if (t.includes(variant)) return standard;
     }
-    // 2. 纯品牌名（≤6个中文字符，无数字规格）→ 通过 cleanBrandName
+    // 5. 纯品牌名（≤6个中文字符，无数字规格）→ 通过 cleanBrandName
     if (/^[一-鿿·•]{2,6}$/.test(t) && !/\d/.test(t)) {
         const cleaned = cleanBrandName(t);
         if (cleaned) return cleaned;
     }
-    // 3. cleanBrandName 处理整个品名
+    // 6. cleanBrandName 处理整个品名
     const cleaned = cleanBrandName(t);
     if (cleaned && cleaned.length <= 8) return cleaned;
     return null;
@@ -2914,32 +2955,98 @@ function tryExtractBrand(name) {
 function reidentifyBrand() {
     if (!ACTIVE_BRAND) return;
     const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
-    // 只对选中的产品重新识别
-    let changed = 0;
+    _aiBrandResults = [];
     for (let i = 0; i < products.length; i++) {
         const cb = document.getElementById('cb-' + i);
         if (cb && !cb.checked) continue;
         const p = products[i];
         const extracted = tryExtractBrand(p.name);
-        if (extracted && extracted !== (p.brand || '')) {
-            const oldBrand = p.brand;
-            p.brand = extracted;
-            handleBrandChange(p, extracted);
-            changed++;
+        const curBrand = (p.brand || '').trim();
+        if (extracted && extracted !== curBrand) {
+            _aiBrandResults.push({ idx: i, name: p.name, curBrand, newBrand: extracted });
         }
     }
+    if (_aiBrandResults.length === 0) {
+        toast('没有可重新识别的品牌名');
+        return;
+    }
+    showBrandReidentificationModal();
+}
+
+function showBrandReidentificationModal() {
+    document.getElementById('modal-title').textContent = '品牌名重新识别 — 确认修改 (' + _aiBrandResults.length + ' 处)';
+    let html = '<div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;">' +
+        '<label style="font-size:13px;cursor:pointer;"><input type="checkbox" id="brand-confirm-all" checked onchange="toggleBrandConfirmAll()"> 全选/全不选</label>' +
+        '<span style="font-size:12px;color:var(--text2);">识别到的品牌变更，可手动修改后确认</span>' +
+        '</div>' +
+        '<div style="max-height:50vh;overflow-y:auto;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:#f9fafb;">' +
+        '<th style="padding:6px 8px;text-align:center;width:30px;">✓</th>' +
+        '<th style="padding:6px 8px;text-align:left;">产品名称</th>' +
+        '<th style="padding:6px 8px;text-align:left;">当前品牌</th>' +
+        '<th style="padding:6px 8px;text-align:left;color:var(--primary);">识别品牌</th>' +
+        '</tr></thead><tbody>';
+    for (let i = 0; i < _aiBrandResults.length; i++) {
+        const r = _aiBrandResults[i];
+        html += '<tr>' +
+            '<td style="padding:4px 8px;text-align:center;"><input type="checkbox" id="brand-cb-' + i + '" checked></td>' +
+            '<td style="padding:4px 8px;">' + escHtml(r.name) + '</td>' +
+            '<td style="padding:4px 8px;color:var(--text2);">' + escHtml(r.curBrand || '—') + '</td>' +
+            '<td style="padding:2px 8px;"><input id="brand-input-' + i + '" value="' + escAttr(r.newBrand) + '" style="width:100%;padding:3px 6px;border:1px solid var(--primary);border-radius:4px;font-size:13px;"></td>' +
+            '</tr>';
+    }
+    html += '</tbody></table></div>' +
+        '<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">' +
+        '<button class="btn btn-outline btn-sm" onclick="closeModal();_aiBrandResults=[];">取消</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="applyBrandReidentificationChanges()">应用选中修改</button>' +
+        '</div>';
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function toggleBrandConfirmAll() {
+    const checked = document.getElementById('brand-confirm-all').checked;
+    for (let i = 0; i < _aiBrandResults.length; i++) {
+        const cb = document.getElementById('brand-cb-' + i);
+        if (cb) cb.checked = checked;
+    }
+}
+
+function applyBrandReidentificationChanges() {
+    const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    // 收集所有选中的修改，按 idx 倒序排列（避免 splice 后索引错乱）
+    const changes = [];
+    for (let i = 0; i < _aiBrandResults.length; i++) {
+        const cb = document.getElementById('brand-cb-' + i);
+        if (!cb || !cb.checked) continue;
+        const r = _aiBrandResults[i];
+        const input = document.getElementById('brand-input-' + i);
+        const finalBrand = input ? input.value.trim() : r.newBrand;
+        if (!finalBrand || finalBrand === r.curBrand) continue;
+        changes.push({ idx: r.idx, product: products[r.idx], finalBrand: finalBrand });
+    }
+    changes.sort((a, b) => b.idx - a.idx);
+
+    let changed = 0;
+    for (const ch of changes) {
+        const p = ch.product;
+        if (!p) continue;
+        p.brand = ch.finalBrand;
+        handleBrandChange(p, ch.finalBrand);
+        changed++;
+    }
+    closeModal();
+    _aiBrandResults = [];
     if (changed > 0) {
-        toast(`重新识别了 ${changed} 个产品的品牌名`);
-        if (BRAND_GROUPS[ACTIVE_BRAND]) {
-            renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
-        } else {
-            // 当前品牌组已空，渲染新组
-            renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND] || []);
-        }
+        toast('品牌名识别：已应用 ' + changed + ' 处修改');
         renderBrandList();
         updateDetailIssues();
+        if (BRAND_GROUPS[ACTIVE_BRAND]) {
+            renderProductTable(ACTIVE_BRAND, BRAND_GROUPS[ACTIVE_BRAND]);
+        }
     } else {
-        toast('没有可重新识别的品牌名');
+        toast('未选中任何修改');
     }
 }
 
