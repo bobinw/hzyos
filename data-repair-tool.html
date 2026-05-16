@@ -3213,6 +3213,11 @@ function tryExtractBrand(name) {
         const cleaned = cleanBrandName(prefixCn2[1]);
         if (cleaned && cleaned.length >= 2) return cleaned;
     }
+    // 5c. 提取开头英文品牌名（如 King's、HYUNDAI、SK-II）
+    const prefixEn = t.match(/^([A-Za-z][A-Za-z0-9\.\-\'\&]*[A-Za-z])(?=[一-鿿\s\d]|$)/);
+    if (prefixEn && prefixEn[1].length >= 2 && !NON_BRANDS.has(prefixEn[1])) {
+        return prefixEn[1];
+    }
     // 6. cleanBrandName 处理整个品名
     const cleaned = cleanBrandName(t);
     if (cleaned && cleaned.length <= 8) return cleaned;
