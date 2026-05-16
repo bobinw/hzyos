@@ -3202,6 +3202,17 @@ function tryExtractBrand(name) {
         const cleaned = cleanBrandName(t);
         if (cleaned) return cleaned;
     }
+    // 5b. 提取开头2-4个纯中文字作为候选品牌（不在已知品牌库中的品牌）
+    const prefixCn = t.match(/^([一-鿿]{3,4})/);
+    if (prefixCn && !NON_BRANDS.has(prefixCn[1])) {
+        const cleaned = cleanBrandName(prefixCn[1]);
+        if (cleaned && cleaned.length >= 2) return cleaned;
+    }
+    const prefixCn2 = t.match(/^([一-鿿]{2})(?=[一-鿿]{2}|[0-9a-zA-Z\s\（\(])/);
+    if (prefixCn2 && !NON_BRANDS.has(prefixCn2[1])) {
+        const cleaned = cleanBrandName(prefixCn2[1]);
+        if (cleaned && cleaned.length >= 2) return cleaned;
+    }
     // 6. cleanBrandName 处理整个品名
     const cleaned = cleanBrandName(t);
     if (cleaned && cleaned.length <= 8) return cleaned;
@@ -3212,6 +3223,7 @@ function reidentifyBrand() {
     if (!ACTIVE_BRAND) return;
     const products = BRAND_GROUPS[ACTIVE_BRAND] || [];
     _aiBrandResults = [];
+    const _failed = [];
     for (let i = 0; i < products.length; i++) {
         const cb = document.getElementById('cb-' + i);
         if (cb && !cb.checked) continue;
@@ -3220,7 +3232,15 @@ function reidentifyBrand() {
         const curBrand = (p.brand || '').trim();
         if (extracted && extracted !== curBrand) {
             _aiBrandResults.push({ idx: i, name: p.name, curBrand, newBrand: extracted });
+        } else if (!extracted) {
+            _failed.push(p.name);
         }
+    }
+    if (_failed.length > 0) {
+        console.log('%c[tryExtractBrand 失败] ' + _failed.length + ' 个产品名无法提取品牌:', 'color:#e67e22;font-weight:bold');
+        // 去重后显示前 50 个样本
+        const uniq = [...new Set(_failed)];
+        console.log(uniq.slice(0, 50).join('\n'));
     }
     if (_aiBrandResults.length === 0) {
         toast('没有可重新识别的品牌名');
