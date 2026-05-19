@@ -92,6 +92,14 @@
         .field-row { cursor: grab; transition: background 0.15s; }
         .field-row.dragging { opacity: 0.4; }
         .field-row.drag-over { background: #dbeafe; border-top: 2px solid #3b82f6; }
+
+        /* 图片灯箱 */
+        .lightbox { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.9); z-index: 100; }
+        .lightbox.active { display: flex; align-items: center; justify-content: center; }
+        .lightbox img { max-width: 95vw; max-height: 95vh; object-fit: contain; }
+        .lightbox-close { position: absolute; top: 16px; right: 24px; color: #fff; font-size: 32px; cursor: pointer; z-index: 101; }
+        .lightbox-close:hover { color: #ccc; }
+        .lightbox-info { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); color: #ccc; font-size: 12px; background: rgba(0,0,0,0.6); padding: 4px 12px; border-radius: 12px; }
     </style>
 </head>
 <body class="bg-gray-100 min-h-screen">
@@ -1501,6 +1509,13 @@
                 <div id="modal-content"></div>
             </div>
         </div>
+    </div>
+
+    <!-- 图片灯箱 -->
+    <div id="lightbox" class="lightbox" onclick="closeLightbox()">
+        <span class="lightbox-close" onclick="closeLightbox()">✕</span>
+        <img id="lightbox-img" src="" alt="" onclick="event.stopPropagation()">
+        <div class="lightbox-info" id="lightbox-info"></div>
     </div>
 
     <script>
@@ -7296,27 +7311,36 @@ const BRAND_TONE = {
                             <h4 class="font-medium text-gray-700">商品图片</h4>
                             <label class="text-blue-600 hover:underline text-xs cursor-pointer">
                                 <input type="file" accept="image/*" multiple class="hidden" onchange="uploadProductImages(${p.id}, this.files)">
-                                📤 上传图片
+                                上传图片
                             </label>
                         </div>
-                        <p class="text-xs text-gray-400 mb-2">提示：Excel 导入无法提取嵌入图片，请手动上传</p>
-                        <div class="flex gap-2 flex-wrap">
+                        <div class="flex gap-3 flex-wrap items-start">
+                            ${p.mainImage ? `
                             <div class="relative group">
-                                <div class="w-20 h-20 bg-white border-2 ${p.mainImage ? 'border-blue-400' : 'border-dashed border-gray-300'} rounded flex items-center justify-center overflow-hidden">
-                                    ${p.mainImage ? `<img src="${p.mainImage}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span class=\\'text-gray-400 text-xs\\'>产品图片加载失败</span>'">` : '<span class="text-gray-400 text-xs">产品图片</span>'}
+                                <div class="w-40 h-40 bg-white border-2 border-blue-400 rounded overflow-hidden cursor-pointer" onclick="openLightboxEl(this)" data-lb-src="${p.mainImage}" data-lb-title="${p.name || ''}" title="点击查看大图">
+                                    <img src="${p.mainImage}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span class=\\'text-gray-400 text-xs\\'>加载失败</span>'">
                                 </div>
                                 <span class="absolute -bottom-1 left-0 right-0 text-center text-xs bg-blue-500 text-white rounded-b">产品图片</span>
                             </div>
+                            <div class="flex flex-col gap-1">
+                                <button data-lb-src="${p.mainImage}" data-lb-title="${p.name || ''}" onclick="openLightboxEl(this)" class="text-xs text-blue-600 hover:underline">查看大图</button>
+                                <button onclick="window.open(this.getAttribute('data-lb-src'), '_blank')" data-lb-src="${p.mainImage}" class="text-xs text-blue-600 hover:underline">打开原图</button>
+                            </div>
+                            ` : `
+                            <div class="w-40 h-40 bg-white border-2 border-dashed border-gray-300 rounded flex items-center justify-center">
+                                <span class="text-gray-400 text-xs">暂无产品图片</span>
+                            </div>
+                            `}
                             ${(p.detailImages ? p.detailImages.split(',').filter(u => u.trim()) : []).map((url, i) => `
                                 <div class="relative group">
-                                    <div class="w-20 h-20 bg-white border rounded overflow-hidden">
+                                    <div class="w-40 h-40 bg-white border rounded overflow-hidden cursor-pointer" onclick="openLightboxEl(this)" data-lb-src="${url.trim()}" data-lb-title="${p.name || ''} 详情${i+1}" title="点击查看大图">
                                         <img src="${url.trim()}" class="w-full h-full object-cover" onerror="this.parentElement.innerHTML='<span class=\\'text-gray-400 text-xs\\'>详情图</span>'">
                                     </div>
                                     <span class="absolute -bottom-1 left-0 right-0 text-center text-xs bg-gray-500 text-white rounded-b">详情${i+1}</span>
-                                    <button onclick="removeDetailImage(${p.id}, ${i})" class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
+                                    <button onclick="event.stopPropagation(); removeDetailImage(${p.id}, ${i})" class="absolute -top-1 -right-1 w-5 h-5 bg-red-500 text-white rounded-full text-xs opacity-0 group-hover:opacity-100 transition-opacity">×</button>
                                 </div>
                             `).join('')}
-                            <label class="w-20 h-20 border-2 border-dashed border-gray-300 rounded flex items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors">
+                            <label class="w-20 h-20 border-2 border-dashed border-gray-300 rounded flex items-center justify-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-colors self-end">
                                 <input type="file" accept="image/*" multiple class="hidden" onchange="uploadProductImages(${p.id}, this.files)">
                                 <span class="text-gray-400 text-2xl">+</span>
                             </label>
@@ -14741,6 +14765,22 @@ ${headers.map((h, i) => `${i}. "${h}"`).join('\n')}
             m.addEventListener('click', (e) => {
                 if (e.target === m) m.classList.remove('active');
             });
+        });
+
+        // ===== 图片灯箱 =====
+        function openLightboxEl(el) {
+            var src = el.getAttribute('data-lb-src');
+            var title = el.getAttribute('data-lb-title');
+            document.getElementById('lightbox-img').src = src;
+            document.getElementById('lightbox-info').textContent = title || '';
+            document.getElementById('lightbox').classList.add('active');
+        }
+        function closeLightbox() {
+            document.getElementById('lightbox').classList.remove('active');
+            document.getElementById('lightbox-img').src = '';
+        }
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') closeLightbox();
         });
 
         // 点击 combo box 外部关闭下拉

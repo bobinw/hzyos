@@ -236,6 +236,7 @@ body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif; b
                 <span style="font-size:11px;color:var(--text2);">AI查询品牌:</span>
                 <button class="search-btn" onclick="aiBrandQuery()">了解品牌背景</button>
                 <button class="search-btn" id="btn-ai-detect-cat" onclick="aiDetectCategory()">AI检测品类</button>
+                <button class="search-btn" id="btn-name-infer-cat" onclick="startNameToCategoryInference()">从产品名推断品类</button>
                 <button class="btn-sm btn-outline" onclick="reidentifyBrand()" style="margin-left:auto;">重新识别品牌名</button>
             </div>
             <div id="suggestion-bar" class="hidden">
@@ -2972,6 +2973,7 @@ async function acceptSuggestions() {
 // ========== AI 品类检测 ==========
 const AI_CAT_BATCH_SIZE = 20;
 let _aiCatResults = []; // { idx, name, curMajor, curCat, aiMajor, aiCat, reason }
+let _nameCatResults = []; // { idx, name, curMajor, curCat, inferredMajor, inferredCat, source }
 let _aiBrandResults = []; // { idx, name, curBrand, newBrand } for brand reidentification modal
 
 async function aiDetectCategory() {
@@ -3148,6 +3150,193 @@ function applyCategoryChanges() {
 	} else {
 		toast('未选中任何修改');
 	}
+}
+
+// ========== 产品名→品类推断 ==========
+let _nameCatPatterns = null;
+async function loadNameCatPatterns() {
+    if (_nameCatPatterns) return _nameCatPatterns;
+    try {
+        const resp = await fetch('./scripts/name-category-patterns.json');
+        if (!resp.ok) throw new Error('HTTP ' + resp.status);
+        _nameCatPatterns = await resp.json();
+        return _nameCatPatterns;
+    } catch(e) {
+        console.warn('无法加载产品名-品类推断模式:', e.message);
+        return null;
+    }
+}
+
+function inferCategoryFromNameDT(name, patterns) {
+    if (!name || !patterns) return null;
+    var s = String(name).trim();
+    if (!s) return null;
+
+    var ngramPatterns = patterns.ngramPatterns || {};
+    var prefixPatterns = patterns.prefixPatterns || {};
+    var categoryToMajor = patterns.categoryToMajor || {};
+
+    // Try prefix match first (longer = more accurate)
+    for (var len = 10; len >= 6; len--) {
+        if (s.length >= len) {
+            var prefix = s.substring(0, len);
+            if (prefixPatterns[prefix]) {
+                var cat = prefixPatterns[prefix];
+                return { category: cat, major: categoryToMajor[cat] || null, source: 'prefix' };
+            }
+        }
+    }
+
+    // Fallback: n-gram voting
+    var votes = {};
+    for (var i = 0; i <= s.length - 2; i++) {
+        for (var len = 2; len <= 4; len++) {
+            if (i + len > s.length) break;
+            var ngram = s.substring(i, i + len);
+            var cat = ngramPatterns[ngram];
+            if (cat) votes[cat] = (votes[cat] || 0) + 1;
+        }
+    }
+
+    var bestCat = null, bestScore = 0;
+    for (var cat in votes) {
+        if (votes[cat] > bestScore) { bestScore = votes[cat]; bestCat = cat; }
+    }
+
+    if (bestCat && bestScore >= 2) {
+        return { category: bestCat, major: categoryToMajor[bestCat] || null, source: 'ngram' };
+    }
+
+    return null;
+}
+
+async function startNameToCategoryInference() {
+    if (!ACTIVE_BRAND || VIEW_MODE !== 'brand') return;
+    var products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    var btn = document.getElementById('btn-name-infer-cat');
+    var origText = btn.textContent;
+    btn.textContent = '加载模式...';
+    btn.disabled = true;
+
+    var patterns = await loadNameCatPatterns();
+    if (!patterns) {
+        toast('无法加载推断模式文件 name-category-patterns.json');
+        btn.textContent = origText;
+        btn.disabled = false;
+        return;
+    }
+
+    btn.textContent = '推断中...';
+    _nameCatResults = [];
+
+    for (var i = 0; i < products.length; i++) {
+        var p = products[i];
+        if (!p.name) continue;
+        var inferred = inferCategoryFromNameDT(p.name, patterns);
+        if (!inferred) continue;
+
+        var curCat = (p.category || '').trim();
+        var curMajor = (p.majorCategory || '').trim();
+
+        // Only include if different from current
+        if (inferred.category !== curCat || (inferred.major && inferred.major !== curMajor)) {
+            _nameCatResults.push({
+                idx: i,
+                name: p.name,
+                curMajor: curMajor,
+                curCat: curCat,
+                inferredMajor: inferred.major || '',
+                inferredCat: inferred.category,
+                source: inferred.source
+            });
+        }
+    }
+
+    btn.textContent = origText;
+    btn.disabled = false;
+
+    if (_nameCatResults.length === 0) {
+        toast('没有可推断的品类 — 当前品类已匹配或产品名不在模式库中');
+        return;
+    }
+    showNameCatConfirmModal();
+}
+
+function showNameCatConfirmModal() {
+    document.getElementById('modal-title').textContent = '产品名→品类推断结果 — 确认修改 (' + _nameCatResults.length + ' 处)';
+    var html = '<div style="margin-bottom:12px;display:flex;gap:12px;align-items:center;">' +
+        '<label style="font-size:13px;cursor:pointer;"><input type="checkbox" id="namecat-confirm-all" checked onchange="toggleNameCatConfirmAll()"> 全选/全不选</label>' +
+        '<span style="font-size:12px;color:var(--text2);">基于已修正数据推断，仅显示与当前值不同的建议</span>' +
+        '</div>' +
+        '<div style="max-height:50vh;overflow-y:auto;">' +
+        '<table style="width:100%;border-collapse:collapse;font-size:13px;">' +
+        '<thead><tr style="background:#f9fafb;">' +
+        '<th style="padding:6px 8px;text-align:center;width:30px;">✓</th>' +
+        '<th style="padding:6px 8px;text-align:left;">产品名称</th>' +
+        '<th style="padding:6px 8px;text-align:left;">当前大类</th>' +
+        '<th style="padding:6px 8px;text-align:left;">当前品类</th>' +
+        '<th style="padding:6px 8px;text-align:left;color:var(--primary);">推断大类</th>' +
+        '<th style="padding:6px 8px;text-align:left;color:var(--primary);">推断品类</th>' +
+        '<th style="padding:6px 8px;text-align:left;">来源</th>' +
+        '</tr></thead><tbody>';
+    for (var i = 0; i < _nameCatResults.length; i++) {
+        var r = _nameCatResults[i];
+        html += '<tr>' +
+            '<td style="padding:4px 8px;text-align:center;"><input type="checkbox" id="namecat-cb-' + i + '" checked></td>' +
+            '<td style="padding:4px 8px;">' + escHtml(r.name) + '</td>' +
+            '<td style="padding:4px 8px;">' + escHtml(r.curMajor || '—') + '</td>' +
+            '<td style="padding:4px 8px;">' + escHtml(r.curCat || '—') + '</td>' +
+            '<td style="padding:4px 8px;color:var(--primary);font-weight:500;">' + escHtml(r.inferredMajor) + '</td>' +
+            '<td style="padding:4px 8px;color:var(--primary);font-weight:500;">' + escHtml(r.inferredCat) + '</td>' +
+            '<td style="padding:4px 8px;font-size:12px;color:var(--text2);">' + escHtml(r.source) + '</td>' +
+            '</tr>';
+    }
+    html += '</tbody></table></div>' +
+        '<div style="margin-top:12px;display:flex;gap:8px;justify-content:flex-end;">' +
+        '<button class="btn btn-outline btn-sm" onclick="closeModal()">取消</button>' +
+        '<button class="btn btn-primary btn-sm" onclick="applyNameCatChanges()">应用选中修改</button>' +
+        '</div>';
+    document.getElementById('modal-body').innerHTML = html;
+    document.getElementById('modal-overlay').classList.remove('hidden');
+}
+
+function toggleNameCatConfirmAll() {
+    var checked = document.getElementById('namecat-confirm-all').checked;
+    for (var i = 0; i < _nameCatResults.length; i++) {
+        var cb = document.getElementById('namecat-cb-' + i);
+        if (cb) cb.checked = checked;
+    }
+}
+
+function applyNameCatChanges() {
+    var products = BRAND_GROUPS[ACTIVE_BRAND] || [];
+    var changed = 0;
+    for (var i = 0; i < _nameCatResults.length; i++) {
+        var cb = document.getElementById('namecat-cb-' + i);
+        if (!cb || !cb.checked) continue;
+        var r = _nameCatResults[i];
+        var p = products[r.idx];
+        if (!p) continue;
+        if (r.inferredMajor && r.inferredMajor !== (p.majorCategory || '')) {
+            applyEdit(p, 'majorCategory', r.inferredMajor);
+            changed++;
+        }
+        if (r.inferredCat && r.inferredCat !== (p.category || '')) {
+            applyEdit(p, 'category', r.inferredCat);
+            changed++;
+        }
+    }
+    closeModal();
+    _nameCatResults = [];
+    if (changed > 0) {
+        BRAND_STATS[ACTIVE_BRAND] = recomputeStats(ACTIVE_BRAND, products);
+        renderBrandList();
+        renderProductTable(ACTIVE_BRAND, products);
+        updateDetailIssues();
+        toast('产品名推断品类：已应用 ' + changed + ' 处修改');
+    } else {
+        toast('未选中任何修改');
+    }
 }
 
 // ========== 品牌重新识别 ==========
